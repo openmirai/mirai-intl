@@ -14,7 +14,7 @@
   },
   "hooks": {
     "before:init": "corepack pnpm run verify",
-    "after:bump": "corepack pnpm install --no-frozen-lockfile && corepack pnpm build",
+    "after:bump": "corepack pnpm install --no-frozen-lockfile && corepack pnpm build && corepack pnpm generate:fixtures && corepack pnpm check:generated",
     "before:git:release": "node scripts/publish-packages.mjs ${version} --preflight",
     "after:release": "node scripts/publish-packages.mjs ${version} && echo 'Successfully released mirai-intl v${version}'"
   },

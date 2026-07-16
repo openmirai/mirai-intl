@@ -147,7 +147,9 @@ corepack pnpm whoami --registry https://npm.pkg.github.com
 
 Release-it also performs this preflight and dry-runs all three package publishes
 before creating the Git release. Actual package publishing runs only after the
-release commit, tag, and push succeed.
+release commit, tag, and push succeed. Its version-bump hook regenerates and
+verifies the committed compiler fixture catalog so compiler-version metadata
+cannot leave CI with a stale content-addressed build.
 
 After this repository has an initial commit, an `origin` upstream, and a clean
 working tree, the first beta prerelease command is:
