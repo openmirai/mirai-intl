@@ -1,6 +1,10 @@
 import { resolve, sep } from "node:path";
 
 import { regenerateMiraiIntlCatalog } from "./lifecycle";
+import {
+  authorizePrivateMessageSliceRequest,
+  loadPrivateMessageSlice,
+} from "./private-module";
 import { transformMiraiIntlSource } from "./transform";
 import type {
   MiraiIntlSourceMap,
@@ -15,6 +19,10 @@ export type MiraiIntlVitePlugin = Readonly<{
   configureServer(server: MiraiIntlViteServer): () => void;
   enforce: "pre";
   handleHotUpdate(context: MiraiIntlHotUpdateContext): Promise<[] | undefined>;
+  load(
+    this: Readonly<{ addWatchFile(file: string): void }>,
+    id: string
+  ): Promise<string | null>;
   name: "mirai-intl";
   transform(
     code: string,
@@ -119,6 +127,19 @@ export function miraiIntlVite(
       }
       context.server.config.logger.error(restartMessage);
       return [];
+    },
+    async load(id) {
+      const request = await authorizePrivateMessageSliceRequest(
+        id,
+        currentOptions()
+      );
+      if (!request) {
+        return null;
+      }
+      this.addWatchFile(request.currentFile);
+      this.addWatchFile(request.file);
+      this.addWatchFile(request.messageFile);
+      return loadPrivateMessageSlice(request);
     },
     name: "mirai-intl",
     transform(code, id) {

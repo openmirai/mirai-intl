@@ -82,6 +82,8 @@ async function createGeneratedCatalog(): Promise<
       { kind: "text", path: "components.toast.add.success" },
       { kind: "text", path: "components.toast.status.active" },
       { kind: "text", path: "components.toast.status.inactive" },
+      { kind: "text", path: "components.toast.locale.en" },
+      { kind: "text", path: "components.toast.locale.th" },
       { kind: "rich", path: "components.toast.rich" },
       {
         argumentSchema: {
@@ -112,6 +114,8 @@ async function createGeneratedCatalog(): Promise<
       "components.toast.add.success",
       "components.toast.status.active",
       "components.toast.status.inactive",
+      "components.toast.locale.en",
+      "components.toast.locale.th",
       "components.toast.rich",
       "components.toast.parameterized",
     ].map((path, index) => ({
@@ -124,6 +128,21 @@ async function createGeneratedCatalog(): Promise<
   await writeFile(
     join(selected, messageModule),
     "export const m0 = {};\n",
+    "utf8"
+  );
+  await writeFile(
+    join(selected, "catalog.resources.gen.d.mts"),
+    'export type CatalogLocale = "en" | "th";\n',
+    "utf8"
+  );
+  await writeFile(
+    join(selected, "catalog.manifest.gen.d.mts"),
+    'export declare const catalogManifest: { readonly locales: readonly ["en", "th"] };\n',
+    "utf8"
+  );
+  await writeFile(
+    join(selected, "catalog.manifest.gen.mjs"),
+    "export const catalogManifest = {};\n",
     "utf8"
   );
   return { generatedDirectory, root };
@@ -220,13 +239,15 @@ describe("private named-key lowering", () => {
       );
 
       expect(result.code.indexOf('"use client"')).toBeLessThan(
-        result.code.indexOf("catalog.messages.gen.mjs")
+        result.code.indexOf("catalog.manifest.gen.mjs")
       );
-      expect(result.code.indexOf("catalog.messages.gen.mjs")).toBeLessThan(
+      expect(result.code.indexOf("catalog.manifest.gen.mjs")).toBeLessThan(
         result.code.indexOf("@/hooks/useTranslations")
       );
       expect(
-        result.code.match(/from ".*catalog\.messages\.gen\.mjs"/gu)
+        result.code.match(
+          /from ".*catalog\.manifest\.gen\.mjs\?__mirai_intl_exports=m\d+(?:,m\d+)*"/gu
+        )
       ).toHaveLength(1);
       expect(result.code).not.toContain("catalog.descriptors.gen.mjs");
       expect(result.code).not.toMatch(/__miraiIntl_m\d+/u);
@@ -320,15 +341,13 @@ describe("private named-key lowering", () => {
     }
   });
 
-  it("lowers stored same-namespace deferred keys through the namespace registry", async () => {
+  it("lowers stored generated-facade named keys through the namespace registry", async () => {
     const fixture = await createGeneratedCatalog();
     const id = join(fixture.root, "src/stored-key.ts");
     const source = [
-      'import { createTranslationKey } from "@/i18n/generated";',
+      'import type { TranslationKey } from "@/i18n/generated";',
       'import { useTranslations } from "x";',
-      'const toastKey = createTranslationKey("components.toast");',
-      "type ToastKey = ReturnType<typeof toastKey>;",
-      'const config: { labelKey: ToastKey; route: string } = { labelKey: toastKey("activate.error"), route: "/toast" };',
+      'const config: { labelKey: TranslationKey<"components.toast">; route: string } = { labelKey: "activate.error", route: "/toast" };',
       'const { t } = useTranslations("components.toast");',
       "export const translated = t(config.labelKey);",
       "",
@@ -342,16 +361,12 @@ describe("private named-key lowering", () => {
         })
       );
 
-      expect(result.code).toContain(
-        'labelKey: "components.toast.activate.error"'
-      );
+      expect(result.code).toContain('labelKey: "activate.error"');
       expect(result.code).toContain(
         '__miraiIntlTranslateDynamicText(t, config.labelKey, "components.toast", __miraiIntlDynamicTextRegistry)'
       );
       expect(result.code).toContain('["components.toast.activate.error"]');
       expect(result.code).not.toContain('["activate.error"]');
-      expect(result.code).not.toContain("createTranslationKey");
-      expect(result.code).not.toContain("toastKey");
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -379,10 +394,56 @@ describe("private named-key lowering", () => {
       expect(result.code).toContain("createCompilerDynamicTextRegistry");
       expect(result.code).toContain('input, "components.toast"');
       expect(result.code).toContain('["components.toast.activate.error"]');
+      expect(result.code).toContain('["components.toast.activate.success"]');
+      expect(result.code).toContain('["components.toast.add.error"]');
+      expect(result.code).toContain('["components.toast.add.success"]');
+      expect(result.code).toContain('["components.toast.status.active"]');
+      expect(result.code).toContain('["components.toast.status.inactive"]');
       expect(result.code).not.toContain('["components.toast.parameterized"]');
       expect(result.code).not.toContain('["components.toast.rich"]');
       expect(result.code).not.toContain("parseKey");
       expect(result.code).not.toContain("parseTranslationKey as");
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("requires a parsed boundary key to be narrowed before translation", async () => {
+    const fixture = await createGeneratedCatalog();
+    const options = {
+      generatedDirectory: fixture.generatedDirectory,
+      root: fixture.root,
+    };
+    const imports = [
+      'import { parseTranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      "declare const input: unknown;",
+      'const { t } = useTranslations("components.toast");',
+      'const key = parseTranslationKey("components.toast", input);',
+    ];
+
+    try {
+      await expect(
+        transformMiraiIntlSource(
+          [...imports, "export const translated = t(key);", ""].join("\n"),
+          join(fixture.root, "src/parse-key-unguarded.ts"),
+          options
+        )
+      ).rejects.toThrowError(/must be finite named-key unions/u);
+
+      const guarded = requireTransform(
+        await transformMiraiIntlSource(
+          [
+            ...imports,
+            "export const translated = key ? t(key) : undefined;",
+            "",
+          ].join("\n"),
+          join(fixture.root, "src/parse-key-guarded.ts"),
+          options
+        )
+      );
+      expect(guarded.code).toContain("parseCompilerTranslationKey");
+      expect(guarded.code).toContain("translateCompilerDynamicText");
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -563,7 +624,7 @@ describe("private named-key lowering", () => {
       'const STATES = ["error", "success"] as const;',
       'const STATUS = { enabled: "status.active", disabled: "status.inactive" } as const;',
       'const { t } = useTranslations("components.toast");',
-      'const tuple = t.map(["status.active", "status.inactive"] as const);',
+      'const tuple = t.map(["status.active", "status.inactive"]);',
       "const matrix = t.map(ACTIONS, STATES);",
       "const record = t.map(STATUS);",
       "export { matrix, record, tuple };",
@@ -578,7 +639,7 @@ describe("private named-key lowering", () => {
         })
       );
 
-      expect(result.code.match(/catalog\.messages\.gen\.mjs/gu)).toHaveLength(
+      expect(result.code.match(/catalog\.manifest\.gen\.mjs/gu)).toHaveLength(
         1
       );
       expect(result.code).not.toContain("t.map(");
@@ -591,15 +652,16 @@ describe("private named-key lowering", () => {
     }
   });
 
-  it("lowers finite named-key unions with one namespace and one full-path registry", async () => {
+  it("lowers finite named-key unions into one minimal deterministic full-path registry", async () => {
     const fixture = await createGeneratedCatalog();
     const id = join(fixture.root, "src/dynamic.ts");
     const source = [
       'import { useTranslations } from "x";',
-      'declare const key: "activate.error" | "status.active";',
+      'declare const key: "components.toast.activate.error" | "status.active";',
+      'declare const additionalKey: "add.success";',
       'const { t } = useTranslations("components.toast");',
       "const translated = t(key);",
-      "const translatedAgain = t(key);",
+      "const translatedAgain = t(additionalKey);",
       "",
     ].join("\n");
 
@@ -615,6 +677,12 @@ describe("private named-key lowering", () => {
       expect(result.code).toContain("createCompilerDynamicTextRegistry");
       expect(result.code).toContain('["components.toast.status.active"]');
       expect(result.code).toContain('["components.toast.activate.error"]');
+      expect(result.code).toContain('["components.toast.add.success"]');
+      expect(result.code).not.toContain(
+        '["components.toast.activate.success"]'
+      );
+      expect(result.code).not.toContain('["components.toast.add.error"]');
+      expect(result.code).not.toContain('["components.toast.status.inactive"]');
       expect(result.code).not.toContain('["components.toast.parameterized"]');
       expect(result.code).not.toContain('["components.toast.rich"]');
       expect(result.code).not.toContain('["pages.home.title"]');
@@ -626,6 +694,12 @@ describe("private named-key lowering", () => {
       expect(
         result.code.match(/__miraiIntlCreateDynamicTextRegistry\(/gu)
       ).toHaveLength(1);
+      expect(result.code.indexOf("activate.error")).toBeLessThan(
+        result.code.indexOf("add.success")
+      );
+      expect(result.code.indexOf("add.success")).toBeLessThan(
+        result.code.indexOf("status.active")
+      );
       expect(result.code).toMatch(
         /\/\* @__PURE__ \*\/ __miraiIntlCreateDynamicTextRegistry\(/u
       );
@@ -633,7 +707,10 @@ describe("private named-key lowering", () => {
         ...new Set(
           result.dependencies.filter((entry) => entry.endsWith(messageModule))
         ),
-      ]).toHaveLength(1);
+      ]).toHaveLength(0);
+      expect(result.code).toContain(
+        "catalog.manifest.gen.mjs?__mirai_intl_exports="
+      );
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -670,6 +747,264 @@ describe("private named-key lowering", () => {
       expect(result.code).toContain('["components.toast.activate.success"]');
       expect(result.code).toContain('["components.toast.add.error"]');
       expect(result.code).toContain('["components.toast.add.success"]');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves finite item keys through generated-facade satisfies arrays", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/navigation.ts");
+    const source = [
+      'import type { TranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      "const items = [",
+      '  { labelKey: "activate.error" },',
+      '  { labelKey: "status.active" },',
+      '] as const satisfies readonly { labelKey: TranslationKey<"components.toast"> }[];',
+      'const { t } = useTranslations("components.toast");',
+      "export const translated = items.map((item) => t(item.labelKey));",
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(source).not.toContain("__mirai_intl_exports");
+      expect(result.code).toContain('["components.toast.activate.error"]');
+      expect(result.code).toContain('["components.toast.status.active"]');
+      expect(result.code).not.toContain(
+        '["components.toast.activate.success"]'
+      );
+      expect(result.code).not.toContain('["components.toast.add.error"]');
+      expect(result.code).not.toContain('["components.toast.add.success"]');
+      expect(result.code).not.toContain('["components.toast.status.inactive"]');
+      expect(result.code).toContain(
+        "catalog.manifest.gen.mjs?__mirai_intl_exports="
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("resolves only project-local providers needed by finite enum, locale, and config keys", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/imported-keys.ts");
+    await writeFile(
+      join(fixture.root, "src/actions.ts"),
+      [
+        'export enum ToastAction { ACTIVATE = "activate", ADD = "add" }',
+        "export const ACTIONS: ReadonlyArray<ToastAction> = [ToastAction.ACTIVATE, ToastAction.ADD];",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(fixture.root, "src/locales.ts"),
+      [
+        'import { catalogManifest } from "@/i18n/generated";',
+        'import type { CatalogLocale } from "@/i18n/generated";',
+        "export const LOCALES: ReadonlyArray<CatalogLocale> = catalogManifest.locales;",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(fixture.root, "src/items.ts"),
+      [
+        'import type { TranslationKey } from "@/i18n/generated";',
+        "export const ITEMS = [",
+        '  { labelKey: "status.active" },',
+        '  { labelKey: "status.inactive" },',
+        '] as const satisfies readonly { labelKey: TranslationKey<"components.toast"> }[];',
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    const source = [
+      'import { useTranslations } from "x";',
+      'import { ACTIONS, ToastAction } from "./actions";',
+      'import { ITEMS } from "./items";',
+      'import { LOCALES } from "./locales";',
+      'const { t } = useTranslations("components.toast");',
+      "export const actions = ACTIONS.map((action: ToastAction) => t(`${action}.error`));",
+      "export const items = ITEMS.map((item) => t(item.labelKey));",
+      "export const locales = LOCALES.map((locale) => t(`locale.${locale}`));",
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      for (const path of [
+        "components.toast.activate.error",
+        "components.toast.add.error",
+        "components.toast.status.active",
+        "components.toast.status.inactive",
+        "components.toast.locale.en",
+        "components.toast.locale.th",
+      ]) {
+        expect(result.code).toContain(`["${path}"]`);
+      }
+      expect(result.code).not.toContain(
+        '["components.toast.activate.success"]'
+      );
+      expect(result.code).not.toContain('["components.toast.add.success"]');
+      expect(
+        result.code.match(/__miraiIntlCreateDynamicTextRegistry\(/gu)
+      ).toHaveLength(1);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves imported finite type guards that use modern built-ins", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/guarded-key.ts");
+    await writeFile(
+      join(fixture.root, "src/statuses.ts"),
+      [
+        'export const STATUSES = ["active", "inactive"] as const;',
+        "export type Status = (typeof STATUSES)[number];",
+        "export const STATUS_SET = new Set<string>(STATUSES);",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(fixture.root, "src/is-status.ts"),
+      [
+        'import type { Status } from "./statuses";',
+        'import { STATUS_SET } from "./statuses";',
+        "export const isStatus = (value: string): value is Status => STATUS_SET.has(value);",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    const source = [
+      'import { useTranslations } from "x";',
+      'import { isStatus } from "./is-status";',
+      "declare const rawStatus: string;",
+      "const status = isStatus(rawStatus) ? rawStatus : null;",
+      'const { t } = useTranslations("components.toast");',
+      'export const translated = status ? t(`status.${status}`) : "";',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain('["components.toast.status.active"]');
+      expect(result.code).toContain('["components.toast.status.inactive"]');
+      expect(result.code).not.toContain('["components.toast.activate.error"]');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves configured ambient React types for automatic JSX props", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/contextual-props.tsx");
+    await writeJson(join(fixture.root, "tsconfig.json"), {
+      compilerOptions: {
+        jsx: "preserve",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        paths: { "@/*": ["src/*"] },
+        typeRoots: ["./node_modules/@types"],
+        types: ["react"],
+      },
+    });
+    const reactRoot = join(fixture.root, "node_modules/@types/react");
+    await mkdir(reactRoot, { recursive: true });
+    await writeJson(join(reactRoot, "package.json"), {
+      name: "@types/react",
+      types: "index.d.ts",
+      version: "0.0.0-fixture",
+    });
+    await writeFile(
+      join(reactRoot, "index.d.ts"),
+      [
+        "export as namespace React;",
+        "export type FC<Props> = (props: Props) => unknown;",
+        "declare global { namespace JSX { interface IntrinsicElements { div: unknown; } } }",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    const source = [
+      'import type { TranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      'interface Props { labelKey: TranslationKey<"components.toast">; }',
+      "export const Component: React.FC<Props> = ({ labelKey }) => {",
+      '  const { t } = useTranslations("components.toast");',
+      "  return <div>{t(labelKey)}</div>;",
+      "};",
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain('["components.toast.activate.error"]');
+      expect(result.code).toContain('["components.toast.status.inactive"]');
+      expect(result.code).not.toContain('["components.toast.parameterized"]');
+      expect(result.code).not.toContain('["components.toast.rich"]');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("reports the bounded provider budget instead of a widened-key fallback", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/provider-budget.ts");
+    const providerCount = 66;
+    for (let index = 0; index < providerCount; index += 1) {
+      const source =
+        index === providerCount - 1
+          ? 'export declare const key: "title";\n'
+          : `export { key } from "./provider-${index + 1}";\n`;
+      await writeFile(
+        join(fixture.root, `src/provider-${index}.ts`),
+        source,
+        "utf8"
+      );
+    }
+    const source = [
+      'import { useTranslations } from "x";',
+      'import { key } from "./provider-0";',
+      'const { t } = useTranslations("pages.home");',
+      "export const translated = t(key);",
+      "",
+    ].join("\n");
+
+    try {
+      await expect(
+        transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      ).rejects.toThrowError(/exceeded the 64-file provider budget/u);
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
@@ -791,6 +1126,11 @@ describe("private named-key lowering", () => {
         error: /finite named-key unions or generated deferred keys/u,
         source:
           'import { useTranslations } from "x"; declare const key: unknown; const { t } = useTranslations("pages.home"); t(key);',
+      },
+      {
+        error: /finite named-key unions or generated deferred keys/u,
+        source:
+          'import { useTranslations } from "x"; declare const key: any; const { t } = useTranslations("pages.home"); t(key);',
       },
       {
         error: /literal non-root namespace/u,

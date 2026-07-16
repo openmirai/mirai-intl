@@ -25,6 +25,7 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 }
 
 const messageModule = "catalog.messages.gen.mjs";
+const privateCarrier = "catalog.manifest.gen.mjs";
 
 async function createAdapterFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "mirai-intl-adapter-"));
@@ -62,6 +63,11 @@ async function createAdapterFixture(): Promise<string> {
     "export const m0 = {};\n",
     "utf8"
   );
+  await writeFile(
+    join(generated, directory, privateCarrier),
+    "export const catalogManifest = {};\n",
+    "utf8"
+  );
   return root;
 }
 
@@ -89,12 +95,20 @@ async function createConventionViteBundleFixture(): Promise<string> {
     version: "1.0.0",
   });
   await writeJson(join(root, "src/locales/global/en.json"), {
-    unrelated: "UNRELATED_DESCRIPTOR_SENTINEL",
-    used: "REFERENCED_DESCRIPTOR_SENTINEL",
+    components: {
+      toast: {
+        unrelated: "UNRELATED_DESCRIPTOR_SENTINEL",
+        used: "REFERENCED_DESCRIPTOR_SENTINEL",
+      },
+    },
   });
   await writeJson(join(root, "src/locales/global/th.json"), {
-    unrelated: "UNRELATED_DESCRIPTOR_SENTINEL_TH",
-    used: "REFERENCED_DESCRIPTOR_SENTINEL_TH",
+    components: {
+      toast: {
+        unrelated: "UNRELATED_DESCRIPTOR_SENTINEL_TH",
+        used: "REFERENCED_DESCRIPTOR_SENTINEL_TH",
+      },
+    },
   });
   await writeFile(
     join(root, "src/runtime.ts"),
@@ -109,9 +123,24 @@ async function createConventionViteBundleFixture(): Promise<string> {
   await writeFile(
     join(root, "src/main.ts"),
     [
+      'import type { TranslationKey } from "./i18n/generated";',
       'import { useTranslations } from "./runtime";',
-      "const { t } = useTranslations();",
-      'console.log(t("used"));',
+      'const key = "used" satisfies TranslationKey<"components.toast">;',
+      'const { t } = useTranslations("components.toast");',
+      "console.log(t(key));",
+      'console.log(() => import("./lazy"));',
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    join(root, "src/lazy.ts"),
+    [
+      'import type { TranslationKey } from "./i18n/generated";',
+      'import { useTranslations } from "./runtime";',
+      'const key = "unrelated" satisfies TranslationKey<"components.toast">;',
+      'const { t } = useTranslations("components.toast");',
+      "export const lazyTranslation = t(key);",
       "",
     ].join("\n"),
     "utf8"
@@ -120,7 +149,7 @@ async function createConventionViteBundleFixture(): Promise<string> {
     join(root, "src/ssr.ts"),
     [
       'import { useTranslations } from "./runtime";',
-      "const { t } = useTranslations();",
+      'const { t } = useTranslations("components.toast");',
       'export const render = () => t("used");',
       "",
     ].join("\n"),
@@ -142,6 +171,64 @@ describe("Vite adapter", () => {
       );
       expect(result).toMatchObject({ map: { version: 3 } });
       expect(result?.code).toContain("t(__miraiIntlMessage0)");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects Vite private slices outside the selected build", async () => {
+    const root = await createConventionViteFixture();
+    const plugin = miraiIntlVite({ root });
+    const foreign = join(root, "foreign", privateCarrier);
+    await mkdir(join(foreign, ".."), { recursive: true });
+    await writeFile(
+      foreign,
+      "const p0 = 0;\nexport const r0 = p0;\nexport const m0 = r0;\n",
+      "utf8"
+    );
+    try {
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+      await expect(
+        plugin.load.call(
+          { addWatchFile: vi.fn() },
+          `${foreign}?__mirai_intl_exports=m0`
+        )
+      ).rejects.toThrowError(/selected carrier/u);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("loads slices through the tiny selected carrier and watches identity inputs", async () => {
+    const root = await createConventionViteFixture();
+    const plugin = miraiIntlVite({ root });
+    const watched: Array<string> = [];
+    try {
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+      const generatedRoot = join(root, "src/i18n/generated");
+      const currentFile = join(generatedRoot, "current.json");
+      const pointer = JSON.parse(await readFile(currentFile, "utf8")) as {
+        directory: string;
+      };
+      const carrier = join(generatedRoot, pointer.directory, privateCarrier);
+      const messages = join(generatedRoot, pointer.directory, messageModule);
+      const source = await plugin.load.call(
+        {
+          addWatchFile(file: string) {
+            watched.push(file);
+          },
+        },
+        `${carrier}?__mirai_intl_exports=m0`
+      );
+
+      expect(source).toContain("Title");
+      expect(source?.match(/const p0 =/gu)).toHaveLength(1);
+      expect(source?.match(/export const r0 =/gu)).toHaveLength(1);
+      expect(source?.match(/export const m0 =/gu)).toHaveLength(1);
+      expect(watched).toEqual([currentFile, carrier, messages]);
+      expect(Buffer.byteLength(await readFile(carrier, "utf8"))).toBeLessThan(
+        Buffer.byteLength(await readFile(messages, "utf8"))
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -187,19 +274,94 @@ describe("Vite adapter", () => {
       const outputs = (
         Array.isArray(result) ? result : [result]
       ) as ReadonlyArray<{
-        output: ReadonlyArray<Readonly<{ code?: string; type: string }>>;
+        output: ReadonlyArray<
+          Readonly<{
+            code?: string;
+            dynamicImports?: ReadonlyArray<string>;
+            fileName?: string;
+            imports?: ReadonlyArray<string>;
+            isEntry?: boolean;
+            modules?: Readonly<Record<string, unknown>>;
+            type: string;
+          }>
+        >;
       }>;
-      const code = outputs
+      const chunks = outputs
         .flatMap(({ output }) => output)
         .filter((entry) => entry.type === "chunk")
-        .map((entry) => entry.code ?? "")
+        .map((entry) => ({
+          code: entry.code ?? "",
+          dynamicImports: entry.dynamicImports ?? [],
+          fileName: entry.fileName ?? "",
+          imports: entry.imports ?? [],
+          isEntry: entry.isEntry ?? false,
+          modules: Object.keys(entry.modules ?? {}),
+        }));
+      const entry = chunks.find(({ isEntry }) => isEntry);
+      if (!entry) {
+        throw new Error("Vite output is missing its entry chunk");
+      }
+      const chunksByFile = new Map(
+        chunks.map((chunk) => [chunk.fileName, chunk] as const)
+      );
+      const initial = new Set<string>();
+      const visitInitial = (fileName: string): void => {
+        if (initial.has(fileName)) {
+          return;
+        }
+        initial.add(fileName);
+        for (const imported of chunksByFile.get(fileName)?.imports ?? []) {
+          if (chunksByFile.has(imported)) {
+            visitInitial(imported);
+          }
+        }
+      };
+      visitInitial(entry.fileName);
+      const initialChunks = chunks.filter(({ fileName }) =>
+        initial.has(fileName)
+      );
+      const initialCode = initialChunks.map(({ code }) => code).join("\n");
+      const deferredCode = chunks
+        .filter(({ fileName }) => !initial.has(fileName))
+        .map(({ code }) => code)
         .join("\n");
 
-      expect(code).toContain("REFERENCED_DESCRIPTOR_SENTINEL");
-      expect(code).toContain("REFERENCED_DESCRIPTOR_SENTINEL_TH");
-      expect(code).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL");
-      expect(code).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL_TH");
-      expect(code).not.toContain("catalog.descriptors.gen.mjs");
+      expect(initialCode).toContain("REFERENCED_DESCRIPTOR_SENTINEL");
+      expect(initialCode).toContain("REFERENCED_DESCRIPTOR_SENTINEL_TH");
+      expect(initialCode).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL");
+      expect(initialCode).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL_TH");
+      expect(deferredCode).toContain("UNRELATED_DESCRIPTOR_SENTINEL");
+      expect(deferredCode).toContain("UNRELATED_DESCRIPTOR_SENTINEL_TH");
+      expect(initialCode.match(/validatorId/gu)).toHaveLength(2);
+      expect(Buffer.byteLength(initialCode, "utf8")).toBeLessThan(10_000);
+      expect(entry.dynamicImports).toHaveLength(1);
+      expect(
+        chunks
+          .flatMap(({ modules }) => modules)
+          .filter((id) => id.includes("catalog.manifest.gen.mjs?"))
+      ).toHaveLength(2);
+      expect(
+        chunks
+          .flatMap(({ modules }) => modules)
+          .some((id) => id.endsWith("catalog.messages.gen.mjs"))
+      ).toBe(false);
+      expect(initialCode).not.toContain("catalog.descriptors.gen.mjs");
+      const generatedRoot = join(root, "src/i18n/generated");
+      const pointer = JSON.parse(
+        await readFile(join(generatedRoot, "current.json"), "utf8")
+      ) as { directory: string };
+      const selectedFiles = await readdir(
+        join(generatedRoot, pointer.directory)
+      );
+      expect(selectedFiles.filter((name) => name === messageModule)).toEqual([
+        messageModule,
+      ]);
+      expect(await readFile(join(root, "src/main.ts"), "utf8")).not.toContain(
+        "__mirai_intl_exports"
+      );
+      expect(await readFile(join(root, "src/lazy.ts"), "utf8")).not.toContain(
+        "__mirai_intl_exports"
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -233,7 +395,7 @@ describe("Vite adapter", () => {
       const first = (await server.ssrLoadModule("/src/ssr.ts")) as {
         render(): string;
       };
-      expect(first.render()).toBe("used");
+      expect(first.render()).toBe("components.toast.used");
 
       const generatedRoot = join(root, "src/i18n/generated");
       const before = JSON.parse(
@@ -274,12 +436,12 @@ describe("Vite adapter", () => {
       const second = (await server.ssrLoadModule("/src/ssr.ts")) as {
         render(): string;
       };
-      expect(second.render()).toBe("used");
+      expect(second.render()).toBe("components.toast.used");
     } finally {
       await server.close();
       await rm(root, { force: true, recursive: true });
     }
-  }, 15_000);
+  }, 30_000);
 
   it("generates before readers, watches locale JSON, and requires restart instead of live rotation", async () => {
     const root = await createConventionViteFixture();

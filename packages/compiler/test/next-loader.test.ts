@@ -1,4 +1,13 @@
-import { cp, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -11,13 +20,19 @@ const dashboardFixture = resolve(
   import.meta.dirname,
   "../../../fixtures/convention/dashboard"
 );
+const landingFixture = resolve(
+  import.meta.dirname,
+  "../../../fixtures/convention/landing"
+);
 
 const messageModule = "catalog.messages.gen.mjs";
+const privateCarrier = "catalog.manifest.gen.mjs";
 
 function runLoader(
   root: string,
   resourcePath: string,
-  source: string
+  source: string,
+  resourceQuery?: string
 ): Promise<Readonly<{ code: string; dependencies: ReadonlyArray<string> }>> {
   return new Promise((resolvePromise, rejectPromise) => {
     const dependencies: Array<string> = [];
@@ -40,6 +55,7 @@ function runLoader(
         cacheable: vi.fn(),
         getOptions: () => ({ root }),
         resourcePath,
+        ...(resourceQuery === undefined ? {} : { resourceQuery }),
       },
       source
     );
@@ -105,6 +121,83 @@ describe("mirai intl Next loader", () => {
     }
   });
 
+  it("serves a complete private Landing message closure from a resource query", async () => {
+    const container = await mkdtemp(join(tmpdir(), "mirai-intl-next-slice-"));
+    const root = join(container, "landing");
+    await cp(landingFixture, root, { recursive: true });
+    const resourcePath = join(root, "src/page.tsx");
+    const source = [
+      'import { useTranslations } from "x";',
+      'const { t } = useTranslations("pages.compare.diffs");',
+      'export const title = t("title");',
+      "",
+    ].join("\n");
+    try {
+      const transformed = await runLoader(root, resourcePath, source);
+      const request = /(\?__mirai_intl_exports=m\d+)/u.exec(
+        transformed.code
+      )?.[1];
+      expect(request).toBeDefined();
+      expect(source).not.toContain("__mirai_intl_exports");
+
+      const generatedRoot = join(root, "src/i18n/generated");
+      const pointer = JSON.parse(
+        await readFile(join(generatedRoot, "current.json"), "utf8")
+      ) as { directory: string };
+      const privateModule = join(
+        generatedRoot,
+        pointer.directory,
+        messageModule
+      );
+      const carrier = join(generatedRoot, pointer.directory, privateCarrier);
+      const carrierSource = await readFile(carrier, "utf8");
+      const sliced = await runLoader(root, carrier, carrierSource, request);
+
+      expect(sliced.code).toContain("Compare plans");
+      expect(sliced.code).not.toContain("Compare <strong>");
+      expect(sliced.code).not.toContain("difference");
+      expect(sliced.code.match(/const p\d+ =/gu)).toHaveLength(1);
+      expect(sliced.code.match(/export const r\d+ =/gu)).toHaveLength(1);
+      expect(sliced.code.match(/export const m\d+ =/gu)).toHaveLength(1);
+      expect(sliced.dependencies).toEqual([
+        join(generatedRoot, "current.json"),
+        privateModule,
+      ]);
+      expect(sliced.dependencies).not.toContain(carrier);
+      expect(
+        (await readdir(join(generatedRoot, pointer.directory))).filter(
+          (name) => name === messageModule
+        )
+      ).toEqual([messageModule]);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a same-basename private slice outside the selected build", async () => {
+    const container = await mkdtemp(join(tmpdir(), "mirai-intl-next-foreign-"));
+    const root = join(container, "landing");
+    await cp(landingFixture, root, { recursive: true });
+    const foreign = join(container, "foreign", privateCarrier);
+    await mkdir(join(foreign, ".."), { recursive: true });
+    const source = [
+      "const p0 = 0;",
+      "export const r0 = p0;",
+      "export const m0 = r0;",
+      "",
+    ].join("\n");
+    await writeFile(foreign, source, "utf8");
+
+    try {
+      await regenerateMiraiIntlCatalog({ root });
+      await expect(
+        runLoader(root, foreign, source, "?__mirai_intl_exports=m0")
+      ).rejects.toThrowError(/selected carrier/u);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
+
   it("rotates warm-cache imports and dependencies when old reader files are retained", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-next-cache-"));
     const root = join(container, "dashboard");
@@ -127,15 +220,21 @@ describe("mirai intl Next loader", () => {
       await cp(firstDirectory, backup, { recursive: true });
 
       expect(first.code).toContain(firstPointer.directory);
-      expect(first.code).toContain(messageModule);
+      expect(first.code).toContain(privateCarrier);
+      expect(first.code).not.toContain(`${messageModule}?`);
       expect(first.code).toMatch(/import \{ m\d+ as __miraiIntlMessage0 \}/u);
       expect(first.dependencies).toEqual(
         expect.arrayContaining([
           join(generatedRoot, "current.json"),
           join(firstDirectory, "catalog.contract.gen.json"),
           join(firstDirectory, "catalog.provenance.gen.json"),
-          join(firstDirectory, messageModule),
         ])
+      );
+      expect(first.dependencies).not.toContain(
+        join(firstDirectory, privateCarrier)
+      );
+      expect(first.dependencies).not.toContain(
+        join(firstDirectory, messageModule)
       );
       const firstPrivateModule = await readFile(
         join(firstDirectory, messageModule),
@@ -177,15 +276,21 @@ describe("mirai intl Next loader", () => {
 
       expect(second.code).toContain(secondPointer.directory);
       expect(second.code).not.toContain(firstPointer.directory);
-      expect(second.code).toContain(messageModule);
+      expect(second.code).toContain(privateCarrier);
+      expect(second.code).not.toContain(`${messageModule}?`);
       expect(second.code).toMatch(/import \{ m\d+ as __miraiIntlMessage0 \}/u);
       expect(second.dependencies).toEqual(
         expect.arrayContaining([
           join(generatedRoot, "current.json"),
           join(secondDirectory, "catalog.contract.gen.json"),
           join(secondDirectory, "catalog.provenance.gen.json"),
-          join(secondDirectory, messageModule),
         ])
+      );
+      expect(second.dependencies).not.toContain(
+        join(secondDirectory, privateCarrier)
+      );
+      expect(second.dependencies).not.toContain(
+        join(secondDirectory, messageModule)
       );
       await expect(stat(firstDirectory)).resolves.toBeDefined();
       await expect(stat(secondDirectory)).resolves.toBeDefined();

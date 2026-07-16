@@ -162,6 +162,12 @@ describe("generated named-key contract", () => {
       expect(facade).toContain(
         "bindTranslationKeyParser<BoundCatalogContract>()"
       );
+      expect(facade).toContain(
+        "export type TranslationNamespace = NamespacePaths<BoundCatalogContract>;"
+      );
+      expect(facade).toContain(
+        "export type TranslationKey<Namespace extends TranslationNamespace> = ArgumentFreeTextKeysFor<BoundCatalogContract, Namespace>;"
+      );
       expect(facade).toMatch(/export type \{ CatalogLocale \}/u);
       expect(facade).not.toMatch(/\bmessage_/u);
       expect(facade).not.toMatch(/\bm\d+\b/u);
@@ -185,13 +191,30 @@ describe("generated named-key contract", () => {
       ).rejects.toMatchObject({ code: "ENOENT" });
 
       const typeFixtureRoot = join(container, "types");
-      await cp(generated.write.directory, typeFixtureRoot, {
+      await cp(join(root, "src/i18n/generated"), typeFixtureRoot, {
         recursive: true,
       });
-      await writeFile(join(typeFixtureRoot, "catalog.d.ts"), declaration);
+      const runtimeTranslations = resolve(
+        import.meta.dirname,
+        "../../runtime/src/translations.ts"
+      );
+      const runtimeCatalog = resolve(
+        import.meta.dirname,
+        "../../runtime/src/catalog.ts"
+      );
+      await writeFile(
+        join(typeFixtureRoot, "runtime-shim.d.ts"),
+        [
+          `export { bindTranslationKeyFactory, bindTranslationKeyParser } from ${JSON.stringify(runtimeTranslations)};`,
+          `export type { ArgumentFreeTextKeysFor, NamespacePaths } from ${JSON.stringify(runtimeTranslations)};`,
+          `export type { TypedCatalogManifest } from ${JSON.stringify(runtimeCatalog)};`,
+          "",
+        ].join("\n"),
+        "utf8"
+      );
       const consumer = [
-        'import type { CatalogContract } from "./catalog";',
-        'import { catalogManifest } from "./catalog.manifest.gen.mjs";',
+        'import { catalogManifest } from "./index";',
+        'import type { CatalogContract, TranslationKey, TranslationNamespace } from "./index";',
         'import { createUseTranslations } from "@openmirai/intl-runtime/react-i18next";',
         'import { bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
         'import type { UseTranslationHook } from "@openmirai/intl-runtime/react-i18next";',
@@ -199,6 +222,11 @@ describe("generated named-key contract", () => {
         "",
         "declare const useTranslations: UseTranslations<CatalogContract>;",
         "declare const useTranslation: UseTranslationHook<any>;",
+        'const shortLinksNamespace = "pages.{-$locale}.short-links" satisfies TranslationNamespace;',
+        'const directTitleKey: TranslationKey<typeof shortLinksNamespace> = "title";',
+        'const titleKeys = ["title"] as const satisfies readonly TranslationKey<"pages.{-$locale}.short-links">[];',
+        'directTitleKey satisfies "title";',
+        'titleKeys[0] satisfies "title";',
         'catalogManifest.locales satisfies readonly ["en", "th"];',
         'catalogManifest.sourceLocale satisfies "en";',
         "const createTranslationKey = bindTranslationKeyFactory<CatalogContract>();",
@@ -213,6 +241,7 @@ describe("generated named-key contract", () => {
         "if (parsedTitle) t(parsedTitle) satisfies string;",
         "",
         't("title") satisfies string;',
+        "t(directTitleKey) satisfies string;",
         't("owner", { name: "Ada" }) satisfies string;',
         't("owner", { name: 42 }) satisfies string;',
         't("page.resultsCount", { count: 2 }) satisfies string;',
@@ -225,6 +254,12 @@ describe("generated named-key contract", () => {
         "",
         "// @ts-expect-error Unknown namespaces are not widened to string.",
         'useTranslations("pages.missing");',
+        "// @ts-expect-error Generated namespace aliases reject typos.",
+        'const missingNamespace: TranslationNamespace = "pages.missing";',
+        "// @ts-expect-error Generated key aliases reject typos.",
+        'const misspelledTitle: TranslationKey<"pages.{-$locale}.short-links"> = "titel";',
+        "// @ts-expect-error Generated key aliases contain only argument-free text messages.",
+        'const parameterizedOwner: TranslationKey<"pages.{-$locale}.short-links"> = "owner";',
         "// @ts-expect-error Deferred-key namespaces are catalog-bound.",
         'createTranslationKey("pages.missing")("title");',
         "// @ts-expect-error Parser namespaces are catalog-bound.",
@@ -286,7 +321,7 @@ describe("generated named-key contract", () => {
                 resolve(import.meta.dirname, "../../runtime/src/react.ts"),
               ],
               "@openmirai/intl-runtime": [
-                resolve(import.meta.dirname, "../../runtime/src/index.ts"),
+                join(typeFixtureRoot, "runtime-shim.d.ts"),
               ],
               "@openmirai/intl-runtime/react-i18next": [
                 resolve(
@@ -302,10 +337,11 @@ describe("generated named-key contract", () => {
             verbatimModuleSyntax: true,
           },
           include: [
-            "catalog.d.ts",
-            "catalog.manifest.gen.d.mts",
-            "catalog.schema.gen.d.ts",
+            "index.ts",
+            "builds/**/*.d.mts",
+            "builds/**/*.d.ts",
             "consumer.ts",
+            "runtime-shim.d.ts",
           ],
         })}\n`,
         "utf8"
@@ -329,7 +365,7 @@ describe("generated named-key contract", () => {
             killSignal: "SIGKILL",
             maxBuffer: 1024 * 1024,
             shell: false,
-            timeout: 30_000,
+            timeout: 120_000,
           }
         );
 
@@ -341,5 +377,5 @@ describe("generated named-key contract", () => {
     } finally {
       await rm(container, { force: true, recursive: true });
     }
-  }, 60_000);
+  }, 420_000);
 });

@@ -3,6 +3,8 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import ts from "typescript";
 
+import { privateMessageSliceSpecifier } from "./private-module";
+
 export type MiraiIntlTransformOptions = Readonly<{
   generatedDirectory?: string;
   root?: string;
@@ -41,6 +43,7 @@ type CurrentCatalog = Readonly<{
   dependencies: ReadonlyArray<string>;
   generatedFacadePath: string;
   messages: ReadonlyMap<string, CatalogMessage>;
+  privateCarrierPath: string;
   provenancePath: string;
   selectedCanonicalDirectory: string;
   selectedDirectory: string;
@@ -71,6 +74,7 @@ type Replacement =
   | Readonly<{ kind: "parse"; namespace: string; registry: string }>;
 
 type GeneratedFacadeImportNames = Readonly<{
+  facadeModules: ReadonlySet<string>;
   keyFactories: ReadonlySet<string>;
   keyParsers: ReadonlySet<string>;
 }>;
@@ -391,6 +395,26 @@ async function loadCurrentCatalog(
         "Generated catalog provenance",
         "selected catalog directory"
       ),
+      assertConfinedRegularFile(
+        selectedCanonicalDirectory,
+        cached.catalog.privateCarrierPath,
+        "Generated private carrier",
+        "selected catalog directory"
+      ),
+      ...[
+        ...new Set(
+          [...cached.catalog.messages.values()].map(
+            ({ descriptorModule }) => descriptorModule
+          )
+        ),
+      ].map((module) =>
+        assertConfinedRegularFile(
+          selectedCanonicalDirectory,
+          module,
+          "Generated private message module",
+          "selected catalog directory"
+        )
+      ),
     ]);
     assertGeneratedFacadeSelector(
       generatedFacadeSource,
@@ -424,6 +448,7 @@ async function loadCurrentCatalog(
   );
   const contractPath = resolve(selected, "catalog.contract.gen.json");
   const generatedFacadePath = resolve(generatedRoot, "index.ts");
+  const privateCarrierPath = resolve(selected, "catalog.manifest.gen.mjs");
   const provenancePath = resolve(selected, "catalog.provenance.gen.json");
   const [contractSource, generatedFacadeSource, provenanceSource] =
     await Promise.all([
@@ -443,6 +468,12 @@ async function loadCurrentCatalog(
         selectedCanonicalDirectory,
         provenancePath,
         "Generated catalog provenance",
+        "selected catalog directory"
+      ),
+      assertConfinedRegularFile(
+        selectedCanonicalDirectory,
+        privateCarrierPath,
+        "Generated private carrier",
         "selected catalog directory"
       ),
     ]);
@@ -477,6 +508,7 @@ async function loadCurrentCatalog(
     ],
     generatedFacadePath: await realpath(generatedFacadePath),
     messages,
+    privateCarrierPath,
     provenancePath,
     selectedCanonicalDirectory,
     selectedDirectory: selected,
@@ -560,30 +592,29 @@ async function generatedFacadeImportNames(
   );
   const keyFactories = new Set<string>();
   const keyParsers = new Set<string>();
+  const facadeModules = new Set<string>();
   for (const statement of sourceFile.statements) {
     if (
       !ts.isImportDeclaration(statement) ||
       !statement.importClause ||
-      statement.importClause.isTypeOnly ||
       !ts.isStringLiteral(statement.moduleSpecifier) ||
       !statement.importClause.namedBindings ||
       !ts.isNamedImports(statement.importClause.namedBindings)
     ) {
       continue;
     }
-    const keyImports = statement.importClause.namedBindings.elements.filter(
+    const facadeImports = statement.importClause.namedBindings.elements.filter(
       (specifier) => {
-        if (specifier.isTypeOnly) {
-          return false;
-        }
         const importedName = (specifier.propertyName ?? specifier.name).text;
         return (
           importedName === "createTranslationKey" ||
-          importedName === "parseTranslationKey"
+          importedName === "parseTranslationKey" ||
+          importedName === "TranslationKey" ||
+          importedName === "TranslationNamespace"
         );
       }
     );
-    if (keyImports.length === 0) {
+    if (facadeImports.length === 0) {
       continue;
     }
     const resolution = ts.resolveModuleName(
@@ -605,19 +636,26 @@ async function generatedFacadeImportNames(
       const { character, line } =
         sourceFile.getLineAndCharacterOfPosition(start);
       throw new Error(
-        `${id}:${line + 1}:${character + 1}: Translation key helpers must be imported directly from the configured generated facade`
+        `${id}:${line + 1}:${character + 1}: Translation key helpers and aliases must be imported directly from the configured generated facade`
       );
     }
-    for (const specifier of keyImports) {
+    facadeModules.add(statement.moduleSpecifier.text);
+    if (statement.importClause.isTypeOnly) {
+      continue;
+    }
+    for (const specifier of facadeImports) {
+      if (specifier.isTypeOnly) {
+        continue;
+      }
       const importedName = (specifier.propertyName ?? specifier.name).text;
       if (importedName === "createTranslationKey") {
         keyFactories.add(specifier.name.text);
-      } else {
+      } else if (importedName === "parseTranslationKey") {
         keyParsers.add(specifier.name.text);
       }
     }
   }
-  return { keyFactories, keyParsers };
+  return { facadeModules, keyFactories, keyParsers };
 }
 
 function factoryKind(name: string): FactoryKind | undefined {
@@ -630,20 +668,294 @@ function factoryKind(name: string): FactoryKind | undefined {
   return undefined;
 }
 
+function generatedFacadeTypeModule(catalog: CurrentCatalog): string {
+  const namespaces = new Map<string, Set<string>>();
+  for (const message of catalog.messages.values()) {
+    const parts = message.path.split(".");
+    for (let index = 1; index < parts.length; index += 1) {
+      const namespace = parts.slice(0, index).join(".");
+      const entries = namespaces.get(namespace) ?? new Set<string>();
+      if (message.kind === "text" && !message.hasArguments) {
+        entries.add(parts.slice(index).join("."));
+      }
+      namespaces.set(namespace, entries);
+    }
+  }
+  const entries = [...namespaces.entries()].toSorted(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  const namespaceType =
+    entries.map(([namespace]) => JSON.stringify(namespace)).join(" | ") ||
+    "never";
+  const keyMap = entries
+    .map(([namespace, keys]) => {
+      const keyType =
+        [...keys]
+          .toSorted()
+          .map((key) => JSON.stringify(key))
+          .join(" | ") || "never";
+      return `  readonly ${JSON.stringify(namespace)}: ${keyType};`;
+    })
+    .join("\n");
+  return [
+    `export type { CatalogLocale } from ${JSON.stringify(resolve(catalog.selectedDirectory, "catalog.resources.gen.mjs"))};`,
+    `export { catalogManifest } from ${JSON.stringify(resolve(catalog.selectedDirectory, "catalog.manifest.gen.mjs"))};`,
+    `export type TranslationNamespace = ${namespaceType};`,
+    "type __MiraiIntlTranslationKeys = {",
+    keyMap,
+    "};",
+    "export type TranslationKey<Namespace extends TranslationNamespace> = __MiraiIntlTranslationKeys[Namespace];",
+    "export declare const createTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace) => <const Key extends TranslationKey<Namespace>>(key: Key) => `${Namespace}.${Key}`;",
+    "export declare const parseTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace, input: unknown) => `${Namespace}.${TranslationKey<Namespace>}` | undefined;",
+    "",
+  ].join("\n");
+}
+
+function finiteDependencyModules(
+  sourceFile: ts.SourceFile
+): ReadonlySet<string> {
+  const importedModules = new Map<string, string>();
+  const sourceModules = new Set<string>();
+  const declarations = new Map<string, Array<ts.Node>>();
+  const translatorNames = new Set<string>();
+
+  const addDeclaration = (name: ts.BindingName, declaration: ts.Node): void => {
+    if (ts.isIdentifier(name)) {
+      const entries = declarations.get(name.text) ?? [];
+      entries.push(declaration);
+      declarations.set(name.text, entries);
+      return;
+    }
+    for (const element of name.elements) {
+      if (!ts.isOmittedExpression(element)) {
+        addDeclaration(element.name, element);
+      }
+    }
+  };
+
+  const collect = (node: ts.Node): void => {
+    if (
+      ts.isImportDeclaration(node) &&
+      node.importClause &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      const module = node.moduleSpecifier.text;
+      sourceModules.add(module);
+      if (node.importClause.name) {
+        importedModules.set(node.importClause.name.text, module);
+      }
+      const bindings = node.importClause.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const specifier of bindings.elements) {
+          importedModules.set(specifier.name.text, module);
+        }
+      }
+    } else if (ts.isVariableDeclaration(node)) {
+      addDeclaration(node.name, node);
+      if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          const property = element.propertyName ?? element.name;
+          if (
+            (ts.isIdentifier(property) || ts.isStringLiteral(property)) &&
+            property.text === "t" &&
+            ts.isIdentifier(element.name)
+          ) {
+            translatorNames.add(element.name.text);
+          }
+        }
+      }
+    } else if (ts.isParameter(node)) {
+      addDeclaration(node.name, node);
+    } else if (
+      ts.isTypeAliasDeclaration(node) ||
+      ts.isInterfaceDeclaration(node) ||
+      ts.isEnumDeclaration(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isClassDeclaration(node)
+    ) {
+      if (node.name) {
+        const entries = declarations.get(node.name.text) ?? [];
+        entries.push(node);
+        declarations.set(node.name.text, entries);
+      }
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(sourceFile);
+
+  const modules = new Set<string>();
+  const visitedNodes = new Set<ts.Node>();
+  const visitedNames = new Set<string>();
+
+  const traceName = (name: string): void => {
+    if (name === "React" && sourceModules.has("react")) {
+      modules.add("react");
+    }
+    const imported = importedModules.get(name);
+    if (imported) {
+      modules.add(imported);
+    }
+    if (visitedNames.has(name)) {
+      return;
+    }
+    visitedNames.add(name);
+    for (const declaration of declarations.get(name) ?? []) {
+      traceDeclaration(declaration);
+    }
+  };
+
+  const traceNode = (node: ts.Node): void => {
+    if (visitedNodes.has(node)) {
+      return;
+    }
+    visitedNodes.add(node);
+    if (ts.isIdentifier(node)) {
+      const parent = node.parent;
+      if (
+        (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+        (ts.isPropertyAssignment(parent) && parent.name === node) ||
+        (ts.isPropertySignature(parent) && parent.name === node) ||
+        (ts.isMethodSignature(parent) && parent.name === node)
+      ) {
+        return;
+      }
+      traceName(node.text);
+      return;
+    }
+    ts.forEachChild(node, traceNode);
+  };
+
+  const traceCallbackReceiver = (node: ts.Node): void => {
+    let current: ts.Node | undefined = node;
+    while (current && !ts.isFunctionLike(current)) {
+      current = current.parent;
+    }
+    const call = current?.parent;
+    if (
+      current &&
+      call &&
+      ts.isCallExpression(call) &&
+      call.arguments.includes(current as ts.Expression)
+    ) {
+      const callee = unwrapExpression(call.expression);
+      if (ts.isPropertyAccessExpression(callee)) {
+        traceNode(callee.expression);
+      }
+    }
+  };
+
+  const traceFunctionContext = (parameter: ts.ParameterDeclaration): void => {
+    const functionLike = parameter.parent;
+    if (
+      !ts.isArrowFunction(functionLike) &&
+      !ts.isFunctionExpression(functionLike)
+    ) {
+      return;
+    }
+    const owner = functionLike.parent;
+    if (
+      ts.isVariableDeclaration(owner) &&
+      owner.initializer === functionLike &&
+      owner.type
+    ) {
+      traceNode(owner.type);
+    }
+  };
+
+  function traceDeclaration(declaration: ts.Node): void {
+    if (ts.isVariableDeclaration(declaration)) {
+      if (declaration.type) {
+        traceNode(declaration.type);
+      }
+      if (declaration.initializer) {
+        traceNode(declaration.initializer);
+      }
+      return;
+    }
+    if (ts.isParameter(declaration)) {
+      if (declaration.type) {
+        traceNode(declaration.type);
+      }
+      if (declaration.initializer) {
+        traceNode(declaration.initializer);
+      }
+      traceCallbackReceiver(declaration);
+      traceFunctionContext(declaration);
+      return;
+    }
+    if (ts.isBindingElement(declaration)) {
+      if (declaration.initializer) {
+        traceNode(declaration.initializer);
+      }
+      traceCallbackReceiver(declaration);
+      const container = declaration.parent.parent;
+      if (ts.isVariableDeclaration(container) || ts.isParameter(container)) {
+        traceDeclaration(container);
+      }
+      return;
+    }
+    ts.forEachChild(declaration, traceNode);
+  }
+
+  const collectDynamicDependencies = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && node.arguments[0]) {
+      const callee = unwrapExpression(node.expression);
+      const translatorCall =
+        (ts.isIdentifier(callee) && translatorNames.has(callee.text)) ||
+        (ts.isPropertyAccessExpression(callee) && callee.name.text === "t");
+      if (translatorCall && literalString(node.arguments[0]) === undefined) {
+        traceNode(node.arguments[0]);
+      }
+    }
+    ts.forEachChild(node, collectDynamicDependencies);
+  };
+  collectDynamicDependencies(sourceFile);
+  return modules;
+}
+
 function createProgram(
   source: string,
-  id: string
+  id: string,
+  root: string,
+  catalog: CurrentCatalog,
+  generatedFacadeModules: ReadonlySet<string>
 ): Readonly<{
   checker: ts.TypeChecker;
+  providerBudgetExceeded: string | undefined;
   sourceFile: ts.SourceFile;
 }> {
+  const finiteModules = finiteDependencyModules(
+    ts.createSourceFile(
+      id,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      scriptKindFor(id)
+    )
+  );
+  const resolvesDependencies =
+    generatedFacadeModules.size > 0 || finiteModules.size > 0;
+  const projectOptions = resolvesDependencies
+    ? moduleResolutionOptions(root)
+    : undefined;
+  const configuredAmbientTypes = projectOptions?.types ?? [];
+  const maximumAmbientTypes = 16;
+  if (configuredAmbientTypes.length > maximumAmbientTypes) {
+    throw new Error(
+      `Finite translation key analysis supports at most ${maximumAmbientTypes} configured ambient type packages; received ${configuredAmbientTypes.length}`
+    );
+  }
   const compilerOptions: ts.CompilerOptions = {
+    ...projectOptions,
     allowJs: true,
     jsx: ts.JsxEmit.Preserve,
-    lib: ["lib.es5.d.ts"],
-    noResolve: true,
+    ...(resolvesDependencies ? {} : { lib: ["lib.es5.d.ts"] }),
+    module: ts.ModuleKind.ESNext,
+    moduleResolution:
+      projectOptions?.moduleResolution ?? ts.ModuleResolutionKind.Bundler,
+    noResolve: !resolvesDependencies,
     target: ts.ScriptTarget.Latest,
-    types: [],
+    types: configuredAmbientTypes,
   };
   const sourceFile = ts.createSourceFile(
     id,
@@ -652,19 +964,171 @@ function createProgram(
     true,
     scriptKindFor(id)
   );
+  const generatedFacadeId = resolve(
+    dirname(id),
+    ".mirai-intl-generated-facade.d.ts"
+  );
+  const generatedFacadeSource = resolvesDependencies
+    ? generatedFacadeTypeModule(catalog)
+    : "";
+  const generatedFacadeFile = ts.createSourceFile(
+    generatedFacadeId,
+    generatedFacadeSource,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const canonicalRoot = ts.sys.realpath ? ts.sys.realpath(root) : resolve(root);
+  const maximumProviderFiles = 64;
+  const providerFiles = new Set<string>();
+  const providerRootNames = new Set<string>();
+  let providerBudgetExceeded: string | undefined;
+  const isAllowedProvider = (
+    canonical: string,
+    resolution: ts.ResolvedModuleFull
+  ): boolean => {
+    if (isWithin(canonicalRoot, canonical)) {
+      if (!canonical.includes(`${sep}node_modules${sep}`)) {
+        return true;
+      }
+    }
+    return (
+      resolution.isExternalLibraryImport === true &&
+      /\.d\.[cm]?ts$/u.test(canonical)
+    );
+  };
+  const claimProvider = (canonical: string, moduleName: string): boolean => {
+    if (providerFiles.has(canonical)) {
+      return true;
+    }
+    if (providerFiles.size >= maximumProviderFiles) {
+      providerBudgetExceeded ??= moduleName;
+      return false;
+    }
+    providerFiles.add(canonical);
+    return true;
+  };
+  if (projectOptions) {
+    for (const moduleName of finiteModules) {
+      if (generatedFacadeModules.has(moduleName)) {
+        continue;
+      }
+      const resolution = ts.resolveModuleName(
+        moduleName,
+        id,
+        projectOptions,
+        ts.sys
+      ).resolvedModule;
+      if (!resolution) {
+        continue;
+      }
+      const canonical = ts.sys.realpath
+        ? ts.sys.realpath(resolution.resolvedFileName)
+        : resolve(resolution.resolvedFileName);
+      if (
+        isAllowedProvider(canonical, resolution) &&
+        claimProvider(canonical, moduleName)
+      ) {
+        providerRootNames.add(resolution.resolvedFileName);
+      }
+    }
+  }
   const host = ts.createCompilerHost(compilerOptions, true);
   const fileExists = host.fileExists.bind(host);
   const readHostFile = host.readFile.bind(host);
   const getHostSourceFile = host.getSourceFile.bind(host);
-  host.fileExists = (fileName) => fileName === id || fileExists(fileName);
-  host.readFile = (fileName) =>
-    fileName === id ? source : readHostFile(fileName);
-  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) =>
-    fileName === id
-      ? sourceFile
-      : getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
-  const program = ts.createProgram([id], compilerOptions, host);
-  return { checker: program.getTypeChecker(), sourceFile };
+  host.fileExists = (fileName) =>
+    fileName === id || fileName === generatedFacadeId || fileExists(fileName);
+  host.readFile = (fileName) => {
+    if (fileName === id) {
+      return source;
+    }
+    if (fileName === generatedFacadeId) {
+      return generatedFacadeSource;
+    }
+    return readHostFile(fileName);
+  };
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
+    if (fileName === id) {
+      return sourceFile;
+    }
+    if (fileName === generatedFacadeId) {
+      return generatedFacadeFile;
+    }
+    return getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
+  };
+  if (resolvesDependencies) {
+    if (!projectOptions) {
+      throw new Error("Project module-resolution options are unavailable");
+    }
+    const resolveSelectedModule = (
+      moduleName: string,
+      containingFile: string
+    ): ts.ResolvedModuleFull | undefined => {
+      if (containingFile === id && generatedFacadeModules.has(moduleName)) {
+        return {
+          extension: ts.Extension.Dts,
+          isExternalLibraryImport: false,
+          resolvedFileName: generatedFacadeId,
+        };
+      }
+      const resolution = ts.resolveModuleName(
+        moduleName,
+        containingFile,
+        projectOptions,
+        ts.sys
+      ).resolvedModule;
+      if (!resolution) {
+        return undefined;
+      }
+      const canonical = ts.sys.realpath
+        ? ts.sys.realpath(resolution.resolvedFileName)
+        : resolve(resolution.resolvedFileName);
+      if (isSamePath(canonical, catalog.generatedFacadePath)) {
+        return {
+          extension: ts.Extension.Dts,
+          isExternalLibraryImport: false,
+          resolvedFileName: generatedFacadeId,
+        };
+      }
+      if (containingFile === generatedFacadeId) {
+        return isWithin(catalog.selectedCanonicalDirectory, canonical)
+          ? resolution
+          : undefined;
+      }
+      if (containingFile === id && !finiteModules.has(moduleName)) {
+        return undefined;
+      }
+      if (!isAllowedProvider(canonical, resolution)) {
+        return undefined;
+      }
+      if (!claimProvider(canonical, moduleName)) {
+        return undefined;
+      }
+      return resolution;
+    };
+    host.resolveModuleNameLiterals = (moduleLiterals, containingFile) =>
+      moduleLiterals.map((moduleLiteral) => ({
+        resolvedModule: resolveSelectedModule(
+          moduleLiteral.text,
+          containingFile
+        ),
+      }));
+  }
+  const program = ts.createProgram(
+    [
+      id,
+      ...(generatedFacadeModules.size > 0 ? [generatedFacadeId] : []),
+      ...providerRootNames,
+    ],
+    compilerOptions,
+    host
+  );
+  return {
+    checker: program.getTypeChecker(),
+    providerBudgetExceeded,
+    sourceFile,
+  };
 }
 
 function unwrapExpression(expression: ts.Expression): ts.Expression {
@@ -727,6 +1191,7 @@ function isDeclarationIdentifier(node: ts.Identifier): boolean {
 function analyzeSource(
   source: string,
   id: string,
+  root: string,
   catalog: CurrentCatalog,
   generatedImports: GeneratedFacadeImportNames
 ): Readonly<{
@@ -746,7 +1211,13 @@ function analyzeSource(
   removedNodes: ReadonlySet<string>;
   replacements: ReadonlyMap<string, Replacement>;
 }> {
-  const { checker, sourceFile } = createProgram(source, id);
+  const { checker, providerBudgetExceeded, sourceFile } = createProgram(
+    source,
+    id,
+    root,
+    catalog,
+    generatedImports.facadeModules
+  );
   const factorySymbols = new Map<ts.Symbol, FactoryKind>();
   const objectSymbols = new Map<ts.Symbol, string>();
   const translationKeyFactorySymbols = new Set<ts.Symbol>();
@@ -766,10 +1237,11 @@ function analyzeSource(
   let translationKeyParserHelper: string | undefined;
   const dynamicRegistries = new Map<
     string,
-    Readonly<{
-      entries: ReadonlyArray<Readonly<{ key: string; local: string }>>;
+    {
+      complete: boolean;
+      entries: Map<string, Readonly<{ key: string; local: string }>>;
       local: string;
-    }>
+    }
   >();
 
   const symbolAt = (identifier: ts.Identifier): ts.Symbol | undefined =>
@@ -1228,31 +1700,44 @@ function analyzeSource(
   };
 
   const dynamicRegistry = (
-    namespace: string
+    namespace: string,
+    selectedMessages?: ReadonlyArray<CatalogMessage>
   ): Readonly<{
-    entries: ReadonlyArray<Readonly<{ key: string; local: string }>>;
+    entries: Map<string, Readonly<{ key: string; local: string }>>;
     local: string;
   }> => {
     ensureDynamicHelpers();
     let registry = dynamicRegistries.get(namespace);
     if (!registry) {
-      const prefix = `${namespace}.`;
       registry = {
-        entries: [...catalog.messages.values()]
-          .filter(
-            (message) =>
-              message.path.startsWith(prefix) &&
-              message.kind === "text" &&
-              !message.hasArguments
-          )
-          .map((message) => ({
-            key: message.path,
-            local: uniqueAlias(message),
-          }))
-          .toSorted((left, right) => left.key.localeCompare(right.key)),
+        complete: false,
+        entries: new Map(),
         local: uniqueName("__miraiIntlDynamicTextRegistry"),
       };
       dynamicRegistries.set(namespace, registry);
+    }
+    const messages =
+      selectedMessages ??
+      [...catalog.messages.values()].filter(
+        (message) =>
+          message.path.startsWith(`${namespace}.`) &&
+          message.kind === "text" &&
+          !message.hasArguments
+      );
+    if (selectedMessages === undefined) {
+      registry.complete = true;
+    }
+    if (registry.complete || selectedMessages !== undefined) {
+      for (const message of messages.toSorted((left, right) =>
+        left.path.localeCompare(right.path)
+      )) {
+        if (!registry.entries.has(message.path)) {
+          registry.entries.set(message.path, {
+            key: message.path,
+            local: uniqueAlias(message),
+          });
+        }
+      }
     }
     return registry;
   };
@@ -1260,7 +1745,6 @@ function analyzeSource(
   const finiteStringKeys = (
     expression: ts.Expression
   ): ReadonlyArray<string> | undefined => {
-    const type = checker.getTypeAtLocation(expression);
     const collect = (value: ts.Type): ReadonlyArray<string> | undefined => {
       if ((value.flags & ts.TypeFlags.StringLiteral) !== 0) {
         return [(value as ts.StringLiteralType).value];
@@ -1283,21 +1767,44 @@ function analyzeSource(
       }
       return undefined;
     };
-    return collect(type);
+    const fromType = collect(checker.getTypeAtLocation(expression));
+    if (fromType) {
+      return fromType;
+    }
+    const value = unwrapExpression(expression);
+    if (!ts.isTemplateExpression(value)) {
+      return undefined;
+    }
+    let combinations = [value.head.text];
+    const maximumCombinations = 4096;
+    for (const span of value.templateSpans) {
+      const spanReplacements = finiteStringKeys(span.expression);
+      if (
+        !spanReplacements ||
+        combinations.length * spanReplacements.length > maximumCombinations
+      ) {
+        return undefined;
+      }
+      combinations = combinations.flatMap((prefix) =>
+        spanReplacements.map(
+          (replacement) => `${prefix}${replacement}${span.literal.text}`
+        )
+      );
+    }
+    return [...new Set(combinations)].toSorted();
   };
 
   const validateNamedDynamicKeys = (
     expression: ts.Expression,
     namespace: string
-  ): void => {
-    const type = checker.getTypeAtLocation(expression);
+  ): ReadonlyArray<CatalogMessage> => {
     const keys = finiteStringKeys(expression);
     if (!keys) {
-      if ((type.flags & ts.TypeFlags.Any) !== 0) {
-        // Unresolved imported declarations remain `any` in this deliberately
-        // isolated per-file program. Project typechecking enforces the public
-        // branded-key contract; the runtime registry still fails closed.
-        return;
+      if (providerBudgetExceeded) {
+        return diagnostic(
+          expression,
+          `Finite translation key analysis exceeded the 64-file provider budget while resolving ${providerBudgetExceeded}`
+        );
       }
       return diagnostic(
         expression,
@@ -1305,6 +1812,7 @@ function analyzeSource(
       );
     }
     const prefix = `${namespace}.`;
+    const messages = new Map<string, CatalogMessage>();
     for (const key of keys) {
       const path = key.startsWith(prefix) ? key : `${prefix}${key}`;
       const message =
@@ -1322,7 +1830,11 @@ function analyzeSource(
           `Named translation key ${path} cannot require arguments`
         );
       }
+      messages.set(path, message);
     }
+    return [...messages.values()].toSorted((left, right) =>
+      left.path.localeCompare(right.path)
+    );
   };
 
   const finiteSelectorLiteral = (expression: ts.Expression): ts.Expression => {
@@ -1330,6 +1842,12 @@ function analyzeSource(
       return unwrapExpression(expression);
     }
     const value = unwrapExpression(expression);
+    if (
+      ts.isArrayLiteralExpression(value) ||
+      ts.isObjectLiteralExpression(value)
+    ) {
+      return value;
+    }
     if (ts.isIdentifier(value)) {
       const symbol = symbolAt(value);
       const declaration = symbol
@@ -1593,12 +2111,12 @@ function analyzeSource(
               "Dynamic translation calls require exactly one argument"
             );
           }
-          validateNamedDynamicKeys(
+          const selectedMessages = validateNamedDynamicKeys(
             keyArgument ??
               diagnostic(node, "Dynamic translation calls require a key"),
             target.namespace
           );
-          const registry = dynamicRegistry(target.namespace);
+          const registry = dynamicRegistry(target.namespace, selectedMessages);
           replacements.set(nodeKey(node), {
             kind: "dynamic",
             namespace: target.namespace,
@@ -1713,7 +2231,14 @@ function analyzeSource(
 
   return {
     dynamicHelpers,
-    dynamicRegistries: [...dynamicRegistries.values()],
+    dynamicRegistries: [...dynamicRegistries.entries()]
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(([, registry]) => ({
+        entries: [...registry.entries.values()].toSorted((left, right) =>
+          left.key.localeCompare(right.key)
+        ),
+        local: registry.local,
+      })),
     imports: [...importAliases.values()].toSorted((left, right) => {
       if (left.module === right.module) {
         return 0;
@@ -1738,7 +2263,8 @@ function stripSourceMapComment(code: string): string {
 function transformSource(
   source: string,
   id: string,
-  analysis: ReturnType<typeof analyzeSource>
+  analysis: ReturnType<typeof analyzeSource>,
+  privateCarrierPath: string
 ): Omit<MiraiIntlTransformResult, "dependencies"> {
   const result = ts.transpileModule(source, {
     compilerOptions: {
@@ -1922,7 +2448,7 @@ function transformSource(
               importsByModule.set(imported.module, entries);
             }
             const importDeclarations = [...importsByModule.entries()].map(
-              ([module, imports]) =>
+              ([, imports]) =>
                 factory.createImportDeclaration(
                   undefined,
                   factory.createImportClause(
@@ -1938,7 +2464,12 @@ function transformSource(
                       )
                     )
                   ),
-                  factory.createStringLiteral(moduleSpecifier(id, module))
+                  factory.createStringLiteral(
+                    privateMessageSliceSpecifier(
+                      moduleSpecifier(id, privateCarrierPath),
+                      imports.map(({ descriptor }) => descriptor)
+                    )
+                  )
                 )
             );
             if (analysis.dynamicHelpers) {
@@ -2098,7 +2629,13 @@ export async function transformMiraiIntlSource(
     root,
     catalog.generatedFacadePath
   );
-  const analysis = analyzeSource(source, cleanId, catalog, generatedImports);
+  const analysis = analyzeSource(
+    source,
+    cleanId,
+    root,
+    catalog,
+    generatedImports
+  );
   if (analysis.replacements.size === 0 && analysis.removedNodes.size === 0) {
     return null;
   }
@@ -2112,13 +2649,15 @@ export async function transformMiraiIntlSource(
       )
     )
   );
-  const transformed = transformSource(source, cleanId, analysis);
+  const transformed = transformSource(
+    source,
+    cleanId,
+    analysis,
+    catalog.privateCarrierPath
+  );
   return {
     ...transformed,
-    dependencies: [
-      ...catalog.dependencies,
-      ...analysis.imports.map(({ module }) => module),
-    ].toSorted(),
+    dependencies: [...catalog.dependencies].toSorted(),
   };
 }
 

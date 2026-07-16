@@ -38,9 +38,12 @@ describe("generated artifact verification", () => {
       const expectedFacade = [
         `// @mirai-intl-selector ${JSON.stringify({ contentHash: written.contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
         'import { bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
+        'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
         `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
         `export type { CatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
         `export type { CatalogLocale } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,
+        "export type TranslationNamespace = NamespacePaths<BoundCatalogContract>;",
+        "export type TranslationKey<Namespace extends TranslationNamespace> = ArgumentFreeTextKeysFor<BoundCatalogContract, Namespace>;",
         "export const createTranslationKey = /* @__PURE__ */ bindTranslationKeyFactory<BoundCatalogContract>();",
         "export const parseTranslationKey = /* @__PURE__ */ bindTranslationKeyParser<BoundCatalogContract>();",
         `export { catalogManifest } from "./${relativeDirectory}/catalog.manifest.gen.mjs";`,
