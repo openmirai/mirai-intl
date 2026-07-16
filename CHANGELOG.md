@@ -1,5 +1,17 @@
 # Changelog
 
+# [0.1.0-beta.1](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.0...v0.1.0-beta.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* regenerate fixtures after release version bumps ([0ed0278](https://github.com/openmirai/mirai-intl/commit/0ed027800237abdc8e3bf1167d5a5f57293bbd3a))
+
+
+### Features
+
+* finalize convention-first catalog slicing ([5762931](https://github.com/openmirai/mirai-intl/commit/576293173a16a63ef7308ee04e5b2dcfae71a0d0))
+
 # 0.1.0-beta.0 (2026-07-16)
 
 
