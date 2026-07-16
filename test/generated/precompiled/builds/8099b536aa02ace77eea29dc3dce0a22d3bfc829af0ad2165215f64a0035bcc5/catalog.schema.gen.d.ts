@@ -1,0 +1,9 @@
+import type { RichDescriptor, TextDescriptor, ValueDescriptor } from "@openmirai/intl-abi";
+
+type _L=readonly[number,0]|readonly[number,0,object]|readonly[number,1,object,string]|readonly[number,2,object,unknown];
+type _J<P extends string,K extends string>=P extends ""?K:`${P}.${K}`;
+type _D<X extends _L,P extends string>=X extends readonly[number,0,infer V extends object]?TextDescriptor<V,"catalog-fixture",P>:X extends readonly[number,0]?TextDescriptor<{},"catalog-fixture",P>:X extends readonly[number,1,infer V extends object,infer G extends string]?RichDescriptor<V,G,"catalog-fixture",P>:X extends readonly[number,2,infer V extends object,infer R]?ValueDescriptor<V,R,"catalog-fixture",P>:never;
+type _T<N,P extends string="">={readonly[K in keyof N]:N[K] extends _L?_D<N[K],_J<P,K&string>>:_T<N[K],_J<P,K&string>>};
+type _S={certificate:{verification:[0,2,{  },{ readonly "fields": readonly ({ readonly "label": string; readonly "value": string; })[]; readonly "title": string; }]};editor:{limit:[1,0,{ readonly "count": number; readonly "limit": number; readonly "mode": "none" | "capped"; }]};formatting:{date:[2,0,{ readonly "value": string; }];number:[3,0,{ readonly "value": number; }];ordinal:[4,0,{ readonly "place": number; }];percent:[5,0,{ readonly "ratio": number; }];time:[6,0,{ readonly "value": string; }]};greeting:{morning:[7,0,{ readonly "name": string; }]};payout:{total:[8,0,{ readonly "amount": number; }]};results:{summary:[9,0,{ readonly "count": number; }]};rich:{deactivate:[10,1,{ readonly "name": string; },"medium"];legal:[11,1,{ readonly "name": string; },"legal" | "strong"]};statistics:{passRate:[12,2,{  },number]}};
+
+export type CatalogContract=_T<_S>;
