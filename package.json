@@ -14,7 +14,7 @@
     "benchmark": "tsx benchmarks/run.ts",
     "build": "tsdown",
     "check:generated": "tsx scripts/check-generated.ts",
-    "clean": "rimraf packages/*/dist packages/*/tsconfig.tsbuildinfo coverage .tmp",
+    "clean": "rimraf packages/*/dist packages/*/tsconfig.tsbuildinfo *.tsbuildinfo coverage .tmp",
     "format": "oxfmt --check .",
     "format:fix": "oxfmt --write .",
     "generate:fixtures": "tsx scripts/generate-fixtures.ts",
