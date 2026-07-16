@@ -1,0 +1,90 @@
+import { emptyObjectSchema } from "@openmirai/intl-abi";
+import {
+  compareCanonicalStrings,
+  compileCatalog,
+  emitArtifacts,
+} from "@openmirai/intl-compiler/internal";
+import type {
+  CatalogSource,
+  MessageSource,
+} from "@openmirai/intl-compiler/internal";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const resultSchema = {
+  additionalProperties: false,
+  properties: {
+    äther: { type: "string" },
+    zeta: { type: "string" },
+  },
+  required: ["äther", "zeta"],
+  type: "object",
+} as const;
+
+function valueMessage(path: string): MessageSource {
+  return {
+    kind: "value",
+    path,
+    provenance: `emit-ordering.test.ts:${path}`,
+    resultSchema,
+    translations: {
+      äther: { äther: "a", zeta: "z" },
+      zeta: { äther: "a", zeta: "z" },
+    },
+    valuesSchema: emptyObjectSchema,
+  };
+}
+
+const unicodeSource = {
+  buildId: "unicode-emission-ordering",
+  catalogPackage: "@mirai/intl-catalog-unicode-ordering",
+  id: "unicode-emission-ordering",
+  locales: ["äther", "zeta"],
+  messages: [valueMessage("äther.entry"), valueMessage("zeta.entry")],
+  rendererCapabilityId: "portable-ir-v1",
+  sourceLocale: "zeta",
+} as const satisfies CatalogSource;
+
+function expectBefore(value: string, first: string, second: string): void {
+  expect(value.indexOf(first)).toBeGreaterThanOrEqual(0);
+  expect(value.indexOf(second)).toBeGreaterThanOrEqual(0);
+  expect(value.indexOf(first)).toBeLessThan(value.indexOf(second));
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("deterministic emission ordering", () => {
+  it("emits Unicode keys in UTF-16 code-unit order without host collation", () => {
+    const output = compileCatalog(unicodeSource);
+    const localeCompare = vi
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(() => {
+        throw new Error("Emission must not use host collation");
+      });
+
+    const artifacts = emitArtifacts(output, "precompiled");
+    const module = artifacts["catalog.descriptors.gen.mjs"];
+    const declaration = artifacts["catalog.schema.gen.d.ts"];
+
+    expect(localeCompare).not.toHaveBeenCalled();
+    expectBefore(module, '"zeta": () =>', '"äther": () =>');
+    expectBefore(
+      module,
+      '"zeta": namespace_zeta',
+      '"äther": namespace__ue4_ther'
+    );
+    expectBefore(
+      declaration,
+      'readonly "zeta": string',
+      'readonly "äther": string'
+    );
+  });
+
+  it("uses deterministic Unicode ordering for generated contract inputs", () => {
+    expect(["äther", "zeta"].toSorted(compareCanonicalStrings)).toStrictEqual([
+      "zeta",
+      "äther",
+    ]);
+  });
+});

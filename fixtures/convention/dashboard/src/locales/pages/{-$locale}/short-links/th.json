@@ -1,0 +1,10 @@
+{
+  "description": "จัดการ <strong>{name}</strong>",
+  "mode": "{mode, select, active {ใช้งาน} other {ทั้งหมด}}",
+  "owner": "เจ้าของ {name}",
+  "page": {
+    "resultsCount": "{count, plural, other {# รายการ}}"
+  },
+  "resultCount": "{count, plural, other {# ลิงก์}}",
+  "title": "ลิงก์สั้น"
+}

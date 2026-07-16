@@ -1,0 +1,2602 @@
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { arch, cpus, platform, release, totalmem } from "node:os";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  brotliCompressSync,
+  constants as zlibConstants,
+  gzipSync,
+} from "node:zlib";
+
+import { validateSchemaValue } from "@openmirai/intl-abi";
+import type {
+  RuntimeCatalog,
+  RuntimeMessage,
+  TextDescriptor,
+} from "@openmirai/intl-abi";
+import {
+  compileCatalog,
+  emitArtifacts,
+  writeArtifactSet,
+} from "@openmirai/intl-compiler";
+import type { DescriptorRepresentation } from "@openmirai/intl-compiler";
+import {
+  createIntlRuntime,
+  createPrecompiledBackend,
+  createTFunctionBridgeBackend,
+  getPrecompiledRenderer,
+} from "@openmirai/intl-runtime";
+import type {
+  RendererBackend,
+  StrictIntlRuntime,
+} from "@openmirai/intl-runtime";
+import ICU from "i18next-icu";
+
+import {
+  fiveFieldCatalogSource,
+  fiveFieldValues,
+  fiveFieldValuesSchema,
+  treeShakingCatalogSource,
+  unusedNamespaceSentinel,
+  unusedNamespaceSentinelMarker,
+} from "./fixtures/catalog";
+import type { FiveFieldValues } from "./fixtures/catalog";
+import { catalogFixtureSource } from "../test/fixtures/catalog";
+
+interface CommandResult {
+  code: number | null;
+  error: string | null;
+  signal: NodeJS.Signals | null;
+  stderr: string;
+  stdout: string;
+  timedOut: boolean;
+}
+
+interface ByteSizes {
+  brotliBytes: number;
+  gzipBytes: number;
+  rawBytes: number;
+}
+
+interface Distribution {
+  iterationsPerSample: number;
+  madMicroseconds: number;
+  medianMicroseconds: number;
+  p95Microseconds: number;
+  samples: number;
+}
+
+interface MemoryEvidence {
+  after: Readonly<{ heapUsedBytes: number; rssBytes: number }>;
+  before: Readonly<{ heapUsedBytes: number; rssBytes: number }>;
+  delta: Readonly<{
+    heapUsedBytes: number;
+    heapUsedBytesPerCall: number;
+    rssBytes: number;
+    rssBytesPerCall: number;
+  }>;
+  gcInvokedAfter: boolean;
+  gcInvokedBefore: boolean;
+  globalGcAvailable: boolean;
+  iterations: number;
+  note: string;
+}
+
+interface RepresentationEntryRuntime {
+  accessPlusStrictRender: Distribution;
+  descriptorAccess: Distribution;
+  descriptorIdentityStable: boolean;
+  dispatchPath: string;
+  entryMode: RuntimeDescriptorEntryMode;
+  expectedOutput: string;
+  generatedCallable?: Readonly<{
+    accessPlusCall: Distribution;
+    stable: Distribution;
+  }>;
+  hasCompilerEmittedRenderer: boolean;
+  memory: MemoryEvidence;
+  stableDescriptorStrictRender: Distribution;
+}
+
+interface RepresentationRuntimeCandidate {
+  available: true;
+  backendSpecificPrecompiledProof: Readonly<{
+    normalizedLocalePayloadRemoved: true;
+    results: ReadonlyArray<
+      Readonly<{
+        entryMode: RuntimeDescriptorEntryMode;
+        error: string | null;
+        expectedOutput: string;
+        output: string | null;
+        passed: boolean;
+      }>
+    >;
+  }>;
+  contentHash: string;
+  currentRendererCapabilityId: string;
+  entryModes: ReadonlyArray<RepresentationEntryRuntime>;
+  moduleInitialization: Readonly<{
+    firstImportMicroseconds: number;
+    reevaluation: Distribution;
+    scope: string;
+  }>;
+  representation: DescriptorRepresentation;
+  runtimeInitialization: Distribution;
+  supportsBackendSpecificPrecompiled: boolean;
+}
+
+interface GeneratedPointer {
+  contentHash: string;
+  directory: string;
+}
+
+interface ViteManifestEntry {
+  assets?: ReadonlyArray<string>;
+  css?: ReadonlyArray<string>;
+  dynamicImports?: ReadonlyArray<string>;
+  file: string;
+  imports?: ReadonlyArray<string>;
+  isEntry?: boolean;
+}
+
+interface BundleContents {
+  entryReachableTotal: ByteSizes;
+  files: ReadonlyArray<
+    Readonly<{
+      containsSentinelMarker: boolean;
+      containsSentinelPayload: boolean;
+      path: string;
+      sizes: ByteSizes;
+    }>
+  >;
+  sentinelMarkerFiles: ReadonlyArray<string>;
+  sentinelPayloadFiles: ReadonlyArray<string>;
+}
+
+interface SuccessfulBundleMeasurement {
+  build: Readonly<{ ok: true }>;
+  bundle: BundleContents;
+  candidate: string;
+  entryMode: DescriptorEntryMode;
+  eligibility: Readonly<{
+    eligible: boolean | null;
+    reason: string;
+  }>;
+  entryPoints: ReadonlyArray<string>;
+  sentinel: Readonly<{
+    byteLength: number;
+    files: ReadonlyArray<string>;
+    found: boolean;
+    payloadFiles: ReadonlyArray<string>;
+    sha256: string;
+  }>;
+  traversal: string;
+}
+
+interface FailedBundleMeasurement {
+  build: Readonly<{
+    error: string;
+    ok: false;
+  }>;
+  bundle: null;
+  candidate: string;
+  entryMode: DescriptorEntryMode;
+  eligibility: Readonly<{
+    eligible: false;
+    reason: "build-failed" | "manifest-traversal-failed";
+  }>;
+  entryPoints: ReadonlyArray<string>;
+  sentinel: Readonly<{
+    byteLength: number;
+    files: ReadonlyArray<string>;
+    found: null;
+    payloadFiles: ReadonlyArray<string>;
+    sha256: string;
+  }>;
+  traversal: string;
+}
+
+type BundleMeasurement = FailedBundleMeasurement | SuccessfulBundleMeasurement;
+
+type DescriptorEntryMode = "baseline" | "catalog-tree" | "named-export";
+type RuntimeDescriptorEntryMode = Exclude<DescriptorEntryMode, "baseline">;
+
+interface BuildProjectOptions {
+  candidate: "baseline" | DescriptorRepresentation;
+  catalogPackage: DescriptorModuleFixture | null;
+  entryMode: DescriptorEntryMode;
+  projectDirectory: string;
+}
+
+interface DescriptorModuleFixture {
+  declaration: string;
+  descriptorModule: string;
+  fullCatalog: string;
+  namedDescriptorExport: string | null;
+  namedRuntimeMessageExport: string | null;
+  packageName: string;
+  provenance: string;
+  representation: DescriptorRepresentation;
+}
+
+interface RuntimeCandidate {
+  createBackend: () => RendererBackend;
+  implementation: string;
+  name: "precompiled-v1" | "tfunction-bridge-v1";
+}
+
+interface BenchmarkI18n {
+  readonly isInitialized: boolean;
+  exists: (key: string, options?: Readonly<Record<string, unknown>>) => boolean;
+  init: (options: Readonly<Record<string, unknown>>) => Promise<unknown>;
+  t: (key: string, options?: Readonly<Record<string, unknown>>) => unknown;
+  use: (plugin: unknown) => BenchmarkI18n;
+}
+
+const root = resolve(import.meta.dirname, "..");
+const outputDirectory = resolve(root, ".tmp", "benchmarks");
+const workDirectory = resolve(outputDirectory, "work");
+const representationArtifactsRoot = resolve(
+  workDirectory,
+  "representation-artifacts"
+);
+const outputPath = resolve(outputDirectory, "catalog-benchmarks.json");
+const descriptorRepresentations = [
+  "constants",
+  "proxy",
+  "precompiled",
+] as const satisfies ReadonlyArray<DescriptorRepresentation>;
+const generatedFileNames = [
+  "catalog.descriptors.gen.mjs",
+  "catalog.provenance.gen.json",
+  "catalog.runtime.gen.json",
+  "catalog.schema.gen.d.ts",
+] as const;
+const sentinelBytes = Buffer.from(unusedNamespaceSentinel);
+const sentinelMarkerBytes = Buffer.from(unusedNamespaceSentinelMarker);
+const sentinelSha256 = createHash("sha256").update(sentinelBytes).digest("hex");
+const commandOutputLimit = 64 * 1024;
+
+let benchmarkBlackhole: unknown;
+let moduleImportCounter = 0;
+
+function appendOutput(current: string, chunk: string): string {
+  if (current.length >= commandOutputLimit) {
+    return current;
+  }
+  return `${current}${chunk}`.slice(0, commandOutputLimit);
+}
+
+function runCommand(
+  command: string,
+  arguments_: ReadonlyArray<string>,
+  cwd: string,
+  timeoutMilliseconds: number
+): Promise<CommandResult> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(command, arguments_, {
+      cwd,
+      env: {
+        ...process.env,
+        CI: "1",
+        NEXT_TELEMETRY_DISABLED: "1",
+        NODE_ENV: "production",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let spawnError: string | null = null;
+    let timedOut = false;
+    let settled = false;
+
+    const settle = (
+      code: number | null,
+      signal: NodeJS.Signals | null
+    ): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      resolvePromise({
+        code,
+        error: spawnError,
+        signal,
+        stderr,
+        stdout,
+        timedOut,
+      });
+    };
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout = appendOutput(stdout, chunk);
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr = appendOutput(stderr, chunk);
+    });
+    child.on("error", (error) => {
+      spawnError = error.message;
+      settle(null, null);
+    });
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMilliseconds);
+
+    child.on("close", (code, signal) => {
+      settle(code, signal);
+    });
+    child.on("exit", (code, signal) => {
+      settle(code, signal);
+    });
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new TypeError(`${label} must be a string`);
+  }
+  return value;
+}
+
+function stringArray(value: unknown): ReadonlyArray<string> {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+async function readJson(path: string): Promise<unknown> {
+  return JSON.parse(await readFile(path, "utf8")) as unknown;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writeText(path: string, contents: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, contents, "utf8");
+}
+
+function conciseCommandFailure(result: CommandResult): string {
+  const details = [
+    result.timedOut ? "command timed out" : "",
+    result.error ?? "",
+    result.stderr.trim(),
+    result.stdout.trim(),
+    result.signal ? `signal ${result.signal}` : "",
+    result.code === null ? "" : `exit ${result.code}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return details.slice(0, 8000);
+}
+
+function byteSizes(contents: Buffer): ByteSizes {
+  return {
+    brotliBytes: brotliCompressSync(contents, {
+      params: {
+        [zlibConstants.BROTLI_PARAM_QUALITY]: 11,
+      },
+    }).byteLength,
+    gzipBytes: gzipSync(contents, { level: 9 }).byteLength,
+    rawBytes: contents.byteLength,
+  };
+}
+
+function sumByteSizes(values: ReadonlyArray<ByteSizes>): ByteSizes {
+  return values.reduce(
+    (total, value) => ({
+      brotliBytes: total.brotliBytes + value.brotliBytes,
+      gzipBytes: total.gzipBytes + value.gzipBytes,
+      rawBytes: total.rawBytes + value.rawBytes,
+    }),
+    { brotliBytes: 0, gzipBytes: 0, rawBytes: 0 }
+  );
+}
+
+function roundMicroseconds(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function median(sorted: ReadonlyArray<number>): number {
+  if (sorted.length === 0) {
+    throw new Error("A distribution requires at least one sample");
+  }
+  const middle = Math.floor(sorted.length / 2);
+  const upper = sorted[middle];
+  if (upper === undefined) {
+    throw new Error("Distribution median is unavailable");
+  }
+  if (sorted.length % 2 === 1) {
+    return upper;
+  }
+  const lower = sorted[middle - 1];
+  if (lower === undefined) {
+    throw new Error("Distribution lower median is unavailable");
+  }
+  return (lower + upper) / 2;
+}
+
+function distribution(
+  values: ReadonlyArray<number>,
+  iterationsPerSample: number
+): Distribution {
+  const sorted = values.toSorted((left, right) => left - right);
+  const medianValue = median(sorted);
+  const deviations = sorted
+    .map((value) => Math.abs(value - medianValue))
+    .toSorted((left, right) => left - right);
+  const p95Index = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
+  const p95Value = sorted[p95Index];
+  if (p95Value === undefined) {
+    throw new Error("Distribution p95 is unavailable");
+  }
+  return {
+    iterationsPerSample,
+    madMicroseconds: roundMicroseconds(median(deviations)),
+    medianMicroseconds: roundMicroseconds(medianValue),
+    p95Microseconds: roundMicroseconds(p95Value),
+    samples: values.length,
+  };
+}
+
+function measureDistribution(
+  action: () => unknown,
+  options: Readonly<{
+    iterationsPerSample: number;
+    samples: number;
+    warmupIterations: number;
+  }>
+): Distribution {
+  for (let index = 0; index < options.warmupIterations; index += 1) {
+    benchmarkBlackhole = action();
+  }
+
+  const values: Array<number> = [];
+  for (let sample = 0; sample < options.samples; sample += 1) {
+    const start = process.hrtime.bigint();
+    for (
+      let iteration = 0;
+      iteration < options.iterationsPerSample;
+      iteration += 1
+    ) {
+      benchmarkBlackhole = action();
+    }
+    const elapsedNanoseconds = Number(process.hrtime.bigint() - start);
+    values.push(elapsedNanoseconds / options.iterationsPerSample / 1000);
+  }
+  return distribution(values, options.iterationsPerSample);
+}
+
+async function measureAsyncDistribution(
+  action: () => Promise<unknown>,
+  options: Readonly<{ samples: number; warmupIterations: number }>
+): Promise<Distribution> {
+  for (let index = 0; index < options.warmupIterations; index += 1) {
+    benchmarkBlackhole = await action();
+  }
+  const values: Array<number> = [];
+  for (let sample = 0; sample < options.samples; sample += 1) {
+    const start = process.hrtime.bigint();
+    benchmarkBlackhole = await action();
+    values.push(Number(process.hrtime.bigint() - start) / 1000);
+  }
+  return distribution(values, 1);
+}
+
+function requireBenchmarkI18n(value: unknown): BenchmarkI18n {
+  const instance = requireRecord(value, "i18next instance");
+  const exists = instance.exists;
+  const init = instance.init;
+  const t = instance.t;
+  const use = instance.use;
+  if (
+    typeof exists !== "function" ||
+    typeof init !== "function" ||
+    typeof t !== "function" ||
+    typeof use !== "function"
+  ) {
+    throw new TypeError("i18next instance is missing init, t, or use");
+  }
+  const adapter: BenchmarkI18n = {
+    get isInitialized() {
+      return instance.isInitialized === true;
+    },
+    exists(key, options) {
+      return Reflect.apply(exists, instance, [key, options]) === true;
+    },
+    init(options) {
+      return Promise.resolve(Reflect.apply(init, instance, [options]));
+    },
+    t(key, options) {
+      return Reflect.apply(t, instance, [key, options]);
+    },
+    use(plugin) {
+      Reflect.apply(use, instance, [plugin]);
+      return adapter;
+    },
+  };
+  return adapter;
+}
+
+async function createBenchmarkI18n(): Promise<BenchmarkI18n> {
+  const requireFromRuntime = createRequire(
+    resolve(root, "packages", "runtime", "package.json")
+  );
+  const module = requireRecord(
+    await import(pathToFileURL(requireFromRuntime.resolve("i18next")).href),
+    "i18next module"
+  );
+  const defaultExport = isRecord(module.default) ? module.default : undefined;
+  const createInstance = module.createInstance ?? defaultExport?.createInstance;
+  if (typeof createInstance !== "function") {
+    throw new TypeError("i18next createInstance export is unavailable");
+  }
+  const instance = requireBenchmarkI18n(
+    Reflect.apply(createInstance, module, [])
+  );
+  const translations: Record<string, Record<string, string>> = {};
+  for (const message of fiveFieldCatalogSource.messages) {
+    for (const [locale, source] of Object.entries(message.translations)) {
+      if (typeof source === "string") {
+        const translation = translations[locale] ?? {};
+        translation[message.path] = source;
+        translations[locale] = translation;
+      }
+    }
+  }
+  const resources = Object.fromEntries(
+    Object.entries(translations).map(([locale, translation]) => [
+      locale,
+      { translation },
+    ])
+  );
+  instance.use(
+    new ICU({
+      escapeVariables: false,
+      parseErrorHandler(error) {
+        throw error;
+      },
+    })
+  );
+  await instance.init({
+    defaultNS: "translation",
+    fallbackLng: false,
+    interpolation: { escapeValue: false },
+    keySeparator: false,
+    lng: "en",
+    resources,
+    supportedLngs: [...fiveFieldCatalogSource.locales],
+  });
+  if (!instance.isInitialized) {
+    throw new Error("Benchmark i18next instance did not initialize");
+  }
+  return instance;
+}
+
+function createBenchmarkBridgeBackend(i18n: BenchmarkI18n): RendererBackend {
+  return createTFunctionBridgeBackend(
+    (key, options = {}) => i18n.t(key, { ...options }),
+    {
+      resourceExists: (key, locale) => i18n.exists(key, { lng: locale }),
+    }
+  );
+}
+
+function invokeOptionalGc(): boolean {
+  const gc = Reflect.get(globalThis, "gc");
+  if (typeof gc !== "function") {
+    return false;
+  }
+  Reflect.apply(gc, globalThis, []);
+  return true;
+}
+
+function memoryEvidence(
+  action: () => unknown,
+  iterations: number
+): MemoryEvidence {
+  const gcInvokedBefore = invokeOptionalGc();
+  const before = process.memoryUsage();
+  for (let index = 0; index < iterations; index += 1) {
+    benchmarkBlackhole = action();
+  }
+  const gcInvokedAfter = invokeOptionalGc();
+  const after = process.memoryUsage();
+  const heapUsedDeltaBytes = after.heapUsed - before.heapUsed;
+  const rssDeltaBytes = after.rss - before.rss;
+  return {
+    after: { heapUsedBytes: after.heapUsed, rssBytes: after.rss },
+    before: { heapUsedBytes: before.heapUsed, rssBytes: before.rss },
+    delta: {
+      heapUsedBytes: heapUsedDeltaBytes,
+      heapUsedBytesPerCall: roundMicroseconds(heapUsedDeltaBytes / iterations),
+      rssBytes: rssDeltaBytes,
+      rssBytesPerCall: roundMicroseconds(rssDeltaBytes / iterations),
+    },
+    globalGcAvailable: gcInvokedBefore || gcInvokedAfter,
+    gcInvokedAfter,
+    gcInvokedBefore,
+    iterations,
+    note:
+      gcInvokedBefore && gcInvokedAfter
+        ? "retained-memory delta after explicit GC"
+        : "observed process delta without explicit GC; includes allocator and GC noise",
+  };
+}
+
+async function runtimeBenchmarks() {
+  const compiled = compileCatalog(fiveFieldCatalogSource);
+  const descriptor = compiled.descriptors[0];
+  const message = compiled.catalog.messages[0];
+  if (!descriptor || descriptor.kind !== "text" || !message) {
+    throw new Error("Five-field benchmark fixture did not compile as text");
+  }
+  const textDescriptor = descriptor as TextDescriptor<FiveFieldValues>;
+  const expected = "Mali:7:apac:active:P0-42";
+  const bridgeI18n = await createBenchmarkI18n();
+  const candidates = [
+    {
+      createBackend: createPrecompiledBackend,
+      implementation: "createPrecompiledBackend normalized-IR renderer",
+      name: "precompiled-v1",
+    },
+    {
+      createBackend: () => createBenchmarkBridgeBackend(bridgeI18n),
+      implementation:
+        "initialized i18next 26.3.6 plus i18next-icu 2.4.4 TFunction",
+      name: "tfunction-bridge-v1",
+    },
+  ] as const satisfies ReadonlyArray<RuntimeCandidate>;
+
+  const createRuntime = (candidate: RuntimeCandidate): StrictIntlRuntime =>
+    createIntlRuntime({
+      backend: candidate.createBackend(),
+      catalog: compiled.catalog,
+      locale: "en",
+    });
+
+  const candidateResults = candidates.map((candidate) => {
+    try {
+      const hotRuntime = createRuntime(candidate);
+      const rendered = hotRuntime.t(textDescriptor, fiveFieldValues);
+      if (rendered !== expected) {
+        throw new Error(
+          `${candidate.name} returned ${JSON.stringify(rendered)}`
+        );
+      }
+      return {
+        available: true as const,
+        coldEndToEnd: measureDistribution(
+          () => createRuntime(candidate).t(textDescriptor, fiveFieldValues),
+          {
+            iterationsPerSample: 1,
+            samples: 200,
+            warmupIterations: 20,
+          }
+        ),
+        expectedOutput: expected,
+        hotEndToEnd: measureDistribution(
+          () => hotRuntime.t(textDescriptor, fiveFieldValues),
+          {
+            iterationsPerSample: 25,
+            samples: 1000,
+            warmupIterations: 500,
+          }
+        ),
+        memory: memoryEvidence(
+          () => hotRuntime.t(textDescriptor, fiveFieldValues),
+          50_000
+        ),
+        implementation: candidate.implementation,
+        name: candidate.name,
+      };
+    } catch (error) {
+      return {
+        available: false as const,
+        error: error instanceof Error ? error.message : String(error),
+        implementation: candidate.implementation,
+        name: candidate.name,
+      };
+    }
+  });
+
+  const initialValidation = validateSchemaValue(
+    fiveFieldValuesSchema,
+    fiveFieldValues
+  );
+  if (!initialValidation.ok) {
+    throw new Error(
+      `Five-field validation fixture failed at ${initialValidation.issue.path}`
+    );
+  }
+  const validationCost = measureDistribution(
+    () => {
+      const result = validateSchemaValue(
+        fiveFieldValuesSchema,
+        fiveFieldValues
+      );
+      if (!result.ok) {
+        throw new Error(`Validation failed at ${result.issue.path}`);
+      }
+      return result.value;
+    },
+    {
+      iterationsPerSample: 25,
+      samples: 1200,
+      warmupIterations: 500,
+    }
+  );
+  const precompiled = candidateResults.find(
+    (candidate) => candidate.name === "precompiled-v1"
+  );
+  const precompiledP95 =
+    precompiled?.available === true
+      ? precompiled.hotEndToEnd.p95Microseconds
+      : null;
+  const validationRelativeP95Percent =
+    precompiledP95 === null
+      ? null
+      : roundMicroseconds(
+          (validationCost.p95Microseconds / precompiledP95) * 100
+        );
+
+  return {
+    candidates: candidateResults,
+    fiveFieldValidation: {
+      budgetP95Microseconds: 25,
+      fields: Object.keys(fiveFieldValues).toSorted(),
+      passesPreliminaryBudget: validationCost.p95Microseconds <= 25,
+      relativeToPrecompiledEndToEnd: {
+        budgetPercent: 20,
+        p95Percent: validationRelativeP95Percent,
+        passesPreliminaryBudget:
+          validationRelativeP95Percent !== null &&
+          validationRelativeP95Percent <= 20,
+        precompiledEndToEndP95Microseconds: precompiledP95,
+      },
+      validCall: validationCost,
+    },
+  };
+}
+
+async function installedPackageVersion(packageName: string): Promise<string> {
+  const packageSegments = [...packageName.split("/"), "package.json"];
+  const candidates = [
+    resolve(root, "node_modules", ...packageSegments),
+    resolve(root, "packages", "runtime", "node_modules", ...packageSegments),
+    resolve(root, "packages", "compiler", "node_modules", ...packageSegments),
+  ];
+  const requireFromRoot = createRequire(resolve(root, "package.json"));
+  for (const hostPackage of ["tsx", "vite", "vitest"]) {
+    try {
+      const requireFromHost = createRequire(
+        requireFromRoot.resolve(`${hostPackage}/package.json`)
+      );
+      candidates.push(requireFromHost.resolve(`${packageName}/package.json`));
+    } catch {
+      // The package may be direct or nested under a different host.
+    }
+  }
+  const candidatePresence = await Promise.all(candidates.map(pathExists));
+  const packagePath = candidates[candidatePresence.findIndex(Boolean)];
+  if (!packagePath) {
+    throw new Error(`Installed package ${packageName} is unavailable`);
+  }
+  const packageJson = requireRecord(
+    await readJson(packagePath),
+    `${packageName} package.json`
+  );
+  return requireString(packageJson.version, `${packageName} version`);
+}
+
+async function workspacePackageVersion(packageName: string): Promise<string> {
+  const packageJson = requireRecord(
+    await readJson(resolve(root, "packages", packageName, "package.json")),
+    `${packageName} package.json`
+  );
+  return requireString(packageJson.version, `${packageName} version`);
+}
+
+function pnpmVersionFromEnvironment(): string | undefined {
+  const userAgent = process.env.npm_config_user_agent ?? "";
+  return /(?:^|\s)pnpm\/([^\s]+)/u.exec(userAgent)?.[1];
+}
+
+async function environmentReport() {
+  let pnpmVersion = pnpmVersionFromEnvironment();
+  if (!pnpmVersion) {
+    const pnpmResult = await runCommand(
+      "corepack",
+      ["pnpm", "--version"],
+      root,
+      10_000
+    );
+    if (pnpmResult.code !== 0) {
+      throw new Error(
+        `Unable to read pnpm version:\n${conciseCommandFailure(pnpmResult)}`
+      );
+    }
+    pnpmVersion = pnpmResult.stdout.trim();
+  }
+  const packageNames = [
+    "@formatjs/icu-messageformat-parser",
+    "esbuild",
+    "i18next",
+    "i18next-icu",
+    "intl-messageformat",
+    "next",
+    "react",
+    "react-dom",
+    "tsx",
+    "typescript",
+    "typescript-5-9",
+    "typescript-6",
+    "typescript-7",
+    "vite",
+  ] as const;
+  const packageVersions = Object.fromEntries(
+    await Promise.all(
+      packageNames.map(async (packageName) => [
+        packageName,
+        await installedPackageVersion(packageName),
+      ])
+    )
+  );
+  const cpu = cpus()[0];
+  return {
+    architecture: arch(),
+    cpu: {
+      logicalCores: cpus().length,
+      model: cpu?.model ?? "unknown",
+    },
+    memoryBytes: totalmem(),
+    node: process.version,
+    operatingSystem: {
+      platform: platform(),
+      release: release(),
+    },
+    packages: {
+      ...packageVersions,
+      "@openmirai/intl-abi": await workspacePackageVersion("abi"),
+      "@openmirai/intl-compiler": await workspacePackageVersion("compiler"),
+      "@openmirai/intl-runtime": await workspacePackageVersion("runtime"),
+    },
+    pnpm: pnpmVersion,
+    v8: process.versions.v8,
+  };
+}
+
+async function artifactSizeReport() {
+  return Promise.all(
+    descriptorRepresentations.map(async (representation) => {
+      const generatedRoot = resolve(
+        representationArtifactsRoot,
+        representation
+      );
+      const pointerRecord = requireRecord(
+        await readJson(resolve(generatedRoot, "current.json")),
+        `${representation} current pointer`
+      );
+      const pointer: GeneratedPointer = {
+        contentHash: requireString(
+          pointerRecord.contentHash,
+          `${representation} contentHash`
+        ),
+        directory: requireString(
+          pointerRecord.directory,
+          `${representation} directory`
+        ),
+      };
+      if (
+        !pointer.directory.startsWith("builds/") ||
+        pointer.directory.includes("..")
+      ) {
+        throw new Error(
+          `${representation} current pointer escapes its generated root`
+        );
+      }
+      const buildDirectory = resolve(generatedRoot, pointer.directory);
+      const fileResults = await Promise.all(
+        generatedFileNames.map(async (fileName) => {
+          const contents = await readFile(resolve(buildDirectory, fileName));
+          return {
+            contents,
+            fileName,
+            sizes: byteSizes(contents),
+          };
+        })
+      );
+      return {
+        contentHash: pointer.contentHash,
+        currentDirectory: relative(root, buildDirectory),
+        files: fileResults.map(({ fileName, sizes }) => ({
+          fileName,
+          sizes,
+        })),
+        representation,
+        total: sumByteSizes(fileResults.map(({ sizes }) => sizes)),
+      };
+    })
+  );
+}
+
+interface GreetingValues {
+  name: string;
+}
+
+interface DescriptorAccessor {
+  dispatchPath: string;
+  entryMode: RuntimeDescriptorEntryMode;
+  getDescriptor: () => TextDescriptor<GreetingValues>;
+}
+
+async function generatedArtifactPaths(
+  representation: DescriptorRepresentation
+): Promise<
+  Readonly<{
+    contentHash: string;
+    descriptorModulePath: string;
+    runtimeCatalogPath: string;
+  }>
+> {
+  const generatedRoot = resolve(representationArtifactsRoot, representation);
+  const pointer = requireRecord(
+    await readJson(resolve(generatedRoot, "current.json")),
+    `${representation} generated pointer`
+  );
+  const contentHash = requireString(
+    pointer.contentHash,
+    `${representation} contentHash`
+  );
+  const directory = requireString(
+    pointer.directory,
+    `${representation} directory`
+  );
+  if (!directory.startsWith("builds/") || directory.includes("..")) {
+    throw new Error(`${representation} current pointer escapes generated root`);
+  }
+  const buildDirectory = resolve(generatedRoot, directory);
+  return {
+    contentHash,
+    descriptorModulePath: resolve(
+      buildDirectory,
+      "catalog.descriptors.gen.mjs"
+    ),
+    runtimeCatalogPath: resolve(buildDirectory, "catalog.runtime.gen.json"),
+  };
+}
+
+function requireRuntimeCatalog(value: unknown, label: string): RuntimeCatalog {
+  const catalog = requireRecord(value, label);
+  requireRecord(catalog.manifest, `${label}.manifest`);
+  if (!Array.isArray(catalog.messages)) {
+    throw new TypeError(`${label}.messages must be an array`);
+  }
+  return catalog as RuntimeCatalog;
+}
+
+function requireGreetingDescriptor(
+  value: unknown,
+  label: string
+): TextDescriptor<GreetingValues> {
+  if (
+    value === null ||
+    (typeof value !== "object" && typeof value !== "function") ||
+    Reflect.get(value, "kind") !== "text" ||
+    Reflect.get(value, "path") !== "greeting.morning"
+  ) {
+    throw new TypeError(`${label} must be the greeting.morning descriptor`);
+  }
+  return value as TextDescriptor<GreetingValues>;
+}
+
+function callGeneratedDescriptor(
+  descriptor: unknown,
+  runtime: StrictIntlRuntime,
+  values: GreetingValues
+): unknown {
+  if (typeof descriptor !== "function") {
+    throw new TypeError("Generated descriptor is not callable");
+  }
+  return Reflect.apply(descriptor, undefined, [runtime, values]);
+}
+
+function descriptorAccessors(
+  module: Readonly<Record<string, unknown>>
+): ReadonlyArray<DescriptorAccessor> {
+  const namedDescriptor = requireGreetingDescriptor(
+    module.message_greeting_morning,
+    "message_greeting_morning"
+  );
+  const catalogTree = requireRecord(module.catalogTree, "catalogTree");
+  const greeting = requireRecord(catalogTree.greeting, "catalogTree.greeting");
+  requireGreetingDescriptor(
+    Reflect.get(greeting, "morning"),
+    "catalogTree.greeting.morning"
+  );
+  return [
+    {
+      dispatchPath: "message_greeting_morning import binding",
+      entryMode: "named-export",
+      getDescriptor: () => namedDescriptor,
+    },
+    {
+      dispatchPath: "catalogTree.greeting.morning descriptor leaf",
+      entryMode: "catalog-tree",
+      getDescriptor: () =>
+        Reflect.get(greeting, "morning") as TextDescriptor<GreetingValues>,
+    },
+  ];
+}
+
+function catalogWithoutNormalizedLocalePayload(
+  catalog: RuntimeCatalog
+): RuntimeCatalog {
+  return {
+    manifest: catalog.manifest,
+    messages: catalog.messages.map(
+      (message): RuntimeMessage =>
+        Object.fromEntries(
+          Object.entries(message).filter(
+            ([key]) => key !== "localeNodes" && key !== "localeValues"
+          )
+        ) as RuntimeMessage
+    ),
+  };
+}
+
+async function freshProcessImportMicroseconds(path: string): Promise<number> {
+  const url = pathToFileURL(path).href;
+  const script = [
+    "const start = process.hrtime.bigint();",
+    `await import(${JSON.stringify(url)});`,
+    "process.stdout.write(String(Number(process.hrtime.bigint() - start) / 1000));",
+  ].join("\n");
+  const result = await runCommand(
+    process.execPath,
+    ["--input-type=module", "--eval", script],
+    root,
+    30_000
+  );
+  if (result.code !== 0) {
+    throw new Error(
+      `Fresh generated-module import failed:\n${conciseCommandFailure(result)}`
+    );
+  }
+  const microseconds = Number(result.stdout.trim());
+  if (!Number.isFinite(microseconds)) {
+    throw new TypeError("Fresh generated-module import returned no timing");
+  }
+  return roundMicroseconds(microseconds);
+}
+
+async function importDescriptorModule(
+  path: string,
+  unique: boolean
+): Promise<Record<string, unknown>> {
+  const url = pathToFileURL(path);
+  if (unique) {
+    moduleImportCounter += 1;
+    url.searchParams.set("benchmark", String(moduleImportCounter));
+  }
+  return requireRecord(await import(url.href), "generated descriptor module");
+}
+
+function representationEntryRuntime(
+  accessor: DescriptorAccessor,
+  runtime: StrictIntlRuntime
+): RepresentationEntryRuntime {
+  const values: GreetingValues = { name: "Mali" };
+  const expectedOutput = "Good morning, Mali";
+  const firstDescriptor = accessor.getDescriptor();
+  const secondDescriptor = accessor.getDescriptor();
+  const descriptorIdentityStable = firstDescriptor === secondDescriptor;
+  const hasCompilerEmittedRenderer =
+    getPrecompiledRenderer(firstDescriptor) !== undefined;
+  const rendered = runtime.t(firstDescriptor, values);
+  if (rendered !== expectedOutput) {
+    throw new Error(
+      `${accessor.entryMode} returned ${JSON.stringify(rendered)}`
+    );
+  }
+  const descriptorAccessDistribution = measureDistribution(
+    accessor.getDescriptor,
+    {
+      iterationsPerSample: 100,
+      samples: 500,
+      warmupIterations: 1000,
+    }
+  );
+  const stableDescriptorStrictRender = measureDistribution(
+    () => runtime.t(firstDescriptor, values),
+    {
+      iterationsPerSample: 25,
+      samples: 500,
+      warmupIterations: 500,
+    }
+  );
+  const accessPlusStrictRender = measureDistribution(
+    () => runtime.t(accessor.getDescriptor(), values),
+    {
+      iterationsPerSample: 25,
+      samples: 500,
+      warmupIterations: 500,
+    }
+  );
+  const memory = memoryEvidence(
+    () => runtime.t(accessor.getDescriptor(), values),
+    50_000
+  );
+  const generatedCallable =
+    typeof firstDescriptor === "function"
+      ? {
+          accessPlusCall: measureDistribution(
+            () =>
+              callGeneratedDescriptor(
+                accessor.getDescriptor(),
+                runtime,
+                values
+              ),
+            {
+              iterationsPerSample: 25,
+              samples: 500,
+              warmupIterations: 500,
+            }
+          ),
+          stable: measureDistribution(
+            () => callGeneratedDescriptor(firstDescriptor, runtime, values),
+            {
+              iterationsPerSample: 25,
+              samples: 500,
+              warmupIterations: 500,
+            }
+          ),
+        }
+      : undefined;
+  return {
+    accessPlusStrictRender,
+    descriptorAccess: descriptorAccessDistribution,
+    descriptorIdentityStable,
+    dispatchPath: accessor.dispatchPath,
+    entryMode: accessor.entryMode,
+    expectedOutput,
+    ...(generatedCallable ? { generatedCallable } : {}),
+    hasCompilerEmittedRenderer,
+    memory,
+    stableDescriptorStrictRender,
+  };
+}
+
+async function representationRuntimeCandidate(
+  representation: DescriptorRepresentation
+): Promise<RepresentationRuntimeCandidate> {
+  const paths = await generatedArtifactPaths(representation);
+  const firstImportMicroseconds = await freshProcessImportMicroseconds(
+    paths.descriptorModulePath
+  );
+  const module = await importDescriptorModule(
+    paths.descriptorModulePath,
+    false
+  );
+  const catalog = requireRuntimeCatalog(
+    await readJson(paths.runtimeCatalogPath),
+    `${representation} runtime catalog`
+  );
+  const createRuntime = (runtimeCatalog = catalog): StrictIntlRuntime =>
+    createIntlRuntime({
+      backend: createPrecompiledBackend(),
+      catalog: runtimeCatalog,
+      formatters: {
+        money: {
+          format(value, locale, options) {
+            if (typeof value !== "number") {
+              throw new TypeError("Money value must be numeric");
+            }
+            return `${locale}/${options ?? "default"}/${value}`;
+          },
+          version: "1.0.0",
+        },
+      },
+      locale: "en",
+    });
+  const runtimeInitialization = measureDistribution(createRuntime, {
+    iterationsPerSample: 1,
+    samples: 200,
+    warmupIterations: 20,
+  });
+  const runtime = createRuntime();
+  const accessors = descriptorAccessors(module);
+  const entryModes = accessors.map((accessor) =>
+    representationEntryRuntime(accessor, runtime)
+  );
+  const strippedRuntime = createRuntime(
+    catalogWithoutNormalizedLocalePayload(catalog)
+  );
+  const expectedOutput = "Good morning, Mali";
+  const proofResults = accessors.map((accessor) => {
+    try {
+      const output = strippedRuntime.t(accessor.getDescriptor(), {
+        name: "Mali",
+      });
+      return {
+        entryMode: accessor.entryMode,
+        error: null,
+        expectedOutput,
+        output,
+        passed: output === expectedOutput,
+      };
+    } catch (error) {
+      return {
+        entryMode: accessor.entryMode,
+        error: error instanceof Error ? error.message : String(error),
+        expectedOutput,
+        output: null,
+        passed: false,
+      };
+    }
+  });
+  const reevaluation = await measureAsyncDistribution(
+    () => importDescriptorModule(paths.descriptorModulePath, true),
+    { samples: 30, warmupIterations: 2 }
+  );
+  const supportsBackendSpecificPrecompiled =
+    proofResults.every((result) => result.passed) &&
+    entryModes.every(
+      (entry) =>
+        entry.descriptorIdentityStable &&
+        entry.hasCompilerEmittedRenderer &&
+        entry.generatedCallable !== undefined
+    );
+  return {
+    available: true,
+    backendSpecificPrecompiledProof: {
+      normalizedLocalePayloadRemoved: true,
+      results: proofResults,
+    },
+    contentHash: paths.contentHash,
+    currentRendererCapabilityId: catalog.manifest.rendererCapabilityId,
+    entryModes,
+    moduleInitialization: {
+      firstImportMicroseconds,
+      reevaluation,
+      scope:
+        "first import is timed inside a fresh Node process; reevaluation uses unique-query ESM imports after runtime and memory measurements",
+    },
+    representation,
+    runtimeInitialization,
+    supportsBackendSpecificPrecompiled,
+  };
+}
+
+async function representationRuntimeCandidates(): Promise<
+  ReadonlyArray<RepresentationRuntimeCandidate>
+> {
+  const candidates: Array<RepresentationRuntimeCandidate> = [];
+  for (const representation of descriptorRepresentations) {
+    candidates.push(await representationRuntimeCandidate(representation));
+  }
+  return candidates;
+}
+
+function descriptorModules(): ReadonlyMap<
+  DescriptorRepresentation,
+  DescriptorModuleFixture
+> {
+  const compiled = compileCatalog(treeShakingCatalogSource);
+  const namedDescriptorExport = "message_used_greeting";
+  const namedRuntimeMessageExport = "runtimeMessage_used_greeting";
+  return new Map(
+    descriptorRepresentations.map((representation) => {
+      const artifacts = emitArtifacts(compiled, representation);
+      const descriptorModule = artifacts["catalog.descriptors.gen.mjs"];
+      if (!descriptorModule.includes(unusedNamespaceSentinel)) {
+        throw new Error(
+          `${representation} tree-shaking fixture omitted the sentinel`
+        );
+      }
+      return [
+        representation,
+        {
+          declaration: artifacts["catalog.schema.gen.d.ts"],
+          descriptorModule,
+          fullCatalog: artifacts["catalog.runtime.gen.json"],
+          namedDescriptorExport: descriptorModule.includes(
+            `export const ${namedDescriptorExport} =`
+          )
+            ? namedDescriptorExport
+            : null,
+          namedRuntimeMessageExport: descriptorModule.includes(
+            `export const ${namedRuntimeMessageExport} =`
+          )
+            ? namedRuntimeMessageExport
+            : null,
+          packageName: compiled.catalog.manifest.catalogPackage,
+          provenance: artifacts["catalog.provenance.gen.json"],
+          representation,
+        },
+      ];
+    })
+  );
+}
+
+function catalogPackageRoot(
+  projectDirectory: string,
+  packageName: string
+): string {
+  const parts = packageName.split("/");
+  if (parts.length !== 2 || !parts[0]?.startsWith("@") || !parts[1]) {
+    throw new Error(
+      `Benchmark catalog package name is invalid: ${packageName}`
+    );
+  }
+  return resolve(projectDirectory, "node_modules", ...parts);
+}
+
+async function writeCatalogPackage(
+  projectDirectory: string,
+  fixture: DescriptorModuleFixture
+): Promise<void> {
+  const packageRoot = catalogPackageRoot(projectDirectory, fixture.packageName);
+  const distRoot = resolve(packageRoot, "dist");
+  await mkdir(distRoot, { recursive: true });
+  await Promise.all([
+    writeText(
+      resolve(packageRoot, "package.json"),
+      `${JSON.stringify(
+        {
+          dependencies: {
+            "@openmirai/intl-abi": "0.1.0",
+            "@openmirai/intl-runtime": "0.1.0",
+          },
+          exports: {
+            ".": {
+              import: "./dist/index.mjs",
+              types: "./dist/index.d.mts",
+            },
+            "./catalog": {
+              import: "./dist/catalog.full.mjs",
+              types: "./dist/catalog.full.d.mts",
+            },
+            "./provenance": {
+              import: "./dist/catalog.provenance.mjs",
+              types: "./dist/catalog.provenance.d.mts",
+            },
+          },
+          name: fixture.packageName,
+          sideEffects: false,
+          type: "module",
+          version: "0.0.0-benchmark",
+        },
+        null,
+        2
+      )}\n`
+    ),
+    writeText(
+      resolve(distRoot, "catalog.descriptors.gen.mjs"),
+      fixture.descriptorModule
+    ),
+    writeText(
+      resolve(distRoot, "catalog.full.d.mts"),
+      [
+        'import type { RuntimeCatalog } from "@openmirai/intl-abi";',
+        "",
+        "export declare const catalog: RuntimeCatalog;",
+        "",
+      ].join("\n")
+    ),
+    writeText(
+      resolve(distRoot, "catalog.full.mjs"),
+      `export const catalog = ${fixture.fullCatalog.trim()};\n`
+    ),
+    writeText(
+      resolve(distRoot, "catalog.provenance.d.mts"),
+      [
+        "export declare const provenance: Readonly<{",
+        "  catalogHash: string;",
+        "  entries: readonly unknown[];",
+        "}>;",
+        "",
+      ].join("\n")
+    ),
+    writeText(
+      resolve(distRoot, "catalog.provenance.mjs"),
+      `export const provenance = ${fixture.provenance.trim()};\n`
+    ),
+    writeText(
+      resolve(distRoot, "catalog.provenance.gen.json"),
+      fixture.provenance
+    ),
+    writeText(
+      resolve(distRoot, "catalog.runtime.gen.json"),
+      fixture.fullCatalog
+    ),
+    writeText(
+      resolve(distRoot, "index.d.mts"),
+      [
+        fixture.declaration.trim(),
+        "",
+        'export { catalog } from "./catalog.full.mjs";',
+        "",
+      ].join("\n")
+    ),
+    writeText(
+      resolve(distRoot, "index.mjs"),
+      [
+        'export * from "./catalog.descriptors.gen.mjs";',
+        'export { catalog } from "./catalog.full.mjs";',
+        "",
+      ].join("\n")
+    ),
+  ]);
+}
+
+function clientModuleSource(options: BuildProjectOptions): string {
+  if (options.entryMode === "baseline") {
+    return [
+      'const renderedTranslation = "used";',
+      'if (renderedTranslation !== "used") {',
+      '  throw new Error("Unexpected benchmark translation");',
+      "}",
+      "",
+    ].join("\n");
+  }
+  const fixture = options.catalogPackage;
+  if (!fixture) {
+    throw new Error(`${options.entryMode} requires a catalog package`);
+  }
+  const runtimeImport =
+    'import { createIntlRuntime, createPrecompiledBackend } from "@openmirai/intl-runtime";';
+  if (options.entryMode === "catalog-tree") {
+    return [
+      runtimeImport,
+      `import { catalog, catalogTree } from ${JSON.stringify(fixture.packageName)};`,
+      "",
+      "const intl = createIntlRuntime({",
+      "  backend: createPrecompiledBackend(),",
+      "  catalog,",
+      '  locale: "en",',
+      "});",
+      "const renderedTranslation = intl.t(catalogTree.used.greeting, {});",
+      'if (renderedTranslation !== "used") {',
+      '  throw new Error("Unexpected benchmark translation");',
+      "}",
+      "",
+    ].join("\n");
+  }
+  if (!fixture.namedDescriptorExport || !fixture.namedRuntimeMessageExport) {
+    throw new Error(
+      "Named-export entry requires emitted descriptor and runtime-message exports"
+    );
+  }
+  return [
+    runtimeImport,
+    `import { catalogManifest, ${fixture.namedDescriptorExport}, ${fixture.namedRuntimeMessageExport} } from ${JSON.stringify(fixture.packageName)};`,
+    "",
+    "const selectedMessages = [];",
+    `selectedMessages[${fixture.namedRuntimeMessageExport}.validatorId] = ${fixture.namedRuntimeMessageExport};`,
+    "const selectedCatalog = {",
+    "  manifest: catalogManifest,",
+    "  messages: selectedMessages,",
+    "};",
+    "const intl = createIntlRuntime({",
+    "  backend: createPrecompiledBackend(),",
+    "  catalog: selectedCatalog,",
+    '  locale: "en",',
+    "});",
+    `const renderedTranslation = intl.t(${fixture.namedDescriptorExport}, {});`,
+    'if (renderedTranslation !== "used") {',
+    '  throw new Error("Unexpected benchmark translation");',
+    "}",
+    "",
+  ].join("\n");
+}
+
+async function createViteProject(options: BuildProjectOptions): Promise<void> {
+  await mkdir(resolve(options.projectDirectory, "src"), { recursive: true });
+  await writeText(
+    resolve(options.projectDirectory, "package.json"),
+    `${JSON.stringify(
+      {
+        dependencies: options.catalogPackage
+          ? {
+              "@openmirai/intl-runtime": "0.1.0",
+              [options.catalogPackage.packageName]: "0.0.0-benchmark",
+            }
+          : undefined,
+        name: `catalog-vite-${options.candidate}`,
+        private: true,
+        type: "module",
+      },
+      null,
+      2
+    )}\n`
+  );
+  await writeText(
+    resolve(options.projectDirectory, "vite.config.mts"),
+    [
+      'import { defineConfig } from "vite";',
+      "",
+      "export default defineConfig({",
+      "  build: {",
+      "    manifest: true,",
+      '    minify: "esbuild",',
+      '    outDir: "dist",',
+      '    target: "es2022",',
+      "  },",
+      "});",
+      "",
+    ].join("\n")
+  );
+  await writeText(
+    resolve(options.projectDirectory, "index.html"),
+    [
+      "<!doctype html>",
+      '<html lang="en">',
+      "  <body>",
+      '    <main id="app"></main>',
+      '    <script type="module" src="/src/main.ts"></script>',
+      "  </body>",
+      "</html>",
+      "",
+    ].join("\n")
+  );
+  const clientSource = clientModuleSource(options);
+  const mainSource = [
+    clientSource.trim(),
+    "",
+    'document.querySelector("#app")!.textContent = renderedTranslation;',
+    "",
+  ].join("\n");
+  await writeText(
+    resolve(options.projectDirectory, "src", "main.ts"),
+    mainSource
+  );
+  if (options.catalogPackage) {
+    await writeCatalogPackage(options.projectDirectory, options.catalogPackage);
+  }
+}
+
+async function createNextProject(options: BuildProjectOptions): Promise<void> {
+  await mkdir(resolve(options.projectDirectory, "app"), { recursive: true });
+  await writeText(
+    resolve(options.projectDirectory, "package.json"),
+    `${JSON.stringify(
+      {
+        dependencies: options.catalogPackage
+          ? {
+              "@openmirai/intl-runtime": "0.1.0",
+              [options.catalogPackage.packageName]: "0.0.0-benchmark",
+            }
+          : undefined,
+        name: `catalog-next-${options.candidate}`,
+        private: true,
+        type: "module",
+      },
+      null,
+      2
+    )}\n`
+  );
+  await writeText(
+    resolve(options.projectDirectory, "next.config.mjs"),
+    [
+      "const nextConfig = {",
+      "  reactStrictMode: true,",
+      "  turbopack: {},",
+      "};",
+      "",
+      "export default nextConfig;",
+      "",
+    ].join("\n")
+  );
+  await writeText(
+    resolve(options.projectDirectory, "app", "layout.jsx"),
+    [
+      "export default function RootLayout({ children }) {",
+      '  return <html lang="en"><body>{children}</body></html>;',
+      "}",
+      "",
+    ].join("\n")
+  );
+  await writeText(
+    resolve(options.projectDirectory, "app", "page.jsx"),
+    [
+      'import { CatalogValue } from "./catalog-value";',
+      "",
+      "export default function Page() {",
+      "  return <main><CatalogValue /></main>;",
+      "}",
+      "",
+    ].join("\n")
+  );
+  const clientSource = clientModuleSource(options);
+  const componentSource = [
+    '"use client";',
+    "",
+    clientSource.trim(),
+    "",
+    "export function CatalogValue() {",
+    "  return <output>{renderedTranslation}</output>;",
+    "}",
+    "",
+  ].join("\n");
+  await writeText(
+    resolve(options.projectDirectory, "app", "catalog-value.jsx"),
+    componentSource
+  );
+  if (options.catalogPackage) {
+    await writeCatalogPackage(options.projectDirectory, options.catalogPackage);
+  }
+}
+
+function parseViteManifestEntry(
+  value: unknown,
+  label: string
+): ViteManifestEntry {
+  const entry = requireRecord(value, label);
+  return {
+    assets: stringArray(entry.assets),
+    css: stringArray(entry.css),
+    dynamicImports: stringArray(entry.dynamicImports),
+    file: requireString(entry.file, `${label}.file`),
+    imports: stringArray(entry.imports),
+    isEntry: entry.isEntry === true,
+  };
+}
+
+async function viteReachableFiles(
+  projectDirectory: string
+): Promise<
+  Readonly<{ entryPoints: ReadonlyArray<string>; files: ReadonlyArray<string> }>
+> {
+  const manifestRecord = requireRecord(
+    await readJson(resolve(projectDirectory, "dist", ".vite", "manifest.json")),
+    "Vite manifest"
+  );
+  const manifest = new Map(
+    Object.entries(manifestRecord).map(([key, value]) => [
+      key,
+      parseViteManifestEntry(value, `Vite manifest ${key}`),
+    ])
+  );
+  const entryPoints = [...manifest.entries()]
+    .filter(([, entry]) => entry.isEntry)
+    .map(([key]) => key)
+    .toSorted();
+  if (entryPoints.length === 0) {
+    throw new Error("Vite manifest has no production entry");
+  }
+  const pending = [...entryPoints];
+  const visited = new Set<string>();
+  const files = new Set<string>();
+  while (pending.length > 0) {
+    const key = pending.shift();
+    if (!key || visited.has(key)) {
+      continue;
+    }
+    visited.add(key);
+    const entry = manifest.get(key);
+    if (!entry) {
+      throw new Error(`Vite reachable manifest entry ${key} is missing`);
+    }
+    files.add(entry.file);
+    for (const file of [...(entry.css ?? []), ...(entry.assets ?? [])]) {
+      files.add(file);
+    }
+    for (const dependency of [
+      ...(entry.imports ?? []),
+      ...(entry.dynamicImports ?? []),
+    ]) {
+      pending.push(dependency);
+    }
+  }
+  return {
+    entryPoints,
+    files: [...files].toSorted(),
+  };
+}
+
+function normalizeNextOutputPath(value: string): string | undefined {
+  const normalized = value.replaceAll("\\", "/").replace(/^\/+/, "");
+  if (normalized.startsWith(".next/")) {
+    return normalized.slice(".next/".length);
+  }
+  return normalized.startsWith("static/") ? normalized : undefined;
+}
+
+function nextChunkReferences(contents: string): ReadonlyArray<string> {
+  const references = new Set<string>();
+  for (const match of contents.matchAll(
+    /static\/(?:chunks|css)\/[A-Za-z0-9_./~-]+\.(?:css|js)/gu
+  )) {
+    const path = normalizeNextOutputPath(match[0]);
+    if (path) {
+      references.add(path);
+    }
+  }
+  return [...references].toSorted();
+}
+
+async function nextReachableFiles(
+  projectDirectory: string
+): Promise<
+  Readonly<{ entryPoints: ReadonlyArray<string>; files: ReadonlyArray<string> }>
+> {
+  const nextDirectory = resolve(projectDirectory, ".next");
+  const appPathsManifest = requireRecord(
+    await readJson(resolve(nextDirectory, "server", "app-paths-manifest.json")),
+    "Next app paths manifest"
+  );
+  const pageKey = ["/page", "/page/page", "/"].find(
+    (candidate) => typeof appPathsManifest[candidate] === "string"
+  );
+  if (!pageKey) {
+    throw new Error(
+      `Next app paths manifest has no root page entry: ${Object.keys(appPathsManifest).join(", ")}`
+    );
+  }
+  const routeModule = requireString(
+    appPathsManifest[pageKey],
+    `Next route module ${pageKey}`
+  );
+  const files = new Set<string>();
+  const clientManifestPath = resolve(
+    nextDirectory,
+    "server",
+    `${routeModule.slice(0, -".js".length)}_client-reference-manifest.js`
+  );
+  if (!(await pathExists(clientManifestPath))) {
+    throw new Error(`Next client reference manifest for ${pageKey} is missing`);
+  }
+  for (const path of nextChunkReferences(
+    await readFile(clientManifestPath, "utf8")
+  )) {
+    files.add(path);
+  }
+
+  const buildManifestPath = resolve(nextDirectory, "build-manifest.json");
+  if (await pathExists(buildManifestPath)) {
+    const buildManifest = requireRecord(
+      await readJson(buildManifestPath),
+      "Next build manifest"
+    );
+    for (const file of stringArray(buildManifest.rootMainFiles)) {
+      const normalized = normalizeNextOutputPath(file);
+      if (normalized) {
+        files.add(normalized);
+      }
+    }
+  }
+
+  const pending = [...files];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const file = pending.shift();
+    if (!file || visited.has(file)) {
+      continue;
+    }
+    visited.add(file);
+    const path = resolve(nextDirectory, file);
+    if (!(await pathExists(path))) {
+      throw new Error(`Next entry-reachable chunk ${file} is missing`);
+    }
+    if (!file.endsWith(".js")) {
+      continue;
+    }
+    for (const reference of nextChunkReferences(await readFile(path, "utf8"))) {
+      if (!files.has(reference)) {
+        files.add(reference);
+        pending.push(reference);
+      }
+    }
+  }
+  if (files.size === 0) {
+    throw new Error("Next root page has no entry-reachable client chunks");
+  }
+  return {
+    entryPoints: [pageKey],
+    files: [...files].toSorted(),
+  };
+}
+
+async function bundleContents(
+  buildDirectory: string,
+  files: ReadonlyArray<string>
+): Promise<BundleContents> {
+  const results = await Promise.all(
+    files.map(async (path) => {
+      const contents = await readFile(resolve(buildDirectory, path));
+      return {
+        containsSentinelMarker: contents.includes(sentinelMarkerBytes),
+        containsSentinelPayload: contents.includes(sentinelBytes),
+        contents,
+        path,
+        sizes: byteSizes(contents),
+      };
+    })
+  );
+  return {
+    entryReachableTotal: sumByteSizes(results.map(({ sizes }) => sizes)),
+    files: results.map(
+      ({ containsSentinelMarker, containsSentinelPayload, path, sizes }) => ({
+        containsSentinelMarker,
+        containsSentinelPayload,
+        path,
+        sizes,
+      })
+    ),
+    sentinelMarkerFiles: results
+      .filter(({ containsSentinelMarker }) => containsSentinelMarker)
+      .map(({ path }) => path),
+    sentinelPayloadFiles: results
+      .filter(({ containsSentinelPayload }) => containsSentinelPayload)
+      .map(({ path }) => path),
+  };
+}
+
+function failedBundleMeasurement(
+  options: BuildProjectOptions,
+  reason: FailedBundleMeasurement["eligibility"]["reason"],
+  error: string,
+  traversal: string
+): FailedBundleMeasurement {
+  return {
+    build: { error, ok: false },
+    bundle: null,
+    candidate: options.candidate,
+    entryMode: options.entryMode,
+    eligibility: { eligible: false, reason },
+    entryPoints: [],
+    sentinel: {
+      byteLength: sentinelBytes.byteLength,
+      files: [],
+      found: null,
+      payloadFiles: [],
+      sha256: sentinelSha256,
+    },
+    traversal,
+  };
+}
+
+function treeShakingEligibility(
+  candidate: BuildProjectOptions["candidate"],
+  found: boolean
+) {
+  if (candidate === "baseline") {
+    return found
+      ? {
+          eligible: false,
+          reason: "empty-baseline-sentinel-contamination",
+        }
+      : { eligible: null, reason: "empty-baseline" };
+  }
+  if (found) {
+    return {
+      eligible: false,
+      reason: "unused-namespace-sentinel-retained",
+    } as const;
+  }
+  return {
+    eligible: true,
+    reason: "unused-namespace-sentinel-removed",
+  } as const;
+}
+
+async function measureViteBundle(
+  options: BuildProjectOptions
+): Promise<BundleMeasurement> {
+  await createViteProject(options);
+  const result = await runCommand(
+    resolve(root, "node_modules", ".bin", "vite"),
+    ["build", "--config", "vite.config.mts", "--mode", "production"],
+    options.projectDirectory,
+    60_000
+  );
+  const traversal = "vite-manifest-recursive-imports";
+  if (result.code !== 0) {
+    return failedBundleMeasurement(
+      options,
+      "build-failed",
+      conciseCommandFailure(result),
+      traversal
+    );
+  }
+  try {
+    const reachable = await viteReachableFiles(options.projectDirectory);
+    const bundle = await bundleContents(
+      resolve(options.projectDirectory, "dist"),
+      reachable.files
+    );
+    const found = bundle.sentinelMarkerFiles.length > 0;
+    return {
+      build: { ok: true },
+      bundle,
+      candidate: options.candidate,
+      entryMode: options.entryMode,
+      eligibility: treeShakingEligibility(options.candidate, found),
+      entryPoints: reachable.entryPoints,
+      sentinel: {
+        byteLength: sentinelBytes.byteLength,
+        files: bundle.sentinelMarkerFiles,
+        found,
+        payloadFiles: bundle.sentinelPayloadFiles,
+        sha256: sentinelSha256,
+      },
+      traversal,
+    };
+  } catch (error) {
+    return failedBundleMeasurement(
+      options,
+      "manifest-traversal-failed",
+      error instanceof Error ? error.message : String(error),
+      traversal
+    );
+  }
+}
+
+async function measureNextBundle(
+  options: BuildProjectOptions
+): Promise<BundleMeasurement> {
+  await createNextProject(options);
+  const result = await runCommand(
+    resolve(root, "node_modules", ".bin", "next"),
+    ["build", "--turbopack"],
+    options.projectDirectory,
+    120_000
+  );
+  const traversal =
+    "next-app-paths-plus-route-client-reference-recursive-chunks";
+  if (result.code !== 0) {
+    return failedBundleMeasurement(
+      options,
+      "build-failed",
+      conciseCommandFailure(result),
+      traversal
+    );
+  }
+  try {
+    const reachable = await nextReachableFiles(options.projectDirectory);
+    const bundle = await bundleContents(
+      resolve(options.projectDirectory, ".next"),
+      reachable.files
+    );
+    const found = bundle.sentinelMarkerFiles.length > 0;
+    return {
+      build: { ok: true },
+      bundle,
+      candidate: options.candidate,
+      entryMode: options.entryMode,
+      eligibility: treeShakingEligibility(options.candidate, found),
+      entryPoints: reachable.entryPoints,
+      sentinel: {
+        byteLength: sentinelBytes.byteLength,
+        files: bundle.sentinelMarkerFiles,
+        found,
+        payloadFiles: bundle.sentinelPayloadFiles,
+        sha256: sentinelSha256,
+      },
+      traversal,
+    };
+  } catch (error) {
+    return failedBundleMeasurement(
+      options,
+      "manifest-traversal-failed",
+      error instanceof Error ? error.message : String(error),
+      traversal
+    );
+  }
+}
+
+function withBaselineDelta(
+  baseline: BundleMeasurement,
+  measurement: BundleMeasurement
+) {
+  const delta =
+    baseline.bundle && measurement.bundle
+      ? {
+          brotliBytes:
+            measurement.bundle.entryReachableTotal.brotliBytes -
+            baseline.bundle.entryReachableTotal.brotliBytes,
+          gzipBytes:
+            measurement.bundle.entryReachableTotal.gzipBytes -
+            baseline.bundle.entryReachableTotal.gzipBytes,
+          rawBytes:
+            measurement.bundle.entryReachableTotal.rawBytes -
+            baseline.bundle.entryReachableTotal.rawBytes,
+        }
+      : null;
+  return { ...measurement, deltaFromBaseline: delta };
+}
+
+async function measureBundler(
+  bundler: "next" | "vite",
+  modules: ReadonlyMap<DescriptorRepresentation, DescriptorModuleFixture>
+) {
+  const measure = bundler === "vite" ? measureViteBundle : measureNextBundle;
+  const bundlerWorkDirectory = resolve(workDirectory, bundler);
+  const baseline = await measure({
+    candidate: "baseline",
+    catalogPackage: null,
+    entryMode: "baseline",
+    projectDirectory: resolve(bundlerWorkDirectory, "baseline"),
+  });
+  const candidates: Array<BundleMeasurement> = [];
+  for (const representation of descriptorRepresentations) {
+    const fixture = modules.get(representation);
+    if (!fixture) {
+      throw new Error(`${representation} descriptor module is unavailable`);
+    }
+    const entryModes: ReadonlyArray<DescriptorEntryMode> =
+      fixture.namedDescriptorExport && fixture.namedRuntimeMessageExport
+        ? ["named-export", "catalog-tree"]
+        : ["catalog-tree"];
+    for (const entryMode of entryModes) {
+      candidates.push(
+        await measure({
+          candidate: representation,
+          catalogPackage: fixture,
+          entryMode,
+          projectDirectory: resolve(
+            bundlerWorkDirectory,
+            representation,
+            entryMode
+          ),
+        })
+      );
+    }
+  }
+  return {
+    baseline: withBaselineDelta(baseline, baseline),
+    candidates: candidates.map((candidate) =>
+      withBaselineDelta(baseline, candidate)
+    ),
+  };
+}
+
+async function treeShakingReport(
+  environment: Awaited<ReturnType<typeof environmentReport>>
+) {
+  const modules = descriptorModules();
+  if (sentinelBytes.byteLength < 8 * 1024) {
+    throw new Error("Tree-shaking sentinel is smaller than 8 KiB");
+  }
+  const vite = await measureBundler("vite", modules);
+  const next = await measureBundler("next", modules);
+  return {
+    next: {
+      bundler: "Next.js App Router production Turbopack",
+      version: environment.packages.next,
+      ...next,
+    },
+    sentinel: {
+      byteLength: sentinelBytes.byteLength,
+      marker: unusedNamespaceSentinelMarker,
+      markerByteLength: sentinelMarkerBytes.byteLength,
+      namespace: "unused",
+      payloadSizes: byteSizes(sentinelBytes),
+      sha256: sentinelSha256,
+    },
+    vite: {
+      bundler: "Vite production",
+      version: environment.packages.vite,
+      ...vite,
+    },
+  };
+}
+
+interface NumericComparison {
+  constants: number;
+  proxy: number;
+  proxyMinusConstants: number;
+  proxyRelativeToConstantsPercent: number | null;
+}
+
+function numericComparison(
+  constantsValue: number,
+  proxyValue: number,
+  percentageIsMeaningful = true
+): NumericComparison {
+  return {
+    constants: constantsValue,
+    proxy: proxyValue,
+    proxyMinusConstants: roundMicroseconds(proxyValue - constantsValue),
+    proxyRelativeToConstantsPercent:
+      !percentageIsMeaningful || constantsValue === 0
+        ? null
+        : roundMicroseconds((proxyValue / constantsValue) * 100),
+  };
+}
+
+function practicalLatencyVerdict(
+  comparison: NumericComparison,
+  tiePercent: number
+): "constants" | "proxy" | "tie" {
+  const minimum = Math.min(comparison.constants, comparison.proxy);
+  if (minimum === 0) {
+    if (comparison.constants === comparison.proxy) {
+      return "tie";
+    }
+    return comparison.constants < comparison.proxy ? "constants" : "proxy";
+  }
+  const differencePercent =
+    (Math.abs(comparison.proxy - comparison.constants) / minimum) * 100;
+  if (differencePercent <= tiePercent) {
+    return "tie";
+  }
+  return comparison.constants < comparison.proxy ? "constants" : "proxy";
+}
+
+function requireRepresentationRuntimeCandidate(
+  candidates: ReadonlyArray<RepresentationRuntimeCandidate>,
+  representation: DescriptorRepresentation
+): RepresentationRuntimeCandidate {
+  const candidate = candidates.find(
+    (entry) => entry.representation === representation
+  );
+  if (!candidate) {
+    throw new Error(`Missing ${representation} representation runtime result`);
+  }
+  return candidate;
+}
+
+function requireRepresentationEntry(
+  candidate: RepresentationRuntimeCandidate,
+  entryMode: RuntimeDescriptorEntryMode
+): RepresentationEntryRuntime {
+  const entry = candidate.entryModes.find(
+    (measurement) => measurement.entryMode === entryMode
+  );
+  if (!entry) {
+    throw new Error(
+      `${candidate.representation} omits ${entryMode} runtime evidence`
+    );
+  }
+  return entry;
+}
+
+function requireBundleGzipDelta(
+  report: Awaited<ReturnType<typeof treeShakingReport>>,
+  bundler: "next" | "vite",
+  representation: DescriptorRepresentation,
+  entryMode: RuntimeDescriptorEntryMode
+): number {
+  const measurement = report[bundler].candidates.find(
+    (candidate) =>
+      candidate.candidate === representation &&
+      candidate.entryMode === entryMode
+  );
+  if (!measurement?.build.ok || !measurement.deltaFromBaseline) {
+    throw new Error(
+      `${bundler} ${representation} ${entryMode} has no gzip delta`
+    );
+  }
+  return measurement.deltaFromBaseline.gzipBytes;
+}
+
+function representationEntryComparison(
+  constantsEntry: RepresentationEntryRuntime,
+  proxyEntry: RepresentationEntryRuntime
+) {
+  const hasNegativeRetainedHeapDelta =
+    constantsEntry.memory.delta.heapUsedBytes < 0 ||
+    proxyEntry.memory.delta.heapUsedBytes < 0;
+  return {
+    accessPlusStrictRenderP95Microseconds: numericComparison(
+      constantsEntry.accessPlusStrictRender.p95Microseconds,
+      proxyEntry.accessPlusStrictRender.p95Microseconds
+    ),
+    descriptorAccessP95Microseconds: numericComparison(
+      constantsEntry.descriptorAccess.p95Microseconds,
+      proxyEntry.descriptorAccess.p95Microseconds
+    ),
+    descriptorIdentityStable: {
+      constants: constantsEntry.descriptorIdentityStable,
+      proxy: proxyEntry.descriptorIdentityStable,
+    },
+    fixedIterationMemory: {
+      explicitGcForBoth:
+        constantsEntry.memory.gcInvokedBefore &&
+        constantsEntry.memory.gcInvokedAfter &&
+        proxyEntry.memory.gcInvokedBefore &&
+        proxyEntry.memory.gcInvokedAfter,
+      hasNegativeRetainedHeapDelta,
+      heapUsedDeltaBytes: numericComparison(
+        constantsEntry.memory.delta.heapUsedBytes,
+        proxyEntry.memory.delta.heapUsedBytes,
+        !hasNegativeRetainedHeapDelta
+      ),
+      note: hasNegativeRetainedHeapDelta
+        ? "Negative retained-heap deltas remain noisy supporting evidence and cannot freeze an allocation budget."
+        : "Explicit before/after GC retained-memory evidence; use with latency and identity evidence rather than as an allocation count.",
+      rssDeltaBytes: numericComparison(
+        constantsEntry.memory.delta.rssBytes,
+        proxyEntry.memory.delta.rssBytes,
+        constantsEntry.memory.delta.rssBytes >= 0 &&
+          proxyEntry.memory.delta.rssBytes >= 0
+      ),
+    },
+    stableDescriptorStrictRenderP95Microseconds: numericComparison(
+      constantsEntry.stableDescriptorStrictRender.p95Microseconds,
+      proxyEntry.stableDescriptorStrictRender.p95Microseconds
+    ),
+  };
+}
+
+function representationComparison(
+  candidates: ReadonlyArray<RepresentationRuntimeCandidate>,
+  treeShaking: Awaited<ReturnType<typeof treeShakingReport>>
+) {
+  const gzipTieBytes = 16;
+  const latencyTiePercent = 5;
+  const constants = requireRepresentationRuntimeCandidate(
+    candidates,
+    "constants"
+  );
+  const proxy = requireRepresentationRuntimeCandidate(candidates, "proxy");
+  const namedEntryComparison = representationEntryComparison(
+    requireRepresentationEntry(constants, "named-export"),
+    requireRepresentationEntry(proxy, "named-export")
+  );
+  const catalogTreeEntryComparison = representationEntryComparison(
+    requireRepresentationEntry(constants, "catalog-tree"),
+    requireRepresentationEntry(proxy, "catalog-tree")
+  );
+  const entryComparisons = {
+    "catalog-tree": catalogTreeEntryComparison,
+    "named-export": namedEntryComparison,
+  };
+  const moduleFirstImport = numericComparison(
+    constants.moduleInitialization.firstImportMicroseconds,
+    proxy.moduleInitialization.firstImportMicroseconds
+  );
+  const moduleReevaluation = numericComparison(
+    constants.moduleInitialization.reevaluation.p95Microseconds,
+    proxy.moduleInitialization.reevaluation.p95Microseconds
+  );
+  const runtimeInitialization = numericComparison(
+    constants.runtimeInitialization.p95Microseconds,
+    proxy.runtimeInitialization.p95Microseconds
+  );
+  const primaryLatencyComparisons = [
+    moduleFirstImport,
+    moduleReevaluation,
+    runtimeInitialization,
+    namedEntryComparison.accessPlusStrictRenderP95Microseconds,
+    catalogTreeEntryComparison.accessPlusStrictRenderP95Microseconds,
+  ];
+  const latencyVerdicts = primaryLatencyComparisons.map((comparison) =>
+    practicalLatencyVerdict(comparison, latencyTiePercent)
+  );
+  const constantsAdvantages = latencyVerdicts.filter(
+    (verdict) => verdict === "constants"
+  ).length;
+  const proxyAdvantages = latencyVerdicts.filter(
+    (verdict) => verdict === "proxy"
+  ).length;
+  const nextNamedGzip = numericComparison(
+    requireBundleGzipDelta(treeShaking, "next", "constants", "named-export"),
+    requireBundleGzipDelta(treeShaking, "next", "proxy", "named-export")
+  );
+  const proxyNextEdgeBytes = Math.max(
+    0,
+    nextNamedGzip.constants - nextNamedGzip.proxy
+  );
+  const proxyHasCurrentNextGzipEdge =
+    nextNamedGzip.proxy < nextNamedGzip.constants;
+  const nextGzipIsPracticalTie =
+    Math.abs(nextNamedGzip.proxyMinusConstants) <= gzipTieBytes;
+  const proxyOneByteGzipEdgeOutweighed =
+    !proxyHasCurrentNextGzipEdge ||
+    (nextGzipIsPracticalTie &&
+      constantsAdvantages > proxyAdvantages &&
+      constantsAdvantages > 0);
+  let proxyGzipAssessmentNote: string;
+  if (!proxyHasCurrentNextGzipEdge) {
+    proxyGzipAssessmentNote =
+      "The fresh final run does not reproduce the earlier one-byte proxy edge: proxy is larger for the Next named-export path. Measured module initialization and catalog-tree hot evidence also favor constants, while retained memory remains supporting evidence.";
+  } else if (proxyOneByteGzipEdgeOutweighed) {
+    proxyGzipAssessmentNote =
+      "The proxy gzip edge is inside the practical byte tie and is outweighed by measured initialization or hot end-to-end evidence; fixed-iteration memory remains supporting evidence.";
+  } else {
+    proxyGzipAssessmentNote =
+      "The proxy gzip edge is inside the practical byte tie, but the measured primary timing evidence does not independently establish that constants outweigh it; the ADR must use semantic eligibility and the full evidence set.";
+  }
+  return {
+    constantsVsProxy: {
+      bundleGzipDeltaBytes: {
+        next: {
+          "catalog-tree": numericComparison(
+            requireBundleGzipDelta(
+              treeShaking,
+              "next",
+              "constants",
+              "catalog-tree"
+            ),
+            requireBundleGzipDelta(treeShaking, "next", "proxy", "catalog-tree")
+          ),
+          "named-export": nextNamedGzip,
+        },
+        vite: {
+          "catalog-tree": numericComparison(
+            requireBundleGzipDelta(
+              treeShaking,
+              "vite",
+              "constants",
+              "catalog-tree"
+            ),
+            requireBundleGzipDelta(treeShaking, "vite", "proxy", "catalog-tree")
+          ),
+          "named-export": numericComparison(
+            requireBundleGzipDelta(
+              treeShaking,
+              "vite",
+              "constants",
+              "named-export"
+            ),
+            requireBundleGzipDelta(treeShaking, "vite", "proxy", "named-export")
+          ),
+        },
+      },
+      entryModes: entryComparisons,
+      moduleFirstImportMicroseconds: moduleFirstImport,
+      moduleReevaluationP95Microseconds: moduleReevaluation,
+      runtimeInitializationP95Microseconds: runtimeInitialization,
+    },
+    decision: "deferred-to-ADR" as const,
+    proxyOneByteGzipEdgeAssessment: {
+      constantsPrimaryLatencyAdvantages: constantsAdvantages,
+      currentNextNamedExportProxyMinusConstantsBytes:
+        nextNamedGzip.proxyMinusConstants,
+      nextNamedExportGzipIsPracticalTie: nextGzipIsPracticalTie,
+      note: proxyGzipAssessmentNote,
+      primaryLatencyVerdicts: latencyVerdicts,
+      proxyHasCurrentNextGzipEdge,
+      proxyNextNamedExportEdgeBytes: proxyNextEdgeBytes,
+      proxyPrimaryLatencyAdvantages: proxyAdvantages,
+    },
+    proxyOneByteGzipEdgeOutweighed,
+    rules: {
+      correctnessAndSuccessfulInitializationMandatory: true,
+      gzipTieBytes,
+      initializationAndHotEndToEndP95Primary: true,
+      latencyTiePercent,
+      memoryDecisiveOnlyWithGc: true,
+      memoryWithoutExplicitGcIsSupportingOnly: true,
+    },
+    winner: null,
+  };
+}
+
+function representationRuntimeReport(
+  candidates: ReadonlyArray<RepresentationRuntimeCandidate>,
+  treeShaking: Awaited<ReturnType<typeof treeShakingReport>>
+) {
+  return {
+    candidates,
+    comparison: representationComparison(candidates, treeShaking),
+    config: {
+      accessModes: ["named-export", "catalog-tree"],
+      gzipTieBytes: 16,
+      latencyTiePercent: 5,
+      memoryDecisiveWithoutGc: false,
+      memoryIterations: 50_000,
+    },
+  };
+}
+
+function allBundleMeasurements(
+  report: Awaited<ReturnType<typeof treeShakingReport>>
+): ReadonlyArray<BundleMeasurement> {
+  return [
+    report.vite.baseline,
+    ...report.vite.candidates,
+    report.next.baseline,
+    ...report.next.candidates,
+  ];
+}
+
+async function main(): Promise<void> {
+  process.stderr.write("[benchmark] preparing representation artifacts\n");
+  await rm(workDirectory, { force: true, recursive: true });
+  await mkdir(outputDirectory, { recursive: true });
+  const representationOutput = compileCatalog(catalogFixtureSource);
+  await Promise.all(
+    descriptorRepresentations.map((representation) =>
+      writeArtifactSet(
+        resolve(representationArtifactsRoot, representation),
+        emitArtifacts(representationOutput, representation)
+      )
+    )
+  );
+
+  process.stderr.write("[benchmark] collecting environment\n");
+  const environment = await environmentReport();
+  process.stderr.write("[benchmark] measuring runtime\n");
+  const runtime = await runtimeBenchmarks();
+  process.stderr.write("[benchmark] measuring artifacts\n");
+  const artifacts = await artifactSizeReport();
+  process.stderr.write("[benchmark] measuring representations\n");
+  const representationCandidates = await representationRuntimeCandidates();
+  process.stderr.write("[benchmark] measuring tree shaking\n");
+  const treeShaking = await treeShakingReport(environment);
+  process.stderr.write("[benchmark] writing report\n");
+  const representationRuntime = representationRuntimeReport(
+    representationCandidates,
+    treeShaking
+  );
+  const runtimeFailures = runtime.candidates.filter(
+    (candidate) => !candidate.available
+  );
+  const baselineContamination = [
+    { bundler: "vite" as const, measurement: treeShaking.vite.baseline },
+    { bundler: "next" as const, measurement: treeShaking.next.baseline },
+  ]
+    .filter(({ measurement }) => measurement.sentinel.found === true)
+    .map(({ bundler }) => bundler);
+  const buildFailures = allBundleMeasurements(treeShaking).filter(
+    (measurement) => !measurement.build.ok
+  );
+  const buildFailureSummaries = [
+    ...[treeShaking.vite.baseline, ...treeShaking.vite.candidates]
+      .filter((measurement) => !measurement.build.ok)
+      .map((measurement) => ({
+        bundler: "vite" as const,
+        candidate: measurement.candidate,
+        entryMode: measurement.entryMode,
+      })),
+    ...[treeShaking.next.baseline, ...treeShaking.next.candidates]
+      .filter((measurement) => !measurement.build.ok)
+      .map((measurement) => ({
+        bundler: "next" as const,
+        candidate: measurement.candidate,
+        entryMode: measurement.entryMode,
+      })),
+  ];
+  const ineligibleSummaries = [
+    ...treeShaking.vite.candidates
+      .filter(
+        (measurement) =>
+          measurement.eligibility.eligible === false && measurement.build.ok
+      )
+      .map((measurement) => ({
+        bundler: "vite" as const,
+        candidate: measurement.candidate,
+        entryMode: measurement.entryMode,
+        reason: measurement.eligibility.reason,
+      })),
+    ...treeShaking.next.candidates
+      .filter(
+        (measurement) =>
+          measurement.eligibility.eligible === false && measurement.build.ok
+      )
+      .map((measurement) => ({
+        bundler: "next" as const,
+        candidate: measurement.candidate,
+        entryMode: measurement.entryMode,
+        reason: measurement.eligibility.reason,
+      })),
+  ];
+  const measurementComplete =
+    runtimeFailures.length === 0 &&
+    buildFailures.length === 0 &&
+    baselineContamination.length === 0 &&
+    representationCandidates.every((candidate) => candidate.available) &&
+    representationCandidates.find(
+      (candidate) => candidate.representation === "precompiled"
+    )?.supportsBackendSpecificPrecompiled === true;
+  const report = {
+    artifactSizes: artifacts,
+    benchmarkConfig: {
+      compression: {
+        brotliQuality: 11,
+        gzipLevel: 9,
+      },
+      runtime: {
+        cold: { iterationsPerSample: 1, samples: 200, warmupIterations: 20 },
+        hot: { iterationsPerSample: 25, samples: 1000, warmupIterations: 500 },
+        memoryIterations: 50_000,
+        validation: {
+          iterationsPerSample: 25,
+          samples: 1200,
+          warmupIterations: 500,
+        },
+      },
+      treeShaking: {
+        candidateOrder: descriptorRepresentations,
+        emptyBaseline: true,
+        entryModes: ["named-export", "catalog-tree"],
+        preferredEntryMode: "named-export",
+        sentinelMinimumBytes: 8 * 1024,
+      },
+    },
+    environment,
+    representationRuntime,
+    runtimeLatency: runtime.candidates,
+    schemaVersion: 1,
+    summary: {
+      baselineContamination,
+      buildFailures: buildFailureSummaries,
+      ineligibleTreeShakingCandidates: ineligibleSummaries,
+      measurementComplete,
+      preliminaryValidationGatePass:
+        runtime.fiveFieldValidation.passesPreliminaryBudget &&
+        runtime.fiveFieldValidation.relativeToPrecompiledEndToEnd
+          .passesPreliminaryBudget,
+      runtimeFailures: runtimeFailures.map((candidate) => candidate.name),
+    },
+    treeShaking,
+    validationCost: runtime.fiveFieldValidation,
+  };
+  const serialized = `${JSON.stringify(report, null, 2)}\n`;
+  const temporaryPath = `${outputPath}.tmp`;
+  await writeFile(temporaryPath, serialized, "utf8");
+  await rename(temporaryPath, outputPath);
+
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        ineligibleTreeShakingCandidates:
+          report.summary.ineligibleTreeShakingCandidates,
+        measurementComplete,
+        output: relative(root, outputPath),
+        validationP95Microseconds:
+          report.validationCost.validCall.p95Microseconds,
+      },
+      null,
+      2
+    )}\n`
+  );
+  if (!measurementComplete) {
+    process.exitCode = 1;
+  }
+  if (benchmarkBlackhole === undefined) {
+    throw new Error("Benchmark actions did not produce an observable value");
+  }
+}
+
+async function runBenchmarkEntryPoint(): Promise<void> {
+  if (typeof Reflect.get(globalThis, "gc") === "function") {
+    await main();
+    return;
+  }
+  const result = await runCommand(
+    process.execPath,
+    ["--expose-gc", "--import", "tsx", fileURLToPath(import.meta.url)],
+    root,
+    300_000
+  );
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.code !== 0) {
+    throw new Error(
+      `Explicit-GC benchmark child failed:\n${conciseCommandFailure(result)}`
+    );
+  }
+}
+
+await runBenchmarkEntryPoint();

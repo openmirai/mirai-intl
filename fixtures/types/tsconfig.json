@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
+    "lib": ["ES2024", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@openmirai/intl-abi": ["../../packages/abi/src/index.ts"],
+      "@openmirai/intl-runtime": ["../../packages/runtime/src/index.ts"],
+      "@openmirai/intl-runtime/react": ["../../packages/runtime/src/react.ts"],
+      "@openmirai/intl-runtime/react-i18next": [
+        "../../packages/runtime/src/react-i18next.ts"
+      ]
+    },
+    "skipLibCheck": false,
+    "strict": true,
+    "target": "ES2024",
+    "types": [],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["descriptors.ts", "negative.ts", "positive.ts"]
+}

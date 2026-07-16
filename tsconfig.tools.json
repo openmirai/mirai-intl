@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@openmirai/intl-abi": ["./packages/abi/src/index.ts"],
+      "@openmirai/intl-compiler": ["./packages/compiler/src/index.ts"],
+      "@openmirai/intl-compiler/internal": [
+        "./packages/compiler/src/internal.ts"
+      ],
+      "@openmirai/intl-runtime": ["./packages/runtime/src/index.ts"]
+    },
+    "strict": true,
+    "target": "ES2024",
+    "types": ["node", "vitest/globals"],
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "benchmarks/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "tsdown.config.ts",
+    "vitest.config.ts"
+  ]
+}

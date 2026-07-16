@@ -1,0 +1,7 @@
+{
+  "description": "Compare <strong>{name}</strong>",
+  "diffs": {
+    "title": "Compare plans"
+  },
+  "summary": "{count, plural, one {# difference} other {# differences}} in {mode, select, compact {compact mode} other {full mode}} for {amount, number} on {publishedAt, date, short}"
+}

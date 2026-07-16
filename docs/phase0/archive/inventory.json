@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "scope": "strict-intl-phase0",
+  "sourceEvidence": {
+    "brownfieldAudit": "../../../tmp/completions/intl-brownfield-audit.md",
+    "fixtureCorpus": "../../../tmp/completions/intl-fixture-corpus.md",
+    "repositories": {
+      "fe-mirai-internal-dashboard": {
+        "commit": "ea2c1639630970f58d954e368b82c2a6d40d2f9c",
+        "note": "The committed HEAD is pinned here; the shadow report separately hashes the Phase 0 worktree inputs and records its dirty state."
+      },
+      "fe-mirai-org-turbo": {
+        "commit": "e462bc07623dce3c709834b43d68de59fc88caf7"
+      },
+      "fe-openmirai-landing": {
+        "commit": "9fdac5381408c8a6373b01c7cba45ed85fd95373"
+      },
+      "mirai-org-e2e": {
+        "commit": "5a9163cfa6f428c4357faeeaa8dfe6bddfaf4a89"
+      }
+    }
+  },
+  "localeFindings": {
+    "baselineAudit": {
+      "englishThaiFormatterRoleMismatches": 15,
+      "landingIcuParseFailures": 8,
+      "thaiInvalidNamedOneBranches": 161,
+      "note": "These are immutable initial-audit counts, not the current diagnostics for the authorized shadow catalogs."
+    },
+    "authorizedShadowCatalogs": {
+      "fe-mirai-internal-dashboard": {
+        "contentHash": "sha256:788794ddb229d96bc319221834c950d91f6220f5b57a02a3c15cb8acbbb9b19e",
+        "previousShadowContentHash": "sha256:c6eb4ce2e11d56e5739b692434b74c83d1107b7f7f3b66a3e80d5c12d58b9750",
+        "currentDiagnostics": 0,
+        "messages": 643,
+        "pairedLocaleSourceGroups": 47,
+        "repairs": "Six Thai argument-role mismatches were repaired with regression coverage."
+      },
+      "fe-openmirai-landing": {
+        "contentHash": "sha256:2e9ee51891a095eb991a88e70bf5ea281fb8c6301957df6055dcacab6d357607",
+        "previousShadowContentHash": "sha256:25fc964f9ee984f85eff5362fe5fbbf8090323821031e63f7569e11ad4529b46",
+        "currentDiagnostics": 0,
+        "messages": 2226,
+        "pairedLocaleSourceGroups": 73,
+        "repairs": "The audited ICU and Mustache source defects were repaired with regression coverage."
+      }
+    },
+    "policy": "Compiler errors remain strict. Baseline defects are preserved as audit evidence; authorized shadow repairs are explicit source changes and are never normalized or accepted silently."
+  },
+  "generatedDeclarationBaseline": {
+    "gzipBytes": 782187,
+    "lines": 162342,
+    "rawBytes": 7838318
+  },
+  "learnerSharedOverlap": {
+    "counts": {
+      "differingExactLeaves": 7,
+      "identicalExactLeaves": 23,
+      "learnerOnlyLeavesUnderReplacedMount": 9,
+      "totalAccountedLeaves": 39
+    },
+    "identical": {
+      "decision": "deduplicate-to-shared-owner",
+      "keys": [
+        "components.ui.mirai-builder-component.CatalogFilter.category.title",
+        "components.ui.mirai-builder-component.CatalogFilter.payment.free",
+        "components.ui.mirai-builder-component.CatalogFilter.payment.paid",
+        "components.ui.mirai-builder-component.CatalogFilter.payment.title",
+        "components.ui.mirai-builder-component.CatalogFilter.title",
+        "components.ui.mirai-builder-component.CatalogList.filters",
+        "components.ui.mirai-builder-component.CatalogList.itemsFound",
+        "components.ui.openmirai.card.certificates.DownloadCertificateCard.downloadButton",
+        "components.ui.openmirai.card.checkout.CartCard.free",
+        "components.ui.openmirai.card.checkout.CartCard.labels.bundle",
+        "components.ui.openmirai.card.checkout.CartCard.labels.course",
+        "components.ui.openmirai.card.checkout.CartCard.labels.product",
+        "components.ui.openmirai.card.checkout.CartCard.labels.quantity",
+        "components.ui.openmirai.card.checkout.CartCard.percentOff",
+        "components.ui.openmirai.card.checkout.CartCard.quantity",
+        "components.ui.openmirai.card.checkout.WishlistCard.free",
+        "components.ui.openmirai.card.checkout.WishlistCard.labels.bundle",
+        "components.ui.openmirai.card.checkout.WishlistCard.labels.course",
+        "components.ui.openmirai.card.checkout.WishlistCard.labels.product",
+        "components.ui.openmirai.card.checkout.WishlistCard.percentOff",
+        "components.ui.openmirai.card.checkout.WishlistCard.productType.both",
+        "components.ui.openmirai.card.checkout.WishlistCard.productType.digital",
+        "components.ui.openmirai.card.checkout.WishlistCard.productType.physical"
+      ],
+      "migrationPrecondition": "Remove learner duplicates only after the generated provenance report proves byte-identical EN and TH values at the pinned source commits."
+    },
+    "differing": {
+      "decision": "shared-owner-preserves-current-built-learner-output",
+      "keys": [
+        "components.ui.mirai-builder-component.CatalogFilter.clear",
+        "components.ui.mirai-builder-component.CatalogFilter.payment.subscription",
+        "components.ui.mirai-builder-component.CatalogList.empty",
+        "components.ui.mirai-builder-component.CatalogList.loadError",
+        "components.ui.mirai-builder-component.CatalogList.searchPlaceholder",
+        "components.ui.openmirai.card.checkout.CartCard.applyCoupon",
+        "components.ui.openmirai.card.checkout.CartCard.editCoupon"
+      ],
+      "replacementRule": "A future learner wording change requires one exact-key replacement declaration containing the shared fragment ID, exact version, exact content hash, reason, owner, and ADR provenance. Prefix and wildcard replacements are forbidden.",
+      "migrationPrecondition": "Confirm product intent against the current built Learner strings. Until then, the shared values remain authoritative and learner duplicates are non-authoritative."
+    },
+    "learnerOnly": {
+      "decision": "learner-owned-explicit-mount",
+      "keys": [
+        "components.ui.mirai-builder-component.CatalogFilter.level.title",
+        "components.ui.mirai-builder-component.CatalogFilter.payment.one-time",
+        "components.ui.mirai-builder-component.ListSearchBar.placeholder",
+        "components.ui.openmirai.card.checkout.CartCard.productType.PRODUCT",
+        "components.ui.openmirai.card.checkout.WishlistCard.availability.all",
+        "components.ui.openmirai.card.checkout.WishlistCard.availability.more",
+        "components.ui.openmirai.card.checkout.WishlistCard.totalItems",
+        "components.ui.openmirai.certificate.CertificateDownloadButton.downloadButton",
+        "components.ui.openmirai.certificate.CertificateDownloadButton.notEligibleButton"
+      ],
+      "migrationPrecondition": "Mount these leaves explicitly under the learner fragment and prove that composition no longer replaces the containing branch. Restoring a previously unreachable key is not permission to change any rendered wording or call site."
+    }
+  },
+  "e2eDivergence": {
+    "generatedKeysNotResolvableFromBuiltCatalog": {
+      "admin": 111,
+      "auth": 22,
+      "instructor": 58,
+      "internalDashboard": 61,
+      "landing": 3,
+      "learner": 69
+    },
+    "policy": "E2E may consume only the exact packed catalog and manifest selected by the deployed build after the Phase 0 gate; sibling source crawling is not authoritative."
+  },
+  "phaseBoundary": {
+    "allowed": [
+      "bounded compiler/runtime spike",
+      "fixture and benchmark evidence",
+      "package pack-install proof",
+      "Phase 0 ADR",
+      "one generic convention runtime and accepted local non-authoritative leaf in Landing and Internal Dashboard"
+    ],
+    "forbiddenUntilLaterPhase": [
+      "production or app-wide application consumer migration",
+      "production catalog publication",
+      "legacy API ban"
+    ],
+    "pilotAuthority": "The two generic local runtimes and accepted leaves are explicit user-authorized implementation evidence only. Pilot flags and feature-specific runtimes are removed; migrationAuthorized, everyCatalogGateReady, and application authoritative flags remain false."
+  }
+}

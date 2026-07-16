@@ -1,0 +1,32 @@
+{
+  "name": "@openmirai/intl-abi",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmirai/mirai-intl.git",
+    "directory": "packages/abi"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

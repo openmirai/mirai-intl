@@ -1,0 +1,5 @@
+* @openmirai/platform-foundations
+/packages/abi/ @openmirai/platform-foundations
+/packages/compiler/ @openmirai/platform-foundations
+/packages/runtime/ @openmirai/platform-foundations
+/docs/adr/ @openmirai/platform-foundations

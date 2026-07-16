@@ -1,0 +1,67 @@
+{
+  "name": "@openmirai/intl-runtime",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmirai/mirai-intl.git",
+    "directory": "packages/runtime"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "default": "./dist/react.js"
+    },
+    "./react-i18next": {
+      "types": "./dist/react-i18next.d.ts",
+      "import": "./dist/react-i18next.js",
+      "default": "./dist/react-i18next.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@openmirai/intl-abi": "workspace:*"
+  },
+  "peerDependencies": {
+    "i18next": "26.3.6",
+    "react": "19.2.7"
+  },
+  "peerDependenciesMeta": {
+    "i18next": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "เปรียบเทียบ <strong>{name}</strong>",
+  "diffs": {
+    "title": "เปรียบเทียบแผน"
+  },
+  "summary": "{count, plural, other {# ความแตกต่าง}} ใน {mode, select, compact {โหมดกระชับ} other {โหมดเต็ม}} สำหรับ {amount, number} เมื่อ {publishedAt, date, short}"
+}

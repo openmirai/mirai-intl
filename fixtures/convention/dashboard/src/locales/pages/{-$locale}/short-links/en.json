@@ -1,0 +1,10 @@
+{
+  "description": "Manage <strong>{name}</strong>",
+  "mode": "{mode, select, active {Active} other {All}}",
+  "owner": "Owner {name}",
+  "page": {
+    "resultsCount": "{count, plural, one {# result} other {# results}}"
+  },
+  "resultCount": "{count, plural, one {# link} other {# links}}",
+  "title": "Short links"
+}

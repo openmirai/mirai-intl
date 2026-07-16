@@ -1,0 +1,9 @@
+{
+  "name": "fe-openmirai-landing",
+  "version": "1.0.92",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "16.2.9"
+  }
+}

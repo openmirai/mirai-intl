@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openmirai.example/schemas/mirai-intl-phase0-results-v1.json",
+  "title": "Mirai Intl Phase 0 Results",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "environment",
+    "source",
+    "inventory",
+    "compatibility",
+    "candidates",
+    "typescript",
+    "generation",
+    "bundlers",
+    "runtime",
+    "packaging",
+    "budgets",
+    "shadowReadiness",
+    "decision"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "environment": { "type": "object" },
+    "source": { "type": "object" },
+    "inventory": { "type": "object" },
+    "compatibility": { "type": "object" },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["backend", "representation", "eligible"],
+        "properties": {
+          "backend": { "enum": ["precompiled-v1", "tfunction-bridge-v1"] },
+          "representation": { "enum": ["constants", "precompiled", "proxy"] },
+          "eligible": { "type": "boolean" }
+        }
+      }
+    },
+    "typescript": { "type": "object" },
+    "generation": { "type": "object" },
+    "bundlers": { "type": "object" },
+    "runtime": { "type": "object" },
+    "packaging": { "type": "object" },
+    "budgets": { "type": "object" },
+    "shadowReadiness": {
+      "type": "object",
+      "required": [
+        "authorizedApplicationsShadowReady",
+        "everyCatalogGateReady",
+        "migrationAuthorized",
+        "shadowReady"
+      ],
+      "properties": {
+        "authorizedApplicationsShadowReady": { "type": "boolean" },
+        "everyCatalogGateReady": { "const": false },
+        "migrationAuthorized": { "const": false },
+        "shadowReady": { "type": "boolean" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "renderer",
+        "representation",
+        "artifactPortability",
+        "migrationAuthorized"
+      ],
+      "properties": {
+        "renderer": { "enum": ["precompiled-v1", "tfunction-bridge-v1"] },
+        "representation": { "enum": ["constants", "precompiled", "proxy"] },
+        "artifactPortability": {
+          "enum": ["backend-specific", "portable-ir-v1"]
+        },
+        "migrationAuthorized": { "const": false }
+      }
+    }
+  }
+}

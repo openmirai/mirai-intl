@@ -1,0 +1,30 @@
+{
+  "git": {
+    "commitMessage": "chore: release v${version}",
+    "tagName": "v${version}",
+    "tagAnnotation": "Release v${version}",
+    "push": true,
+    "requireCleanWorkingDir": true
+  },
+  "github": {
+    "release": false
+  },
+  "npm": {
+    "publish": false
+  },
+  "hooks": {
+    "before:init": "corepack pnpm run verify",
+    "after:bump": "corepack pnpm install --no-frozen-lockfile && corepack pnpm build",
+    "before:git:release": "node scripts/publish-packages.mjs ${version} --preflight",
+    "after:release": "node scripts/publish-packages.mjs ${version} && echo 'Successfully released mirai-intl v${version}'"
+  },
+  "plugins": {
+    "@release-it/bumper": {
+      "out": "packages/*/package.json"
+    },
+    "@release-it/conventional-changelog": {
+      "preset": "angular",
+      "infile": "CHANGELOG.md"
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "runtimeAbi": "1.0.0",
+  "formatVersion": 1,
+  "supportPolicy": "Only complete, exact correlated tuples can be supported. Semver peer ranges that admit untested cross-products are forbidden.",
+  "rows": [
+    {
+      "id": "canonical-modern",
+      "status": "phase0-candidate",
+      "versions": {
+        "@formatjs/icu-messageformat-parser": "3.5.14",
+        "i18next": "26.3.6",
+        "i18next-icu": "2.4.4",
+        "intl-messageformat": "11.2.11",
+        "react": "19.2.7",
+        "react-dom": "19.2.7",
+        "react-i18next": "17.0.9",
+        "typescript": ["5.9.3", "6.0.3", "7.0.2"]
+      },
+      "requiredEvidence": [
+        "actual i18next TFunction bridge parity",
+        "precompiled renderer parity",
+        "strict failure corpus",
+        "packed NodeNext declaration consumer",
+        "Vite and Next production proxies"
+      ]
+    },
+    {
+      "id": "node-precompiled",
+      "status": "phase0-candidate",
+      "versions": {
+        "nodeReference": "24.18.0",
+        "nodeForwardProbe": "26.5.0",
+        "typescript": ["5.9.3", "6.0.3", "7.0.2"]
+      },
+      "constraint": "No i18next or React peer is permitted on the framework-free Node renderer."
+    },
+    {
+      "id": "turbo-current",
+      "status": "unsupported-until-aligned-or-qualified",
+      "versions": {
+        "i18next": "26.3.4",
+        "i18next-icu": "2.4.4",
+        "intl-messageformat": "11.2.7",
+        "next": "16.2.6",
+        "react": "19.2.6",
+        "react-i18next": "17.0.8",
+        "typescript": "6.0.3"
+      }
+    },
+    {
+      "id": "landing-current",
+      "status": "local-convention-runtime-non-authoritative",
+      "releaseStatus": "unsupported-until-aligned-or-qualified",
+      "versions": {
+        "i18next": "26.3.6",
+        "i18next-icu": "2.4.4",
+        "intl-messageformat": "11.2.9",
+        "next": "16.2.9",
+        "react": "19.2.7",
+        "react-dom": "19.2.7",
+        "react-i18next": "17.0.9",
+        "typescript": "5.9.3"
+      },
+      "shadowEvidence": {
+        "catalogHash": "sha256:3f4b65c16fb8923d6a2fc1a23c630614c01cdd1f5d6aa1ad8304b3532ef888ad",
+        "contentHash": "sha256:4f51a6733974b3b10f5836401b52fb3b26d74ae09830ec95fc11a671b7ea9aa8",
+        "compilerAndArtifactGates": "passed",
+        "runtimeConsumerMigration": "generic-convention-runtime-accepted-leaf",
+        "authoritative": false,
+        "migrationAuthorized": false
+      },
+      "note": "Convention discovery, AST-inferred contracts, declaration, parity, and bundle gates pass, and the accepted leaf uses one generic i18next-reactive runtime through local links. This local evidence does not qualify the full renderer tuple or authorize release, publication, or platform-wide migration."
+    },
+    {
+      "id": "dashboard-current",
+      "status": "local-convention-runtime-non-authoritative",
+      "releaseStatus": "unsupported-until-aligned-or-qualified",
+      "versions": {
+        "i18next": "26.3.6",
+        "i18next-icu": "2.4.4",
+        "intl-messageformat": "11.1.2",
+        "react": "19.2.7",
+        "react-dom": "19.2.7",
+        "react-i18next": "17.0.9",
+        "typescript": "7.0.2",
+        "vite": "8.1.4"
+      },
+      "shadowEvidence": {
+        "catalogHash": "sha256:fc2b76dc0d331d856ce35dded73156db1b4472c48c95d09b8588d230a130338a",
+        "contentHash": "sha256:4595e9ceba3955dd20f84d31ca75342e7246418f51e87b4fd1f19f1dd615fec3",
+        "compilerAndArtifactGates": "passed",
+        "runtimeConsumerMigration": "generic-convention-runtime-accepted-leaf",
+        "authoritative": false,
+        "migrationAuthorized": false
+      },
+      "note": "Convention discovery, AST-inferred contracts, declaration, parity, and bundle gates pass, and the accepted leaf uses one generic i18next-reactive runtime through local links. This local evidence does not qualify the full renderer tuple or authorize release, publication, or platform-wide migration."
+    }
+  ],
+  "publicationRule": "The core ABI/compiler/runtime packages publish no broad i18next or React peer promise. A future framework adapter may publish only exact qualified tuple disjunctions and must also enforce the generated renderer-stack hash at registration."
+}
