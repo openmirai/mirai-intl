@@ -153,7 +153,7 @@ After this repository has an initial commit, an `origin` upstream, and a clean
 working tree, the first beta prerelease command is:
 
 ```sh
-corepack pnpm run release -- preminor --preRelease=beta
+corepack pnpm run release:prerelease
 ```
 
 Starting from root version `0.0.0`, that targets `0.1.0-beta.0` and publishes

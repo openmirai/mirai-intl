@@ -23,7 +23,7 @@
     "pack:smoke": "tsx scripts/pack-smoke.ts",
     "pretest": "corepack pnpm build",
     "release": "release-it",
-    "release:prerelease": "release-it --preRelease",
+    "release:prerelease": "release-it --preRelease=beta",
     "release:packages:dry-run": "node scripts/publish-packages.mjs --dry-run",
     "test": "vitest run",
     "typecheck": "tsc -b --force --pretty false && tsc -p tsconfig.tools.json --pretty false",
