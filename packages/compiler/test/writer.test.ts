@@ -17,6 +17,7 @@ import { basename, join } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
+  generatedSourceHeader,
   recoverStalePublicationLock,
   verifyArtifactSet,
   writeArtifactSet,
@@ -37,6 +38,7 @@ describe("generated artifact verification", () => {
       const relativeDirectory = written.directory.replace(`${root}/`, "");
       const expectedFacade = [
         `// @mirai-intl-selector ${JSON.stringify({ contentHash: written.contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
+        generatedSourceHeader,
         'import { bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
         'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
         `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,

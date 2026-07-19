@@ -3,6 +3,7 @@ import {
   compareCanonicalStrings,
   compileCatalog,
   emitArtifacts,
+  generatedSourceHeader,
 } from "@openmirai/intl-compiler/internal";
 import type {
   CatalogSource,
@@ -55,6 +56,39 @@ afterEach(() => {
 });
 
 describe("deterministic emission ordering", () => {
+  it("marks every generated source artifact as generated and tool-ignored", () => {
+    const output = compileCatalog(unicodeSource);
+    const emittedSets = [
+      emitArtifacts(output, "constants"),
+      emitArtifacts(output, "precompiled"),
+      emitArtifacts(output, "proxy"),
+      emitArtifacts(output, "precompiled", { compact: true }),
+    ];
+
+    const entries = emittedSets.flatMap((artifacts) =>
+      Object.entries(artifacts)
+    );
+    const sourceEntries = entries.filter(([name]) =>
+      /\.(?:[cm]?[jt]sx?)$/u.test(name)
+    );
+    const dataEntries = entries.filter(
+      ([name]) => !/\.(?:[cm]?[jt]sx?)$/u.test(name)
+    );
+
+    expect(sourceEntries.length).toBeGreaterThan(0);
+    expect(
+      sourceEntries.every(([, content]) =>
+        content.startsWith(`${generatedSourceHeader}\n`)
+      )
+    ).toBe(true);
+    expect(dataEntries.every(([name]) => name.endsWith(".json"))).toBe(true);
+    expect(
+      dataEntries.every(
+        ([, content]) => !content.startsWith(generatedSourceHeader)
+      )
+    ).toBe(true);
+  });
+
   it("emits Unicode keys in UTF-16 code-unit order without host collation", () => {
     const output = compileCatalog(unicodeSource);
     const localeCompare = vi

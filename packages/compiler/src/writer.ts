@@ -24,6 +24,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { canonicalJson, sha256 } from "./canonical";
 import type { EmittedArtifacts } from "./emit";
+import { generatedSourceHeader } from "./generated-source";
 
 export type WriteResult = Readonly<{
   changed: boolean;
@@ -408,6 +409,7 @@ function stableFacadeModule(
   assertStableFacadeOptions(facade);
   return [
     `${selectorPrefix}${canonicalJson({ contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
+    generatedSourceHeader,
     'import { bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
     'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
     `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,

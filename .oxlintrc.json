@@ -8,6 +8,7 @@
   "ignorePatterns": [
     "**/coverage/**",
     "**/dist/**",
+    "**/src/i18n/generated/**",
     "**/node_modules/**",
     "**/test/generated/**",
     "**/.tmp/**",
@@ -17,7 +18,13 @@
   "rules": {
     "arrow-body-style": "error",
     "curly": "error",
-    "eqeqeq": ["warn", "always", { "null": "ignore" }],
+    "eqeqeq": [
+      "warn",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
     "import/consistent-type-specifier-style": "error",
     "import/no-duplicates": "error",
     "import/newline-after-import": "error",
@@ -28,7 +35,12 @@
     "no-duplicate-imports": "off",
     "no-empty-pattern": "error",
     "no-extra-boolean-cast": "error",
-    "no-implicit-coercion": ["warn", { "allow": ["!!"] }],
+    "no-implicit-coercion": [
+      "warn",
+      {
+        "allow": ["!!"]
+      }
+    ],
     "no-multi-assign": "error",
     "no-nested-ternary": "error",
     "no-param-reassign": "error",

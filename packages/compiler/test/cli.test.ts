@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -42,15 +42,24 @@ function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
-function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
+function runCliWithEnvironment(
+  root: string,
+  environment: NodeJS.ProcessEnv,
+  ...arguments_: ReadonlyArray<string>
+) {
   return spawnSync(process.execPath, [tsx, cli, ...arguments_], {
     cwd: root,
     encoding: "utf8",
+    env: environment,
     killSignal: "SIGKILL",
     maxBuffer: 4 * 1024 * 1024,
     shell: false,
     timeout: 30_000,
   });
+}
+
+function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
+  return runCliWithEnvironment(root, process.env, ...arguments_);
 }
 
 describe("convention-only CLI", () => {
@@ -123,6 +132,7 @@ describe("convention-only CLI", () => {
 
   it("keeps installed versions scoped to the target when a sibling conflicts", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "mirai-intl-versions-"));
+    const binRoot = join(workspaceRoot, "bin");
     const packageRoot = join(workspaceRoot, "packages/i18n");
     const siblingRoot = join(workspaceRoot, "packages/sibling");
     try {
@@ -134,6 +144,10 @@ describe("convention-only CLI", () => {
       await writeFile(
         join(workspaceRoot, "pnpm-workspace.yaml"),
         "packages:\n  - packages/*\n"
+      );
+      await writeFile(
+        join(workspaceRoot, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\nimporters:\n\n  packages/i18n:\n    dependencies: {}\n\n  packages/sibling:\n    dependencies: {}\n"
       );
       await writeConventionApp(packageRoot);
       await writeJson(join(packageRoot, "package.json"), {
@@ -147,21 +161,38 @@ describe("convention-only CLI", () => {
         name: "@example/sibling",
         version: "1.0.0",
       });
-      const installed = spawnSync(
-        "pnpm",
-        ["install", "--ignore-scripts", "--offline"],
+      await mkdir(binRoot, { recursive: true });
+      const pnpm = join(binRoot, "pnpm");
+      const pnpmListOutput = JSON.stringify([
         {
-          cwd: workspaceRoot,
-          encoding: "utf8",
-          shell: false,
-          timeout: 30_000,
-        }
+          dependencies: {
+            typescript: { version: "6.0.3" },
+            vite: { version: "7.3.6" },
+          },
+          name: "@example/cli-app",
+          path: packageRoot,
+        },
+        {
+          dependencies: { typescript: { version: "5.9.3" } },
+          name: "@example/sibling",
+          path: siblingRoot,
+        },
+      ]);
+      await writeFile(
+        pnpm,
+        `#!/usr/bin/env node\nif (!process.argv.includes("list")) {\n  process.stderr.write("expected pnpm list\\n");\n  process.exitCode = 1;\n} else {\n  process.stdout.write(${JSON.stringify(pnpmListOutput)});\n}\n`,
+        "utf8"
       );
-      expect(installed.error).toBeUndefined();
-      expect(installed.stderr).toBe("");
-      expect(installed.status).toBe(0);
+      await chmod(pnpm, 0o755);
 
-      const generated = runCli(packageRoot, "generate");
+      const generated = runCliWithEnvironment(
+        packageRoot,
+        {
+          ...process.env,
+          PATH: `${binRoot}${delimiter}${process.env.PATH ?? ""}`,
+        },
+        "generate"
+      );
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
         report: {

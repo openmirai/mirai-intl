@@ -15,6 +15,7 @@
   "ignorePatterns": [
     "**/dist/**",
     "**/coverage/**",
+    "**/src/i18n/generated/**",
     "**/node_modules/**",
     "**/test/generated/**",
     "**/.tmp/**",

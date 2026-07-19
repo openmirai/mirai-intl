@@ -9,6 +9,7 @@ import type {
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import type { CompileOutput } from "./compile";
+import { withGeneratedSourceHeader } from "./generated-source";
 
 export type DescriptorRepresentation = "constants" | "precompiled" | "proxy";
 
@@ -53,6 +54,7 @@ interface TreeNode {
 const compactDeclarationGroupLimit = 128;
 const compactTypeNameAlphabet =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const sourceArtifactExtension = /\.(?:[cm]?[jt]sx?)$/u;
 
 function createTree(
   messages: ReadonlyArray<RuntimeMessage>,
@@ -916,8 +918,13 @@ export function emitArtifacts(
     );
   }
   return Object.fromEntries(
-    Object.entries(artifacts).toSorted(([left], [right]) =>
-      compareCanonicalStrings(left, right)
-    )
+    Object.entries(artifacts)
+      .map(([name, content]): [string, string] => [
+        name,
+        sourceArtifactExtension.test(name)
+          ? withGeneratedSourceHeader(content)
+          : content,
+      ])
+      .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
   ) as EmittedArtifacts;
 }

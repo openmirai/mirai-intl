@@ -2,6 +2,7 @@ export * from "./canonical";
 export * from "./compile";
 export * from "./compose";
 export * from "./emit";
+export * from "./generated-source";
 export * from "./lifecycle";
 export * from "./parser";
 export * from "./catalog";

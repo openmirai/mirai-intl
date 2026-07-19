@@ -7,6 +7,7 @@ import { emptyObjectSchema } from "@openmirai/intl-abi";
 import {
   compileCatalog,
   emitArtifacts,
+  generatedSourceHeader,
 } from "@openmirai/intl-compiler/internal";
 import type {
   CatalogSource,
@@ -17,7 +18,7 @@ import { describe, expect, it } from "vitest";
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
 
 describe("compact catalog contracts", () => {
-  it("emits one empty private message module for an empty catalog", () => {
+  it("emits one header-only private message module for an empty catalog", () => {
     const artifacts = emitArtifacts(
       compileCatalog({
         ...catalogFixtureSource,
@@ -34,7 +35,9 @@ describe("compact catalog contracts", () => {
     expect(contract).not.toContain("catalogTree");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.d.mts");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.mjs");
-    expect(artifacts["catalog.messages.gen.mjs"]).toBe("");
+    expect(artifacts["catalog.messages.gen.mjs"]).toBe(
+      `${generatedSourceHeader}\n`
+    );
   });
 
   it("preserves exact catalog/path/value/kind/tag types in the public contract", async () => {
