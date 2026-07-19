@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.1.0-beta.3](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.2...v0.1.0-beta.3) (2026-07-19)
+
+
+### Bug Fixes
+
+* harden generated catalog tooling ([dd77306](https://github.com/openmirai/mirai-intl/commit/dd77306473328a914d87c7ecdff6d2925f5e8505))
+
 # [0.1.0-beta.2](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.1...v0.1.0-beta.2) (2026-07-19)
 
 
