@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.1.0-beta.4](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.3...v0.1.0-beta.4) (2026-07-19)
+
+
+### Features
+
+* infer structured value catalogs ([da35150](https://github.com/openmirai/mirai-intl/commit/da3515079c8b7494e056515f890553b9811f6e8b))
+
 # [0.1.0-beta.3](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.2...v0.1.0-beta.3) (2026-07-19)
 
 
