@@ -489,6 +489,19 @@ describe("catalog compiler fixture", () => {
       compileCatalog(
         sourceWith({
           ...plural,
+          kind: "rich",
+          tags: ["strong"],
+          translations: {
+            en: "{count, plural, one {<strong># result</strong>} other {<strong># results</strong>}}",
+            th: "{count, plural, other {<strong># รายการ</strong>}}",
+          },
+        })
+      )
+    ).not.toThrow();
+    expect(() =>
+      compileCatalog(
+        sourceWith({
+          ...plural,
           translations: {
             ...plural.translations,
             th: "{count, plural, one {หนึ่งรายการ} other {# รายการ}}",

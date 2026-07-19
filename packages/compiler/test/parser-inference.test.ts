@@ -49,6 +49,25 @@ describe("message contract inference", () => {
     ).toEqual({ count: { finite: true, type: "number" } });
   });
 
+  it("accepts locale-specific plural categories with equivalent rich contracts", () => {
+    expect(
+      inferMessageContract(
+        "example.rich-count",
+        {
+          en: "{count, plural, one {<strong># item</strong>} other {<strong># items</strong>}}",
+          th: "{count, plural, other {<strong># รายการ</strong>}}",
+        },
+        ["en", "th"]
+      )
+    ).toMatchObject({
+      kind: "rich",
+      tags: ["strong"],
+      valuesSchema: {
+        properties: { count: { finite: true, type: "number" } },
+      },
+    });
+  });
+
   it.each([
     {
       en: "{value, number}",
@@ -64,6 +83,11 @@ describe("message contract inference", () => {
       en: "<strong>Hello</strong> <strong>again</strong>",
       error: /incompatible parsed contracts in th/u,
       th: "<strong>สวัสดี</strong>",
+    },
+    {
+      en: "{count, plural, one {<strong><strong># item</strong></strong>} other {<strong># items</strong>}}",
+      error: /incompatible parsed contracts in th/u,
+      th: "{count, plural, other {<strong># รายการ</strong>}}",
     },
     {
       en: "{count, plural, =0 {none} other {some}} {count, plural, =0 {zero again} other {more}}",

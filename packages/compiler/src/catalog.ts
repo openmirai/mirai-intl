@@ -1000,6 +1000,32 @@ export function resolvePnpmInstalledTuple(
   );
 }
 
+async function targetPnpmProject(
+  input: unknown,
+  repositoryRoot: string
+): Promise<JsonObject> {
+  if (!Array.isArray(input)) {
+    throw new TypeError("pnpm list output must be an array");
+  }
+  const canonicalRepositoryRoot = await realpath(repositoryRoot);
+  const matches: Array<JsonObject> = [];
+  for (const project of input) {
+    if (!isPlainObject(project) || typeof project.path !== "string") {
+      continue;
+    }
+    const canonicalProjectPath = await realpath(project.path).catch(() => null);
+    if (canonicalProjectPath === canonicalRepositoryRoot) {
+      matches.push(project);
+    }
+  }
+  if (matches.length !== 1) {
+    throw new Error(
+      `pnpm list output must contain exactly one target project for ${canonicalRepositoryRoot}`
+    );
+  }
+  return matches[0] as JsonObject;
+}
+
 async function installedTuple(
   repositoryRoot: string,
   packageManager: unknown
@@ -1014,7 +1040,9 @@ async function installedTuple(
         ["list", "--json", "--depth", "Infinity", ...tuplePackages],
         { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }
       );
-      return resolvePnpmInstalledTuple(JSON.parse(stdout));
+      const output = JSON.parse(stdout) as unknown;
+      const targetProject = await targetPnpmProject(output, repositoryRoot);
+      return resolvePnpmInstalledTuple([targetProject]);
     } catch {
       // Preserve a useful non-authoritative report when the declared package
       // manager is unavailable; direct links still prove their own versions.
@@ -1030,14 +1058,137 @@ async function installedTuple(
   );
 }
 
+async function regularFileExists(
+  path: string,
+  label: string
+): Promise<boolean> {
+  try {
+    const entry = await lstat(path);
+    if (entry.isSymbolicLink() || !entry.isFile()) {
+      throw new Error(`${label} must be a regular file`);
+    }
+    return true;
+  } catch (error) {
+    if (fileSystemErrorCode(error) === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function lockfileHasImporter(lockfile: string, importer: string): boolean {
+  const importerKeys = [
+    importer,
+    `'${importer.replaceAll("'", "''")}'`,
+    JSON.stringify(importer),
+  ];
+  let inImporters = false;
+  for (const rawLine of lockfile.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (!inImporters) {
+      inImporters = line === "importers:";
+      continue;
+    }
+    if (line.trim().length === 0) {
+      continue;
+    }
+    if (!line.startsWith(" ")) {
+      return false;
+    }
+    if (importerKeys.some((key) => line === `  ${key}:`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function workspaceIncludesPackage(
+  workspaceRoot: string,
+  packageRoot: string
+): Promise<boolean> {
+  let projects: unknown;
+  try {
+    const { stdout } = await execFileAsync(
+      "pnpm",
+      [
+        "--dir",
+        workspaceRoot,
+        "list",
+        "--recursive",
+        "--depth",
+        "-1",
+        "--json",
+      ],
+      { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 }
+    );
+    projects =
+      stdout.trim().length === 0 ? [] : (JSON.parse(stdout) as unknown);
+  } catch (error) {
+    throw new Error(
+      "Unable to collect environment evidence: pnpm could not verify workspace package membership",
+      { cause: error }
+    );
+  }
+  if (!Array.isArray(projects)) {
+    throw new Error(
+      "Unable to collect environment evidence: pnpm workspace package membership was not an array"
+    );
+  }
+  for (const project of projects) {
+    if (!isPlainObject(project) || typeof project.path !== "string") {
+      continue;
+    }
+    const canonicalPath = await realpath(project.path).catch(() => null);
+    if (canonicalPath === packageRoot) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function pnpmLockfileEvidence(
+  packageRoot: string
+): Promise<Readonly<{ content: string }>> {
+  let directory = packageRoot;
+  while (true) {
+    const lockfilePath = join(directory, "pnpm-lock.yaml");
+    const hasLockfile = await regularFileExists(lockfilePath, "pnpm-lock.yaml");
+    if (directory === packageRoot && hasLockfile) {
+      return { content: await readFile(lockfilePath, "utf8") };
+    }
+
+    const hasWorkspaceManifest = await regularFileExists(
+      join(directory, "pnpm-workspace.yaml"),
+      "pnpm-workspace.yaml"
+    );
+    if (hasWorkspaceManifest && hasLockfile) {
+      const content = await readFile(lockfilePath, "utf8");
+      const importer = relative(directory, packageRoot).split(sep).join("/");
+      if (
+        lockfileHasImporter(content, importer) &&
+        (await workspaceIncludesPackage(directory, packageRoot))
+      ) {
+        return { content };
+      }
+    }
+
+    const parent = dirname(directory);
+    if (parent === directory) {
+      throw new Error(
+        "Unable to collect environment evidence: no pnpm-lock.yaml exists at the package root and no parent pnpm workspace lockfile includes the target package importer"
+      );
+    }
+    directory = parent;
+  }
+}
+
 async function collectEnvironment(
   loaded: LoadedConventionCatalog
 ): Promise<CatalogEnvironmentEvidence> {
   const packageJsonPath = join(loaded.repositoryRoot, "package.json");
-  const lockfilePath = join(loaded.repositoryRoot, "pnpm-lock.yaml");
-  const [packageJson, lockfile, appGit] = await Promise.all([
+  const [packageJson, lockfileEvidence, appGit] = await Promise.all([
     readFile(packageJsonPath, "utf8"),
-    readFile(lockfilePath, "utf8"),
+    pnpmLockfileEvidence(loaded.repositoryRoot),
     gitEvidence(loaded.repositoryRoot),
   ]);
   const compilerStart = resolve(
@@ -1057,7 +1208,7 @@ async function collectEnvironment(
     appGit,
     compilerGit,
     installedTuple: resolvedInstalledTuple,
-    lockfileHash: sha256(lockfile),
+    lockfileHash: sha256(lockfileEvidence.content),
     packageJsonHash: sha256(packageJson),
   };
 }
@@ -1357,18 +1508,17 @@ function normalizedMountedSourcePath(path: string, context: string): string {
 }
 
 function mountedSourceDeclarations(
-  value: unknown
+  value: unknown,
+  configContext: string
 ): ReadonlyArray<MountedSourceDeclaration> {
   if (value === undefined) {
     return [];
   }
   if (!Array.isArray(value) || value.length === 0) {
-    throw new TypeError(
-      "package.json miraiIntl.sources must be a non-empty array"
-    );
+    throw new TypeError(`${configContext}.sources must be a non-empty array`);
   }
   const declarations = value.map((entry, index) => {
-    const context = `package.json miraiIntl.sources[${index}]`;
+    const context = `${configContext}.sources[${index}]`;
     const object = assertObject(entry, context);
     assertExactKeys(object, ["from", "mount", "path"], context);
     const from = requiredString(object, "from", context);
@@ -1395,7 +1545,7 @@ function mountedSourceDeclarations(
   for (const [index, declaration] of ordered.entries()) {
     if (index > 0 && ordered[index - 1]?.mount === declaration.mount) {
       throw new Error(
-        `package.json miraiIntl.sources has duplicate mount ${declaration.mount}`
+        `${configContext}.sources has duplicate mount ${declaration.mount}`
       );
     }
   }
@@ -1498,26 +1648,30 @@ type ConventionExceptions = Readonly<{
   sourceLocale?: string;
 }>;
 
-function conventionExceptions(packageJson: JsonObject): ConventionExceptions {
-  if (!("miraiIntl" in packageJson)) {
-    return {
-      formatterVersions: {},
-      present: false,
-      schema: { messages: {} },
-      sources: [],
-    };
-  }
-  const root = assertObject(packageJson.miraiIntl, "package.json miraiIntl");
+function emptyConventionExceptions(): ConventionExceptions {
+  return {
+    formatterVersions: {},
+    present: false,
+    schema: { messages: {} },
+    sources: [],
+  };
+}
+
+function conventionExceptions(
+  value: unknown,
+  configContext: string
+): ConventionExceptions {
+  const root = assertObject(value, configContext);
   assertExactKeys(
     root,
     ["formatterVersions", "sourceLocale", "sources", "values"],
-    "package.json miraiIntl"
+    configContext
   );
   const formatterObject =
     "formatterVersions" in root
       ? assertObject(
           root.formatterVersions,
-          "package.json miraiIntl.formatterVersions"
+          `${configContext}.formatterVersions`
         )
       : {};
   const formatterVersions = Object.fromEntries(
@@ -1532,7 +1686,7 @@ function conventionExceptions(packageJson: JsonObject): ConventionExceptions {
           version.normalize("NFC") !== version
         ) {
           throw new TypeError(
-            "package.json miraiIntl formatter registrations require non-empty NFC IDs and versions"
+            `${configContext} formatter registrations require non-empty NFC IDs and versions`
           );
         }
         return [id, version];
@@ -1540,7 +1694,7 @@ function conventionExceptions(packageJson: JsonObject): ConventionExceptions {
   );
   const valuesObject =
     "values" in root
-      ? assertObject(root.values, "package.json miraiIntl.values")
+      ? assertObject(root.values, `${configContext}.values`)
       : {};
   const messages = Object.fromEntries(
     Object.entries(valuesObject)
@@ -1551,7 +1705,7 @@ function conventionExceptions(packageJson: JsonObject): ConventionExceptions {
           kind: "value" as const,
           resultSchema: parseValueSchema(
             resultSchema,
-            `package.json miraiIntl.values.${path}`
+            `${configContext}.values.${path}`
           ),
         },
       ])
@@ -1564,14 +1718,14 @@ function conventionExceptions(packageJson: JsonObject): ConventionExceptions {
       sourceLocaleValue.normalize("NFC") !== sourceLocaleValue)
   ) {
     throw new TypeError(
-      "package.json miraiIntl.sourceLocale must be a non-empty NFC locale"
+      `${configContext}.sourceLocale must be a non-empty NFC locale`
     );
   }
   return {
     formatterVersions,
     present: true,
     schema: { messages },
-    sources: mountedSourceDeclarations(root.sources),
+    sources: mountedSourceDeclarations(root.sources, configContext),
     ...(sourceLocaleValue === undefined
       ? {}
       : { sourceLocale: sourceLocaleValue }),
@@ -1594,7 +1748,37 @@ export async function loadConventionCatalog(
     "version",
     "package.json"
   );
-  const exceptions = conventionExceptions(packageJson);
+  const jsonConfigPath = join(repositoryRoot, "mirai-intl.config.json");
+  const hasJsonConfig = await regularFileExists(
+    jsonConfigPath,
+    "mirai-intl.config.json"
+  );
+  const hasPackageConfig = Object.hasOwn(packageJson, "miraiIntl");
+  if (hasJsonConfig && hasPackageConfig) {
+    throw new Error(
+      "mirai-intl.config.json and package.json miraiIntl cannot both be present"
+    );
+  }
+  let configPath = packagePath;
+  let exceptions = emptyConventionExceptions();
+  if (hasJsonConfig) {
+    configPath = jsonConfigPath;
+    const configContent = await readFile(jsonConfigPath, "utf8");
+    let configValue: unknown;
+    try {
+      configValue = JSON.parse(configContent) as unknown;
+    } catch (error) {
+      throw new Error("mirai-intl.config.json must contain valid JSON", {
+        cause: error,
+      });
+    }
+    exceptions = conventionExceptions(configValue, "mirai-intl.config.json");
+  } else if (hasPackageConfig) {
+    exceptions = conventionExceptions(
+      packageJson.miraiIntl,
+      "package.json miraiIntl"
+    );
+  }
   const dependencies = packageDependencies(packageJson);
   const frameworks: Array<ConventionFramework> = [
     dependencies.has("next") ? "next" : undefined,
@@ -1647,7 +1831,7 @@ export async function loadConventionCatalog(
   const sourceLocale = exceptions.sourceLocale ?? inferredSourceLocale;
   if (!sourceLocale) {
     throw new Error(
-      `Convention source locale is ambiguous across ${locales.join(",")}; set package.json miraiIntl.sourceLocale`
+      `Convention source locale is ambiguous across ${locales.join(",")}; set sourceLocale in mirai-intl.config.json or package.json miraiIntl`
     );
   }
   if (!locales.includes(sourceLocale)) {
@@ -1761,7 +1945,7 @@ export async function loadConventionCatalog(
     );
   return {
     config,
-    configPath: packagePath,
+    configPath,
     discovery,
     inputs: {
       discoveryPolicyHash: sha256(
@@ -1769,6 +1953,7 @@ export async function loadConventionCatalog(
       ),
       exceptionsHash: sha256(
         canonicalJson({
+          ...(hasJsonConfig ? { configFile: "mirai-intl.config.json" } : {}),
           formatterVersions: exceptions.formatterVersions,
           sourceLocale: exceptions.sourceLocale ?? null,
           sources: exceptions.sources.map(({ from, mount, path }) => ({
@@ -1793,9 +1978,10 @@ export async function loadConventionCatalog(
     repositoryRoot,
     source,
     watch: {
-      files: discovered
-        .flatMap((entry) => entry.watchFiles)
-        .toSorted(compareCanonicalStrings),
+      files: [
+        ...(hasJsonConfig ? [configPath] : []),
+        ...discovered.flatMap((entry) => entry.watchFiles),
+      ].toSorted(compareCanonicalStrings),
       roots: discovered
         .map((entry) => entry.root)
         .toSorted(compareCanonicalStrings),

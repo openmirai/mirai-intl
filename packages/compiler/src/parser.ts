@@ -152,6 +152,51 @@ function walk(
   }
 }
 
+function addTagCounts(
+  target: Map<string, number>,
+  source: ReadonlyMap<string, number>
+): void {
+  for (const [name, count] of source) {
+    target.set(name, (target.get(name) ?? 0) + count);
+  }
+}
+
+function maximumTagCounts(
+  nodes: ReadonlyArray<IrNode>
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    if (node.type === "tag") {
+      const tagCounts = new Map<string, number>([[node.name, 1]]);
+      addTagCounts(tagCounts, maximumTagCounts(node.children));
+      addTagCounts(counts, tagCounts);
+      continue;
+    }
+    if (node.type === "plural") {
+      // Branches are mutually exclusive at runtime. Comparing the greatest
+      // reachable multiplicity preserves nested/sequential tag safety without
+      // requiring locales to expose identical CLDR plural category sets.
+      const branchMaximums = new Map<string, number>();
+      for (const branch of Object.values(node.options)) {
+        for (const [name, count] of maximumTagCounts(branch)) {
+          branchMaximums.set(
+            name,
+            Math.max(branchMaximums.get(name) ?? 0, count)
+          );
+        }
+      }
+      addTagCounts(counts, branchMaximums);
+      continue;
+    }
+    if (node.type === "select") {
+      for (const branch of Object.values(node.options)) {
+        addTagCounts(counts, maximumTagCounts(branch));
+      }
+    }
+  }
+  return counts;
+}
+
 export function inspectMessageSyntax(message: string): MessageSyntax {
   const nodes = convertElements(
     parse(message, { captureLocation: false, ignoreTag: false })
@@ -378,7 +423,6 @@ export function parseMessage(
     parse(message, { captureLocation: false, ignoreTag: false })
   );
   const signature = new Map<string, Set<string>>();
-  const tagCounts = new Map<string, number>();
   const exactPluralBranches: Array<string> = [];
   const pluralBranches: Array<{
     categories: ReadonlyArray<string>;
@@ -476,8 +520,6 @@ export function parseMessage(
         break;
       }
       case "tag":
-        tagCounts.set(node.name, (tagCounts.get(node.name) ?? 0) + 1);
-        break;
       case "literal":
       case "pound":
         break;
@@ -512,6 +554,6 @@ export function parseMessage(
         })
         .map(([name, roles]) => [name, [...roles].toSorted().join("|")])
     ),
-    tagCounts: Object.fromEntries([...tagCounts.entries()].toSorted()),
+    tagCounts: Object.fromEntries([...maximumTagCounts(nodes)].toSorted()),
   };
 }

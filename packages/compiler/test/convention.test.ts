@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   symlink,
@@ -304,6 +305,81 @@ describe("convention-first catalog discovery", () => {
           contracts: { exceptions: { present: true } },
         },
       });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("loads explicit JSON composition config with file-backed provenance", async () => {
+    const root = await createConventionApp();
+    try {
+      const dependency = await createTranslationDependency(
+        root,
+        "@mirai/i18n",
+        { button: { label: "Button" } },
+        {
+          sourcePath: "locales/components/ui",
+          specifier: "workspace:*",
+        }
+      );
+      await writeJson(join(root, "package.json"), {
+        dependencies: {
+          "@mirai/i18n": dependency.specifier,
+          vite: "8.1.4",
+        },
+        name: "@example/dashboard",
+        version: "1.2.3",
+      });
+      const configPath = join(root, "mirai-intl.config.json");
+      const sources = [
+        {
+          from: "@mirai/i18n",
+          mount: "components.ui",
+          path: "locales/components/ui",
+        },
+      ];
+      await writeJson(configPath, { sources });
+
+      const first = await loadConventionCatalog(root);
+      expect(first.configPath).toBe(await realpath(configPath));
+      expect(first.inputs.exceptionsPresent).toBe(true);
+      expect(first.source.messages.map((message) => message.path)).toContain(
+        "components.ui.button.label"
+      );
+      const canonicalDependencyRoot = await realpath(dependency.dependencyRoot);
+      expect(first.watch.files).toEqual(
+        expect.arrayContaining([
+          await realpath(configPath),
+          join(canonicalDependencyRoot, "locales/components/ui/global/en.json"),
+          join(canonicalDependencyRoot, "locales/components/ui/global/th.json"),
+        ])
+      );
+
+      await writeJson(configPath, { sourceLocale: "th", sources });
+      const changed = await loadConventionCatalog(root);
+      expect(changed.configPath).toBe(await realpath(configPath));
+      expect(changed.inputs.exceptionsHash).not.toBe(
+        first.inputs.exceptionsHash
+      );
+      expect(changed.source.sourceLocale).toBe("th");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects simultaneous JSON and package.json configuration", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "mirai-intl.config.json"), { sources: [] });
+      await writeJson(join(root, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        miraiIntl: { sourceLocale: "en" },
+        name: "@example/dashboard",
+        version: "1.2.3",
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrowError(
+        /mirai-intl\.config\.json and package\.json miraiIntl cannot both be present/u
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }
