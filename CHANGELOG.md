@@ -1,5 +1,13 @@
 # Changelog
 
+# [0.1.0-beta.2](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.1...v0.1.0-beta.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* stage content-addressed fixtures during release ([2c6326d](https://github.com/openmirai/mirai-intl/commit/2c6326d3cfe4d9fa878afe655a7c67c82e77850f))
+* support composed workspace catalogs ([4612bbd](https://github.com/openmirai/mirai-intl/commit/4612bbd1aa7d5d3ca685295e00016b5123fe3fe4))
+
 # [0.1.0-beta.1](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.0...v0.1.0-beta.1) (2026-07-16)
 
 
