@@ -1,0 +1,10 @@
+{
+  "files": {
+    "includes": [
+      "**",
+      "!**/src/i18n/generated/**",
+      "!**/test/generated/**",
+      "!**/.tmp/**"
+    ]
+  }
+}

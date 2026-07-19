@@ -204,6 +204,181 @@ describe("convention-first catalog discovery", () => {
     }
   });
 
+  it("infers exact value contracts from whole-locale value files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mirai-intl-value-files-"));
+    try {
+      await writeJson(join(root, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@example/value-files",
+        version: "1.0.0",
+      });
+      await writeJson(join(root, "locales/runtime/en.json"), {
+        label: "Course catalog",
+      });
+      await writeJson(join(root, "locales/runtime/th.json"), {
+        label: "แคตตาล็อกหลักสูตร",
+      });
+      const values = {
+        flag: [true, false],
+        mixedRecord: [
+          {
+            introduction: {
+              details: { description: "Start here" },
+              order: 1,
+            },
+            title: "Course steps",
+          },
+          {
+            introduction: {
+              details: { description: "เริ่มที่นี่" },
+              order: 2,
+            },
+            title: "ขั้นตอนหลักสูตร",
+          },
+        ],
+        nestedArray: [
+          [["first"], ["second"]],
+          [["หนึ่ง"], ["สอง"]],
+        ],
+        number: [1, 2],
+        objectArray: [
+          [
+            { label: "Primary", value: "primary" },
+            { value: "secondary", label: "Secondary" },
+          ],
+          [{ label: "หลัก", value: "primary" }],
+        ],
+        scalar: ["Plain text", "ข้อความธรรมดา"],
+        stringArray: [
+          ["first", "second"],
+          ["หนึ่ง", "สอง"],
+        ],
+      } as const;
+      for (const [name, translations] of Object.entries(values)) {
+        await writeJson(
+          join(root, "locales/runtime", name, "en.value.json"),
+          translations[0]
+        );
+        await writeJson(
+          join(root, "locales/runtime", name, "th.value.json"),
+          translations[1]
+        );
+      }
+
+      const loaded = await loadConventionCatalog(root);
+      const messages = Object.fromEntries(
+        loaded.source.messages.map((message) => [message.path, message])
+      );
+
+      expect(messages["runtime.label"]).toMatchObject({ kind: "text" });
+      expect(messages["runtime.scalar"]).toMatchObject({
+        kind: "value",
+        resultSchema: { type: "string" },
+      });
+      expect(messages["runtime.flag"]?.resultSchema).toEqual({
+        type: "boolean",
+      });
+      expect(messages["runtime.number"]?.resultSchema).toEqual({
+        finite: true,
+        integer: true,
+        type: "number",
+      });
+      expect(messages["runtime.stringArray"]?.resultSchema).toEqual({
+        items: { type: "string" },
+        minItems: 1,
+        type: "array",
+      });
+      expect(messages["runtime.objectArray"]?.resultSchema).toEqual({
+        items: {
+          additionalProperties: false,
+          properties: {
+            label: { type: "string" },
+            value: { type: "string" },
+          },
+          required: ["label", "value"],
+          type: "object",
+        },
+        minItems: 1,
+        type: "array",
+      });
+      expect(messages["runtime.nestedArray"]?.resultSchema).toEqual({
+        items: {
+          items: { type: "string" },
+          minItems: 1,
+          type: "array",
+        },
+        minItems: 1,
+        type: "array",
+      });
+      expect(messages["runtime.mixedRecord"]?.resultSchema).toEqual({
+        additionalProperties: false,
+        properties: {
+          introduction: {
+            additionalProperties: false,
+            properties: {
+              details: {
+                additionalProperties: false,
+                properties: { description: { type: "string" } },
+                required: ["description"],
+                type: "object",
+              },
+              order: { finite: true, integer: true, type: "number" },
+            },
+            required: ["details", "order"],
+            type: "object",
+          },
+          title: { type: "string" },
+        },
+        required: ["introduction", "title"],
+        type: "object",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    {
+      en: [],
+      error: "cannot infer an empty value array",
+      name: "empty arrays",
+      th: [],
+    },
+    {
+      en: [1, "two"],
+      error: "contains heterogeneous values",
+      name: "heterogeneous arrays",
+      th: [2, 3],
+    },
+    {
+      en: null,
+      error: "cannot infer a value schema from null",
+      name: "null values",
+      th: null,
+    },
+    {
+      en: { label: "Primary" },
+      error: "fixed-shape object mismatch",
+      name: "cross-locale object shape mismatches",
+      th: { title: "หลัก" },
+    },
+  ])("rejects $name in whole-locale value files", async ({ en, error, th }) => {
+    const root = await mkdtemp(join(tmpdir(), "mirai-intl-value-error-"));
+    try {
+      await writeJson(join(root, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@example/value-error",
+        version: "1.0.0",
+      });
+      await writeJson(join(root, "locales/runtime/value/en.value.json"), en);
+      await writeJson(join(root, "locales/runtime/value/th.value.json"), th);
+
+      await expect(loadConventionCatalog(root)).rejects.toThrow(error);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("keeps only the selected build after an atomic selector update", async () => {
     const root = await createConventionApp();
     try {

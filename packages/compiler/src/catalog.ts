@@ -518,10 +518,11 @@ type LocaleFile = Readonly<{
   absolutePath: string;
   content: string;
   relativePath: string;
-  value: JsonObject;
+  value: JsonValue;
 }>;
 
 type LocaleDirectory = Readonly<{
+  kind: "namespace" | "value";
   localeFiles: Readonly<Record<string, LocaleFile>>;
   mount: ReadonlyArray<string>;
 }>;
@@ -586,8 +587,26 @@ async function discoverSource(
       (entry) => entry.isFile() && entry.name.endsWith(".json")
     );
     if (jsonEntries.length > 0) {
+      const valueEntries = jsonEntries.filter((entry) =>
+        entry.name.endsWith(".value.json")
+      );
+      const namespaceEntries = jsonEntries.filter(
+        (entry) => !entry.name.endsWith(".value.json")
+      );
+      if (valueEntries.length > 0 && namespaceEntries.length > 0) {
+        throw new Error(
+          `${logicalParts.join("/") || source.root} cannot mix <locale>.json and <locale>.value.json files`
+        );
+      }
+      const kind = valueEntries.length > 0 ? "value" : "namespace";
+      const selectedEntries =
+        kind === "value" ? valueEntries : namespaceEntries;
+      const suffix = kind === "value" ? ".value.json" : ".json";
       const byLocale = new Map(
-        jsonEntries.map((entry) => [entry.name.slice(0, -5), entry])
+        selectedEntries.map((entry) => [
+          entry.name.slice(0, -suffix.length),
+          entry,
+        ])
       );
       for (const locale of locales) {
         if (!byLocale.has(locale)) {
@@ -628,7 +647,10 @@ async function discoverSource(
           absolutePath,
           content,
           relativePath,
-          value: assertObject(parsed, relativePath),
+          value:
+            kind === "namespace"
+              ? toJsonValue(assertObject(parsed, relativePath), relativePath)
+              : toJsonValue(parsed, relativePath),
         };
         files.push({ hash: sha256(content), path: relativePath });
       }
@@ -636,7 +658,13 @@ async function discoverSource(
         logicalParts.length > 0 && flatten.has(logicalParts[0] ?? "")
           ? logicalParts.slice(1)
           : logicalParts;
-      directories.push({ localeFiles, mount: [...source.mount, ...mount] });
+      const mountedPath = [...source.mount, ...mount];
+      if (kind === "value" && mountedPath.length === 0) {
+        throw new Error(
+          `${logicalParts.join("/") || source.root} value locale files require a message path directory`
+        );
+      }
+      directories.push({ kind, localeFiles, mount: mountedPath });
     }
 
     for (const entry of entries) {
@@ -712,6 +740,201 @@ function toJsonValue(value: unknown, context: string): JsonValue {
   return value as JsonValue;
 }
 
+function mergeValueSchemas(
+  schemas: ReadonlyArray<ValueSchema>,
+  context: string
+): ValueSchema {
+  const first = schemas[0];
+  if (!first) {
+    throw new Error(`${context} cannot infer a schema from no values`);
+  }
+  if (schemas.some((schema) => schema.type !== first.type)) {
+    throw new Error(`${context} contains heterogeneous values`);
+  }
+  if (first.type === "number") {
+    return {
+      finite: true,
+      ...(schemas.every(
+        (schema) => schema.type === "number" && schema.integer === true
+      )
+        ? { integer: true }
+        : {}),
+      type: "number",
+    };
+  }
+  if (first.type === "array") {
+    return {
+      items: mergeValueSchemas(
+        schemas.map((schema) => {
+          if (schema.type !== "array") {
+            throw new Error(`${context} contains heterogeneous values`);
+          }
+          return schema.items;
+        }),
+        `${context}[]`
+      ),
+      minItems: 1,
+      type: "array",
+    };
+  }
+  if (first.type === "object") {
+    const required = first.required.toSorted(compareCanonicalStrings);
+    for (const schema of schemas) {
+      if (
+        schema.type !== "object" ||
+        canonicalJson(schema.required.toSorted(compareCanonicalStrings)) !==
+          canonicalJson(required)
+      ) {
+        throw new Error(`${context} contains objects with different shapes`);
+      }
+    }
+    return {
+      additionalProperties: false,
+      properties: Object.fromEntries(
+        required.map((key) => [
+          key,
+          mergeValueSchemas(
+            schemas.map((schema) => {
+              if (schema.type !== "object") {
+                throw new Error(`${context} contains heterogeneous values`);
+              }
+              const property = schema.properties[key];
+              if (!property) {
+                throw new Error(
+                  `${context} contains objects with different shapes`
+                );
+              }
+              return property;
+            }),
+            `${context}.${key}`
+          ),
+        ])
+      ),
+      required,
+      type: "object",
+    };
+  }
+  return first;
+}
+
+function inferValueSchema(value: JsonValue, context: string): ValueSchema {
+  if (value === null) {
+    throw new Error(`${context} cannot infer a value schema from null`);
+  }
+  if (typeof value === "string") {
+    return { type: "string" };
+  }
+  if (typeof value === "boolean") {
+    return { type: "boolean" };
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error(`${context} requires a finite number`);
+    }
+    return {
+      finite: true,
+      ...(Number.isInteger(value) ? { integer: true } : {}),
+      type: "number",
+    };
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      throw new Error(`${context} cannot infer an empty value array`);
+    }
+    return {
+      items: mergeValueSchemas(
+        value.map((entry, index) =>
+          inferValueSchema(entry, `${context}[${String(index)}]`)
+        ),
+        context
+      ),
+      minItems: 1,
+      type: "array",
+    };
+  }
+
+  const required = Object.keys(value).toSorted(compareCanonicalStrings);
+  return {
+    additionalProperties: false,
+    properties: Object.fromEntries(
+      required.map((key) => [
+        key,
+        inferValueSchema(value[key] as JsonValue, `${context}.${key}`),
+      ])
+    ),
+    required,
+    type: "object",
+  };
+}
+
+function validateInferredValue(
+  value: JsonValue,
+  schema: ValueSchema,
+  context: string
+): void {
+  if (value === null) {
+    throw new Error(`${context} cannot be null`);
+  }
+  switch (schema.type) {
+    case "string":
+      if (typeof value !== "string") {
+        throw new Error(`${context} must be a string`);
+      }
+      return;
+    case "boolean":
+      if (typeof value !== "boolean") {
+        throw new Error(`${context} must be a boolean`);
+      }
+      return;
+    case "number":
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new Error(`${context} must be a finite number`);
+      }
+      if (schema.integer === true && !Number.isInteger(value)) {
+        throw new Error(`${context} must be an integer`);
+      }
+      return;
+    case "array":
+      if (!Array.isArray(value)) {
+        throw new Error(`${context} must be an array`);
+      }
+      if (value.length === 0) {
+        throw new Error(`${context} cannot be an empty value array`);
+      }
+      value.forEach((entry, index) =>
+        validateInferredValue(
+          entry,
+          schema.items,
+          `${context}[${String(index)}]`
+        )
+      );
+      return;
+    case "object": {
+      if (Array.isArray(value) || typeof value !== "object") {
+        throw new Error(`${context} must be an object`);
+      }
+      const keys = Object.keys(value).toSorted(compareCanonicalStrings);
+      if (canonicalJson(keys) !== canonicalJson(schema.required)) {
+        throw new Error(`${context} has a fixed-shape object mismatch`);
+      }
+      for (const key of schema.required) {
+        const property = schema.properties[key];
+        if (!property) {
+          throw new Error(`${context} schema is missing property ${key}`);
+        }
+        validateInferredValue(
+          value[key] as JsonValue,
+          property,
+          `${context}.${key}`
+        );
+      }
+      return;
+    }
+    default:
+      throw new Error(`${context} uses an unsupported inferred value schema`);
+  }
+}
+
 function messagesFromDirectory(
   directory: LocaleDirectory,
   locales: ReadonlyArray<string>,
@@ -720,6 +943,44 @@ function messagesFromDirectory(
   usedDeclarations: Set<string>
 ): ReadonlyArray<MessageSource> {
   const messages: Array<MessageSource> = [];
+
+  if (directory.kind === "value") {
+    const path = directory.mount.join(".");
+    if (schema.messages[path]) {
+      throw new Error(
+        `${path} cannot use both <locale>.value.json inference and a configured value schema`
+      );
+    }
+    const sourceValue = directory.localeFiles[sourceLocale]?.value;
+    if (sourceValue === undefined) {
+      throw new Error(`Missing source locale ${sourceLocale}`);
+    }
+    const resultSchema = inferValueSchema(
+      sourceValue,
+      `${path} ${sourceLocale}`
+    );
+    const translations = Object.fromEntries(
+      locales.map((locale) => {
+        const file = directory.localeFiles[locale];
+        if (!file) {
+          throw new Error(`Missing locale ${locale}`);
+        }
+        validateInferredValue(file.value, resultSchema, `${path} ${locale}`);
+        return [locale, file.value];
+      })
+    );
+    messages.push({
+      kind: "value",
+      path,
+      provenance: locales
+        .map((locale) => directory.localeFiles[locale]?.relativePath ?? locale)
+        .join(" | "),
+      resultSchema,
+      translations,
+      valuesSchema: emptyObjectSchema,
+    });
+    return messages;
+  }
 
   const walk = (
     pathParts: ReadonlyArray<string>,
@@ -1431,7 +1692,10 @@ async function conventionalLocales(
     const locales = entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => {
-        const locale = entry.name.slice(0, -5);
+        const suffix = entry.name.endsWith(".value.json")
+          ? ".value.json"
+          : ".json";
+        const locale = entry.name.slice(0, -suffix.length);
         assertMessagePathSegment(locale, `Locale file ${entry.name}`);
         return locale;
       })

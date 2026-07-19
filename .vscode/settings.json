@@ -1,0 +1,10 @@
+{
+  "files.watcherExclude": {
+    "**/src/i18n/generated/**": true,
+    "**/test/generated/**": true
+  },
+  "search.exclude": {
+    "**/src/i18n/generated/**": true,
+    "**/test/generated/**": true
+  }
+}

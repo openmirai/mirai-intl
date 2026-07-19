@@ -32,7 +32,7 @@ package/catalog identity, generated output, and semantic paths. ICU ASTs infer
 required arguments, safe scalar roles, finite plural/number roles, selects,
 date/time/custom formatters, and rich tags across every locale.
 
-`package.json.miraiIntl` is optional. It is limited to genuine exceptions:
+`mirai-intl.config.json` is optional. It is limited to genuine exceptions:
 custom formatter versions, structured `value()` result schemas, and a source
 locale only when multiple non-English locales make the convention ambiguous.
 Deployable apps may also mount translation sources from declared dependencies
@@ -40,15 +40,13 @@ when a standard app-local locale tree is not enough:
 
 ```json
 {
-  "miraiIntl": {
-    "sources": [
-      {
-        "from": "@mirai/i18n",
-        "path": "src",
-        "mount": "components.ui"
-      }
-    ]
-  }
+  "sources": [
+    {
+      "from": "@mirai/i18n",
+      "path": "locales/components/ui",
+      "mount": "components.ui"
+    }
+  ]
 }
 ```
 
@@ -58,6 +56,21 @@ their paths are confined to the canonical dependency package root. Every
 source must provide the app locale set, and exact/object-leaf collisions fail
 instead of using source order as precedence. It does not duplicate ordinary
 text/rich message contracts.
+
+Structured values normally need no authored schema config. Put the complete
+value in paired `<locale>.value.json` files beneath its message-path directory:
+
+```text
+locales/components/ui/percentage/select/items/en.value.json
+locales/components/ui/percentage/select/items/th.value.json
+```
+
+The directory becomes the message key
+`components.ui.percentage.select.items`. The source locale infers one exact,
+recursive value schema for strings, booleans, finite numbers, non-empty
+homogeneous arrays, and fixed-shape objects; every other locale must match it.
+This keeps structured translation data beside the locale content instead of in
+per-key `values` blocks.
 
 Generation is atomic and content-addressed. `src/i18n/generated` retains one
 selected build plus a stable facade that publicly exposes only:
