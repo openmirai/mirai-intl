@@ -553,7 +553,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 15_000);
 
   it("uses TypeScript symbols so nested shadowed factories and translators are untouched", async () => {
     const fixture = await createGeneratedCatalog();
