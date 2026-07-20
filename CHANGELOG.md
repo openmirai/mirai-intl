@@ -1,5 +1,7 @@
 # Changelog
 
+# [0.1.0-beta.7](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.6...v0.1.0-beta.7) (2026-07-20)
+
 # [0.1.0-beta.6](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.5...v0.1.0-beta.6) (2026-07-20)
 
 
