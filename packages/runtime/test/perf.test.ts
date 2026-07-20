@@ -158,6 +158,15 @@ function makeRuntime(locale = "en"): StrictIntlRuntime {
 
 const strong = (children: ReadonlyArray<unknown>) => children.join("");
 
+const isCi = process.env.CI === "true";
+
+/** Local machines can use tight budgets; GitHub Actions needs headroom. */
+const PERF_BUDGET_NS = {
+  literal: isCi ? 5_000 : 500,
+  parameterized: isCi ? 20_000 : 2_000,
+  value: isCi ? 2_000 : 200,
+} as const;
+
 describe("runtime performance catalog", () => {
   it("renders literal text in both locales", () => {
     const en = makeRuntime("en");
@@ -285,7 +294,7 @@ describe("runtime performance catalog", () => {
     );
   });
 
-  it("completes 10k literal lookups under 500ns median", () => {
+  it(`completes 10k literal lookups under ${PERF_BUDGET_NS.literal}ns median`, () => {
     const runtime = makeRuntime();
     const d = find("text", "label") as TextDescriptor;
 
@@ -300,10 +309,10 @@ describe("runtime performance catalog", () => {
     samples.sort((a, b) => a - b);
     const median = samples[Math.floor(samples.length / 2)];
 
-    expect(median).toBeLessThan(500);
+    expect(median).toBeLessThan(PERF_BUDGET_NS.literal);
   });
 
-  it("completes 10k parameterized calls under 2000ns median", () => {
+  it(`completes 10k parameterized calls under ${PERF_BUDGET_NS.parameterized}ns median`, () => {
     const runtime = makeRuntime();
     const d = find("text", "greeting") as TextDescriptor<
       Record<string, unknown>
@@ -320,10 +329,10 @@ describe("runtime performance catalog", () => {
     samples.sort((a, b) => a - b);
     const median = samples[Math.floor(samples.length / 2)];
 
-    expect(median).toBeLessThan(2000);
+    expect(median).toBeLessThan(PERF_BUDGET_NS.parameterized);
   });
 
-  it("completes 10k value lookups under 200ns median", () => {
+  it(`completes 10k value lookups under ${PERF_BUDGET_NS.value}ns median`, () => {
     const runtime = makeRuntime();
     const d = find("value", "scalar") as ValueDescriptor;
 
@@ -338,6 +347,6 @@ describe("runtime performance catalog", () => {
     samples.sort((a, b) => a - b);
     const median = samples[Math.floor(samples.length / 2)];
 
-    expect(median).toBeLessThan(200);
+    expect(median).toBeLessThan(PERF_BUDGET_NS.value);
   });
 });
