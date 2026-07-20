@@ -1,6 +1,9 @@
-import { resolve, sep } from "node:path";
+import { access, realpath } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 
-import { regenerateMiraiIntlCatalog } from "./lifecycle";
+import { loadConventionCatalog } from "./catalog";
+import type { LoadedConventionCatalog } from "./catalog";
+import { ensureMiraiIntlCatalogOnce } from "./lifecycle";
 import {
   authorizePrivateMessageSliceRequest,
   loadPrivateMessageSlice,
@@ -48,12 +51,46 @@ type MiraiIntlHotUpdateContext = Readonly<{
   server: MiraiIntlViteServer;
 }>;
 
+type WatchRegistrar = Readonly<{ addWatchFile(file: string): void }>;
+
 function normalizedPath(path: string): string {
   return resolve(path).split(sep).join("/");
 }
 
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return normalizedPath(await realpath(path));
+  } catch {
+    return normalizedPath(path);
+  }
+}
+
+function isPathInside(parent: string, file: string): boolean {
+  const relativePath = relative(parent, file);
+  return (
+    relativePath !== "" &&
+    !relativePath.startsWith(`..${sep}`) &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(sep)
+  );
+}
+
 const restartMessage =
   "Translation sources changed. Restart Vite so mirai-intl can publish one reader-safe catalog before compilation.";
+
+const defaultGeneratedDirectory = "src/i18n/generated";
+
+async function hasPublishedCatalogPointer(
+  root: string,
+  generatedDirectory: string
+): Promise<boolean> {
+  try {
+    await access(join(root, generatedDirectory, "current.json"));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function miraiIntlVite(
   options: MiraiIntlTransformOptions = {}
@@ -61,39 +98,95 @@ export function miraiIntlVite(
   let resolvedRoot = options.root;
   let localeRoots: ReadonlyArray<string> = [];
   let configuredLocaleRoot: string | undefined;
+  let discoveryReady: Promise<void> = Promise.resolve();
   const currentOptions = (): MiraiIntlTransformOptions =>
     resolvedRoot ? { ...options, root: resolvedRoot } : options;
-  const isLocaleJson = (file: string): boolean => {
-    if (localeRoots.length === 0 || !file.endsWith(".json")) {
+  const packageRoot = (): string =>
+    resolve(resolvedRoot ?? options.root ?? process.cwd());
+  const applyDiscovery = (loaded: LoadedConventionCatalog): void => {
+    const discovery = loaded.discovery;
+    if (!discovery) {
+      throw new Error("Vite intl adapter requires convention discovery");
+    }
+    localeRoots = loaded.watch.roots.map(normalizedPath);
+    configuredLocaleRoot = normalizedPath(
+      resolve(loaded.repositoryRoot, discovery.localeRoot)
+    );
+  };
+  const registerBuildWatches = (
+    registrar: WatchRegistrar,
+    loaded: LoadedConventionCatalog
+  ): void => {
+    // Watch config + locale roots only. Per-file watches are redundant with
+    // configureServer root watches and amplify Vite graph invalidation.
+    registrar.addWatchFile(loaded.configPath);
+    for (const root of loaded.watch.roots.map(normalizedPath)) {
+      registrar.addWatchFile(root);
+    }
+  };
+  const isLocaleJson = async (file: string): Promise<boolean> => {
+    if (!file.endsWith(".json")) {
       return false;
     }
-    const normalized = normalizedPath(file);
-    return [...localeRoots, configuredLocaleRoot].some(
-      (root) =>
-        root !== undefined &&
-        (normalized === root || normalized.startsWith(`${root}/`))
+    const normalized = await canonicalPath(file);
+    const roots = await Promise.all(
+      [...localeRoots, configuredLocaleRoot]
+        .filter((root): root is string => root !== undefined)
+        .map((root) => canonicalPath(root))
     );
+    if (roots.length > 0) {
+      return roots.some(
+        (root) => normalized === root || isPathInside(root, normalized)
+      );
+    }
+    // Discovery may still be deferred on app boot; treat package locale JSON
+    // as translation sources so HMR still requests a restart.
+    const root = await canonicalPath(packageRoot());
+    return (
+      isPathInside(root, normalized) &&
+      (normalized.includes("/locales/") || normalized.includes("/src/locales/"))
+    );
+  };
+  const ensureDiscovery = (): Promise<void> => {
+    if (localeRoots.length > 0) {
+      return Promise.resolve();
+    }
+    discoveryReady = discoveryReady.then(async () => {
+      if (localeRoots.length > 0) {
+        return;
+      }
+      applyDiscovery(await loadConventionCatalog(packageRoot()));
+    });
+    return discoveryReady;
   };
   return {
     async buildStart() {
-      const result = await regenerateMiraiIntlCatalog(currentOptions());
-      const discovery = result.loaded.discovery;
-      if (!discovery) {
-        throw new Error("Vite intl adapter requires convention discovery");
-      }
-      localeRoots = result.loaded.watch.roots.map(normalizedPath);
-      configuredLocaleRoot = normalizedPath(
-        resolve(
-          resolvedRoot ?? result.loaded.repositoryRoot,
-          discovery.localeRoot
-        )
+      const opts = currentOptions();
+      const root = packageRoot();
+      const generatedDirectory =
+        opts.generatedDirectory ?? defaultGeneratedDirectory;
+      const published = await hasPublishedCatalogPointer(
+        root,
+        generatedDirectory
       );
-      this.addWatchFile(result.loaded.configPath);
-      for (const root of localeRoots) {
-        this.addWatchFile(root);
+
+      if (!published) {
+        // Fresh fixtures / first boot without `intl:ensure`.
+        const loaded = (await ensureMiraiIntlCatalogOnce(opts)).loaded;
+        applyDiscovery(loaded);
+        registerBuildWatches(this, loaded);
+        return;
       }
-      for (const file of result.loaded.watch.files) {
-        this.addWatchFile(file);
+
+      // App `predev` already published a catalog. Do not regenerate or scan
+      // discovery during Vite `buildStart` — that races SSR optimizeDeps and
+      // wedges Nitro (`transport invoke timed out` / `ERR_OUTDATED_OPTIMIZED_DEP`).
+      // Explicit `{ root }` (unit tests / programmatic Vite) still needs
+      // discovery for watch assertions before `configureServer`.
+      if (options.root !== undefined) {
+        const loaded = await loadConventionCatalog(root);
+        applyDiscovery(loaded);
+        registerBuildWatches(this, loaded);
       }
     },
     configResolved(config) {
@@ -101,17 +194,28 @@ export function miraiIntlVite(
     },
     configureServer(server) {
       const requireRestart = (file: string): void => {
-        if (!isLocaleJson(file)) {
-          return;
-        }
-        server.config.logger.error(restartMessage);
+        void isLocaleJson(file).then((matches) => {
+          if (!matches) {
+            return;
+          }
+          server.config.logger.error(restartMessage);
+        });
       };
-      const roots =
-        localeRoots.length > 0
-          ? localeRoots
-          : [resolve(resolvedRoot ?? process.cwd(), "src/locales")];
-      for (const root of roots) {
-        server.watcher.add(root);
+      const addLocaleWatchRoots = (): void => {
+        const roots =
+          localeRoots.length > 0
+            ? localeRoots
+            : [resolve(packageRoot(), "src/locales")];
+        for (const root of roots) {
+          server.watcher.add(root);
+        }
+      };
+      // Discovery from buildStart is already available for fixtures; app boot
+      // defers discovery and attaches watchers once it resolves.
+      if (localeRoots.length > 0) {
+        addLocaleWatchRoots();
+      } else {
+        void ensureDiscovery().then(addLocaleWatchRoots);
       }
       server.watcher.on("add", requireRestart);
       server.watcher.on("unlink", requireRestart);
@@ -122,7 +226,8 @@ export function miraiIntlVite(
     },
     enforce: "pre",
     async handleHotUpdate(context) {
-      if (!isLocaleJson(context.file)) {
+      await ensureDiscovery();
+      if (!(await isLocaleJson(context.file))) {
         return undefined;
       }
       context.server.config.logger.error(restartMessage);

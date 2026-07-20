@@ -367,6 +367,29 @@ describe("Vite adapter", () => {
     }
   });
 
+  it("does not regenerate a published catalog during Vite buildStart", async () => {
+    const root = await createConventionViteFixture();
+    try {
+      const { ensureMiraiIntlCatalogOnce } = await import("../src/lifecycle");
+      await ensureMiraiIntlCatalogOnce({ root });
+      const currentPath = join(root, "src/i18n/generated/current.json");
+      const before = await readFile(currentPath, "utf8");
+      const beforeBuilds = await readdir(
+        join(root, "src/i18n/generated/builds")
+      );
+
+      const plugin = miraiIntlVite({ root });
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+
+      expect(await readFile(currentPath, "utf8")).toBe(before);
+      await expect(
+        readdir(join(root, "src/i18n/generated/builds"))
+      ).resolves.toEqual(beforeBuilds);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("keeps the selected build stable and requires restart for live locale edits", async () => {
     const root = await createConventionViteBundleFixture();
     const plugin = miraiIntlVite({ root });
@@ -470,9 +493,13 @@ describe("Vite adapter", () => {
         expect.arrayContaining([
           join(canonicalRoot, "package.json"),
           join(canonicalRoot, "src/locales"),
-          join(canonicalRoot, "src/locales/global/en.json"),
-          join(canonicalRoot, "src/locales/global/th.json"),
         ])
+      );
+      expect(watched).not.toContain(
+        join(canonicalRoot, "src/locales/global/en.json")
+      );
+      expect(watched).not.toContain(
+        join(canonicalRoot, "src/locales/global/th.json")
       );
       const current = JSON.parse(
         await readFile(join(root, "src/i18n/generated/current.json"), "utf8")
@@ -579,11 +606,13 @@ describe("Vite adapter", () => {
         join(dependencyRoot, "src")
       );
       expect(watched).toEqual(
-        expect.arrayContaining([
-          canonicalDependencyRoot,
-          join(canonicalDependencyRoot, "global/en.json"),
-          join(canonicalDependencyRoot, "global/th.json"),
-        ])
+        expect.arrayContaining([canonicalDependencyRoot])
+      );
+      expect(watched).not.toContain(
+        join(canonicalDependencyRoot, "global/en.json")
+      );
+      expect(watched).not.toContain(
+        join(canonicalDependencyRoot, "global/th.json")
       );
     } finally {
       await rm(root, { force: true, recursive: true });
