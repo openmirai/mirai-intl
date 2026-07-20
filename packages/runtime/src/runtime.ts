@@ -355,6 +355,7 @@ export class StrictIntlRuntime {
   readonly #formatters: Readonly<Record<string, RuntimeFormatter>>;
   readonly #localeListeners = new Set<() => void>();
   readonly #trustedRichComponents: Readonly<Record<string, RichComponentMap>>;
+  readonly #validatedDescriptors = new WeakMap<object, ValidatedDescriptor>();
   #locale: string;
   #sinkDispatching = false;
 
@@ -629,6 +630,40 @@ export class StrictIntlRuntime {
     expectedKind: MessageDescriptor["kind"],
     candidate: unknown
   ): ValidatedDescriptor {
+    const manifest = this.#catalog.manifest;
+
+    if (
+      candidate !== null &&
+      (typeof candidate === "object" || typeof candidate === "function")
+    ) {
+      const cached = this.#validatedDescriptors.get(candidate);
+      if (cached) {
+        if (cached.descriptor.kind !== expectedKind) {
+          this.#fail({
+            code: "INTL_WRONG_KIND",
+            expected: expectedKind,
+            kind: cached.descriptor.kind,
+            message: "Descriptor was used with the wrong strict operation",
+          });
+        }
+        if (
+          cached.descriptor.catalogHash !== manifest.hash ||
+          cached.descriptor.buildToken !== manifest.buildToken ||
+          cached.descriptor.capabilitySetHash !== manifest.capabilitySetHash
+        ) {
+          this.#fail({
+            buildToken: cached.descriptor.buildToken,
+            capabilitySetHash: cached.descriptor.capabilitySetHash,
+            catalogHash: cached.descriptor.catalogHash,
+            code: "INTL_STALE_DESCRIPTOR",
+            expected: manifest.hash,
+            message: "Descriptor is stale or bound to another build",
+          });
+        }
+        return cached;
+      }
+    }
+
     const inspected = inspectDescriptor(candidate);
     if (!inspected) {
       this.#fail({
@@ -638,7 +673,6 @@ export class StrictIntlRuntime {
       });
     }
     const descriptor = inspected.descriptor;
-    const manifest = this.#catalog.manifest;
     if (descriptor.runtimeAbi !== manifest.runtimeAbi) {
       this.#fail({
         code: "INTL_ABI_MISMATCH",
@@ -693,11 +727,17 @@ export class StrictIntlRuntime {
         path: descriptor.path,
       });
     }
-    return {
+    const result = {
       descriptor,
       message,
       sourceDescriptor: inspected.sourceDescriptor,
     };
+    try {
+      this.#validatedDescriptors.set(inspected.sourceDescriptor, result);
+    } catch {
+      // WeakMap.set rejects non-object keys — sourceDescriptor is always an object
+    }
+    return result;
   }
 
   #validatedValues(message: RuntimeMessage, input: unknown): JsonObject {
@@ -712,6 +752,9 @@ export class StrictIntlRuntime {
         messageId: message.id,
         provenanceRef: message.provenanceRef,
       });
+    }
+    if (!acceptsValues && input === omittedValues) {
+      return {} as JsonObject;
     }
     const result = validateSchemaValue(
       message.argumentSchema,
