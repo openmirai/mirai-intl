@@ -399,7 +399,7 @@ describe("runtime diagnostic boundary", () => {
       Object.defineProperty(candidate, messageBrand, { value: payload });
       const error = captureRuntimeError(() =>
         securityRuntime().t(
-          candidate as TextDescriptor,
+          candidate as TextDescriptor<Record<string, unknown>>,
           { name: "Mali" } as never
         )
       );
@@ -434,7 +434,10 @@ describe("runtime diagnostic boundary", () => {
         [field]: injected,
       } as never);
       const error = captureRuntimeError(() =>
-        runtime.t(forged as TextDescriptor, { name: "Mali" } as never)
+        runtime.t(
+          forged as TextDescriptor<Record<string, unknown>>,
+          { name: "Mali" } as never
+        )
       );
       const [sinkDiagnostic] = diagnostics;
       if (!sinkDiagnostic) {
@@ -458,7 +461,10 @@ describe("runtime diagnostic boundary", () => {
       catalogId: "another-safe-catalog",
     } as never);
     const error = captureRuntimeError(() =>
-      securityRuntime().t(forged as TextDescriptor, { name: "Mali" } as never)
+      securityRuntime().t(
+        forged as TextDescriptor<Record<string, unknown>>,
+        { name: "Mali" } as never
+      )
     );
 
     expect(error.diagnostic.catalogId).toBe("another-safe-catalog");
@@ -601,7 +607,10 @@ describe("stale runtime identities", () => {
 
     let error: unknown;
     try {
-      runtime.t(descriptor as TextDescriptor, { name: "Mali" } as never);
+      runtime.t(
+        descriptor as TextDescriptor<Record<string, unknown>>,
+        { name: "Mali" } as never
+      );
     } catch (caught) {
       error = caught;
     }

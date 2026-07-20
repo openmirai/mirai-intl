@@ -76,17 +76,14 @@ export type ArgumentFreeTextMessagePaths<Node> = Extract<
   string
 >;
 
-type DescriptorAt<
-  Node,
-  Path extends string,
-  Kind extends DescriptorKind,
-> = NodeAtPath<Node, Path> extends infer Leaf
-  ? IsMessageDescriptor<Leaf> extends true
-    ? DescriptorKindOf<Leaf> extends Kind
-      ? Extract<Leaf, object>
+type DescriptorAt<Node, Path extends string, Kind extends DescriptorKind> =
+  NodeAtPath<Node, Path> extends infer Leaf
+    ? IsMessageDescriptor<Leaf> extends true
+      ? DescriptorKindOf<Leaf> extends Kind
+        ? Extract<Leaf, object>
+        : never
       : never
-    : never
-  : never;
+    : never;
 
 type TextAt<Node, Path extends string> = DescriptorAt<Node, Path, "text">;
 

@@ -196,12 +196,14 @@ function generatedDescriptorAt(tree: unknown, path: string): MessageDescriptor {
   return current as MessageDescriptor;
 }
 
-function textDescriptorAt(path: string): TextDescriptor {
+function textDescriptorAt(
+  path: string
+): TextDescriptor<Record<string, unknown>> {
   const descriptor = descriptorAt(path);
   if (descriptor.kind !== "text") {
     throw new Error(`${path} is not text`);
   }
-  return descriptor as TextDescriptor;
+  return descriptor as TextDescriptor<Record<string, unknown>>;
 }
 
 function richDescriptorAt(path: string): RichDescriptor {
@@ -368,7 +370,10 @@ function renderCaseWithDescriptor(
 ): unknown {
   switch (descriptor.kind) {
     case "text":
-      return runtime.t(descriptor as TextDescriptor, testCase.values as never);
+      return runtime.t(
+        descriptor as TextDescriptor<Record<string, unknown>>,
+        testCase.values as never
+      );
     case "rich":
       return runtime.rich(
         descriptor as RichDescriptor,
@@ -479,7 +484,10 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
 
     expect(
       captureRuntimeError(() =>
-        runtime.t({} as TextDescriptor, { name: "Mali" } as never)
+        runtime.t(
+          {} as TextDescriptor<Record<string, unknown>>,
+          { name: "Mali" } as never
+        )
       ).diagnostic.code
     ).toBe("INTL_DESCRIPTOR_INVALID");
     expect(
@@ -487,7 +495,7 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
         runtime.t(
           descriptorWith(text, {
             buildToken: "previous-build",
-          }) as TextDescriptor,
+          }) as TextDescriptor<Record<string, unknown>>,
           { name: "Mali" } as never
         )
       ).diagnostic.code
@@ -497,14 +505,17 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
         runtime.t(
           descriptorWith(text, {
             catalogHash: "sha256:previous-catalog",
-          }) as TextDescriptor,
+          }) as TextDescriptor<Record<string, unknown>>,
           { name: "Mali" } as never
         )
       ).diagnostic.code
     ).toBe("INTL_STALE_DESCRIPTOR");
     expect(
       captureRuntimeError(() =>
-        runtime.value(text as unknown as ValueDescriptor, undefined as never)
+        runtime.value(
+          text as unknown as ValueDescriptor<Record<string, unknown>>,
+          undefined as never
+        )
       ).diagnostic.code
     ).toBe("INTL_WRONG_KIND");
   });
@@ -521,7 +532,10 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
     );
 
     const error = captureRuntimeError(() =>
-      runtime.t(hostile as TextDescriptor, { name: "Mali" } as never)
+      runtime.t(
+        hostile as TextDescriptor<Record<string, unknown>>,
+        { name: "Mali" } as never
+      )
     );
 
     expect(error.diagnostic.code).toBe("INTL_DESCRIPTOR_INVALID");
@@ -783,7 +797,10 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
       const diagnosticSink = (diagnostic: IntlDiagnostic): void => {
         events.push(`sink:${diagnostic.code}`);
         if (nestedOperation === "t") {
-          runtime.t({} as TextDescriptor, { name: "nested" } as never);
+          runtime.t(
+            {} as TextDescriptor<Record<string, unknown>>,
+            { name: "nested" } as never
+          );
           return;
         }
         runtime.renderDynamic({
@@ -795,7 +812,9 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
 
       const error = captureRuntimeError(() =>
         runtime.value(
-          textDescriptorAt("greeting.morning") as unknown as ValueDescriptor,
+          textDescriptorAt("greeting.morning") as unknown as ValueDescriptor<
+            Record<string, unknown>
+          >,
           undefined as never
         )
       );
@@ -814,7 +833,10 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
       },
     });
     const error = captureRuntimeError(() =>
-      runtime.t({} as TextDescriptor, { name: "Mali" } as never)
+      runtime.t(
+        {} as TextDescriptor<Record<string, unknown>>,
+        { name: "Mali" } as never
+      )
     );
 
     expect(error.diagnostic.code).toBe("INTL_DESCRIPTOR_INVALID");
@@ -843,7 +865,10 @@ describe("renderer conformance evidence", () => {
     });
 
     const error = captureRuntimeError(() =>
-      runtime.t(descriptor as TextDescriptor, { name: "Mali" } as never)
+      runtime.t(
+        descriptor as TextDescriptor<Record<string, unknown>>,
+        { name: "Mali" } as never
+      )
     );
 
     expect(error.diagnostic.code).toBe("INTL_RENDERER_FAILURE");

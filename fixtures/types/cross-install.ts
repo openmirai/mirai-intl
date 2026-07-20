@@ -58,7 +58,7 @@ type LegacyTextDescriptor<
   Path extends string = string,
 > = LegacyMessageDescriptor<CatalogId, Path, Values, "text", string, never>;
 
-type LegacyCatalog = {
+interface LegacyCatalog {
   readonly colorPreset: {
     readonly blue: LegacyTextDescriptor<
       {},
@@ -76,7 +76,7 @@ type LegacyCatalog = {
     "@legacy/catalog",
     "greeting"
   >;
-};
+}
 
 import type {
   ArgumentFreeTextKeysFor,

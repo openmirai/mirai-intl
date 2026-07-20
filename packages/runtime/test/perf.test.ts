@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { emptyObjectSchema, defineMessageDescriptor } from "@openmirai/intl-abi";
-import type { TextDescriptor, ValueDescriptor } from "@openmirai/intl-abi";
-import type { RichDescriptor } from "@openmirai/intl-abi";
+import {
+  emptyObjectSchema,
+  defineMessageDescriptor,
+} from "@openmirai/intl-abi";
+import type {
+  TextDescriptor,
+  ValueDescriptor,
+  RichDescriptor,
+} from "@openmirai/intl-abi";
 import { compileCatalog } from "@openmirai/intl-compiler/internal";
 import type { CatalogSource } from "@openmirai/intl-compiler/internal";
 import {
@@ -23,6 +29,7 @@ const source = {
     {
       kind: "text",
       path: "label",
+      provenance: "packages/runtime/test/perf.test.ts:label",
       resultSchema: textResult,
       translations: { en: "Course catalog", th: "แคตตาล็อกหลักสูตร" },
       valuesSchema: emptyObjectSchema,
@@ -30,6 +37,7 @@ const source = {
     {
       kind: "text",
       path: "greeting",
+      provenance: "packages/runtime/test/perf.test.ts:greeting",
       resultSchema: textResult,
       translations: { en: "Hello, {name}", th: "สวัสดี {name}" },
       valuesSchema: {
@@ -42,6 +50,7 @@ const source = {
     {
       kind: "text",
       path: "plural",
+      provenance: "packages/runtime/test/perf.test.ts:plural",
       resultSchema: textResult,
       translations: {
         en: "{count, plural, =0 {No results} one {# result} other {# results}}",
@@ -57,6 +66,7 @@ const source = {
     {
       kind: "text",
       path: "select",
+      provenance: "packages/runtime/test/perf.test.ts:select",
       resultSchema: textResult,
       translations: {
         en: "{mode, select, none {No limit} other {{count} of {limit}}}",
@@ -76,6 +86,7 @@ const source = {
     {
       kind: "rich",
       path: "rich.simple",
+      provenance: "packages/runtime/test/perf.test.ts:rich.simple",
       resultSchema: textResult,
       tags: ["strong"],
       translations: {
@@ -92,6 +103,7 @@ const source = {
     {
       kind: "value",
       path: "scalar",
+      provenance: "packages/runtime/test/perf.test.ts:scalar",
       resultSchema: textResult,
       translations: { en: "ok", th: "ตกลง" },
       valuesSchema: emptyObjectSchema,
@@ -99,6 +111,7 @@ const source = {
     {
       kind: "value",
       path: "config",
+      provenance: "packages/runtime/test/perf.test.ts:config",
       resultSchema: {
         additionalProperties: false,
         properties: {
@@ -124,12 +137,14 @@ const compiled = compileCatalog(source);
 
 function find<Kind extends "text" | "rich" | "value">(
   kind: Kind,
-  path: string,
+  path: string
 ) {
   const d = compiled.descriptors.find(
-    (entry) => entry.kind === kind && entry.path === path,
+    (entry) => entry.kind === kind && entry.path === path
   );
-  if (!d) throw new Error(`Missing descriptor: ${path}`);
+  if (!d) {
+    throw new Error(`Missing descriptor: ${path}`);
+  }
   return d;
 }
 
@@ -148,10 +163,10 @@ describe("runtime performance catalog", () => {
     const en = makeRuntime("en");
     const th = makeRuntime("th");
     expect(en.t(find("text", "label") as TextDescriptor)).toBe(
-      "Course catalog",
+      "Course catalog"
     );
     expect(th.t(find("text", "label") as TextDescriptor)).toBe(
-      "แคตตาล็อกหลักสูตร",
+      "แคตตาล็อกหลักสูตร"
     );
   });
 
@@ -159,17 +174,23 @@ describe("runtime performance catalog", () => {
     const en = makeRuntime("en");
     const th = makeRuntime("th");
     expect(
-      en.t(find("text", "greeting") as TextDescriptor, { name: "Ada" } as never),
+      en.t(
+        find("text", "greeting") as TextDescriptor<Record<string, unknown>>,
+        { name: "Ada" } as never
+      )
     ).toBe("Hello, Ada");
     expect(
-      th.t(find("text", "greeting") as TextDescriptor, { name: "Ada" } as never),
+      th.t(
+        find("text", "greeting") as TextDescriptor<Record<string, unknown>>,
+        { name: "Ada" } as never
+      )
     ).toBe("สวัสดี Ada");
   });
 
   it("renders plural forms correctly per locale", () => {
     const en = makeRuntime("en");
     const th = makeRuntime("th");
-    const d = find("text", "plural") as TextDescriptor;
+    const d = find("text", "plural") as TextDescriptor<Record<string, unknown>>;
 
     expect(en.t(d, { count: 0 } as never)).toBe("No results");
     expect(en.t(d, { count: 1 } as never)).toBe("1 result");
@@ -181,14 +202,14 @@ describe("runtime performance catalog", () => {
 
   it("renders select branches correctly", () => {
     const en = makeRuntime("en");
-    const d = find("text", "select") as TextDescriptor;
+    const d = find("text", "select") as TextDescriptor<Record<string, unknown>>;
 
-    expect(
-      en.t(d, { count: 3, limit: 5, mode: "none" } as never),
-    ).toBe("No limit");
-    expect(
-      en.t(d, { count: 3, limit: 5, mode: "capped" } as never),
-    ).toBe("3 of 5");
+    expect(en.t(d, { count: 3, limit: 5, mode: "none" } as never)).toBe(
+      "No limit"
+    );
+    expect(en.t(d, { count: 3, limit: 5, mode: "capped" } as never)).toBe(
+      "3 of 5"
+    );
   });
 
   it("renders rich tags with trusted components", () => {
@@ -200,7 +221,9 @@ describe("runtime performance catalog", () => {
     } as never);
 
     expect(Array.isArray(result)).toBe(true);
-    if (!Array.isArray(result)) throw new Error("expected array");
+    if (!Array.isArray(result)) {
+      throw new Error("expected array");
+    }
     expect(result.join("")).toBe("Click Next to continue");
   });
 
@@ -222,13 +245,13 @@ describe("runtime performance catalog", () => {
     const runtime = makeRuntime("en");
     expect(runtime.locale).toBe("en");
     expect(runtime.t(find("text", "label") as TextDescriptor)).toBe(
-      "Course catalog",
+      "Course catalog"
     );
 
     runtime.setLocale("th");
     expect(runtime.locale).toBe("th");
     expect(runtime.t(find("text", "label") as TextDescriptor)).toBe(
-      "แคตตาล็อกหลักสูตร",
+      "แคตตาล็อกหลักสูตร"
     );
   });
 
@@ -236,8 +259,8 @@ describe("runtime performance catalog", () => {
     const runtime = makeRuntime();
 
     expect(() =>
-      runtime.value(find("text", "label") as unknown as ValueDescriptor),
-    ).toThrow();
+      runtime.value(find("text", "label") as unknown as ValueDescriptor)
+    ).toThrow("Descriptor was used with the wrong strict operation");
   });
 
   it("rejects stale descriptors", () => {
@@ -257,7 +280,9 @@ describe("runtime performance catalog", () => {
       validatorId: original.validatorId,
     });
 
-    expect(() => runtime.t(stale as TextDescriptor)).toThrow();
+    expect(() => runtime.t(stale as TextDescriptor)).toThrow(
+      /Descriptor|stale|invalid|build/i
+    );
   });
 
   it("completes 10k literal lookups under 500ns median", () => {
@@ -267,7 +292,9 @@ describe("runtime performance catalog", () => {
     const samples: Array<number> = [];
     for (let s = 0; s < 11; s += 1) {
       const start = process.hrtime.bigint();
-      for (let i = 0; i < 10_000; i += 1) runtime.t(d);
+      for (let i = 0; i < 10_000; i += 1) {
+        runtime.t(d);
+      }
       samples.push(Number(process.hrtime.bigint() - start) / 10_000);
     }
     samples.sort((a, b) => a - b);
@@ -278,13 +305,16 @@ describe("runtime performance catalog", () => {
 
   it("completes 10k parameterized calls under 2000ns median", () => {
     const runtime = makeRuntime();
-    const d = find("text", "greeting") as TextDescriptor;
+    const d = find("text", "greeting") as TextDescriptor<
+      Record<string, unknown>
+    >;
 
     const samples: Array<number> = [];
     for (let s = 0; s < 11; s += 1) {
       const start = process.hrtime.bigint();
-      for (let i = 0; i < 10_000; i += 1)
+      for (let i = 0; i < 10_000; i += 1) {
         runtime.t(d, { name: "Ada" } as never);
+      }
       samples.push(Number(process.hrtime.bigint() - start) / 10_000);
     }
     samples.sort((a, b) => a - b);
@@ -300,7 +330,9 @@ describe("runtime performance catalog", () => {
     const samples: Array<number> = [];
     for (let s = 0; s < 11; s += 1) {
       const start = process.hrtime.bigint();
-      for (let i = 0; i < 10_000; i += 1) runtime.value(d);
+      for (let i = 0; i < 10_000; i += 1) {
+        runtime.value(d);
+      }
       samples.push(Number(process.hrtime.bigint() - start) / 10_000);
     }
     samples.sort((a, b) => a - b);
