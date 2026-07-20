@@ -3,6 +3,8 @@ import type {
   AnyTextDescriptor,
   AnyValueDescriptor,
   DescriptorKind,
+  DescriptorKindOf,
+  IsMessageDescriptor,
   MessageDescriptor,
   ResultOf,
   StrictArgs,
@@ -29,8 +31,18 @@ type NodeAtPath<
     ? Node[Path]
     : never;
 
+/**
+ * Path helpers intentionally detect descriptors via {@link IsMessageDescriptor}
+ * / {@link DescriptorKindOf} (string `brand` + `kind`) instead of
+ * `extends MessageDescriptor`. Required `unique symbol` brand keys are
+ * install-local and break across duplicate `@openmirai/intl-abi` copies.
+ *
+ * Check {@link IsMessageDescriptor} before kind matching: `never extends Kind`
+ * is true in TypeScript, so bare `DescriptorKindOf` on namespace objects would
+ * incorrectly treat those objects as leaf keys.
+ */
 export type NamespacePaths<Node> = {
-  [Key in StringKeyOf<Node>]: Node[Key] extends MessageDescriptor
+  [Key in StringKeyOf<Node>]: IsMessageDescriptor<Node[Key]> extends true
     ? never
     : Node[Key] extends object
       ? Key | `${Key}.${NamespacePaths<Node[Key]>}`
@@ -38,15 +50,8 @@ export type NamespacePaths<Node> = {
 }[StringKeyOf<Node>];
 
 type MessagePaths<Node, Kind extends DescriptorKind> = {
-  [Key in StringKeyOf<Node>]: Node[Key] extends MessageDescriptor<
-    string,
-    string,
-    unknown,
-    infer ActualKind,
-    unknown,
-    string
-  >
-    ? ActualKind extends Kind
+  [Key in StringKeyOf<Node>]: IsMessageDescriptor<Node[Key]> extends true
+    ? DescriptorKindOf<Node[Key]> extends Kind
       ? Key
       : never
     : Node[Key] extends object
@@ -55,9 +60,11 @@ type MessagePaths<Node, Kind extends DescriptorKind> = {
 }[StringKeyOf<Node>];
 
 type StaticTextMessagePaths<Node> = {
-  [Key in StringKeyOf<Node>]: Node[Key] extends AnyTextDescriptor
-    ? keyof ValuesOf<Node[Key]> extends never
-      ? Key
+  [Key in StringKeyOf<Node>]: IsMessageDescriptor<Node[Key]> extends true
+    ? DescriptorKindOf<Node[Key]> extends "text"
+      ? keyof ValuesOf<Extract<Node[Key], object>> extends never
+        ? Key
+        : never
       : never
     : Node[Key] extends object
       ? `${Key}.${StaticTextMessagePaths<Node[Key]>}`
@@ -72,26 +79,20 @@ export type ArgumentFreeTextMessagePaths<Node> = Extract<
 type DescriptorAt<
   Node,
   Path extends string,
-  Descriptor extends MessageDescriptor,
-> = Extract<NodeAtPath<Node, Path>, Descriptor>;
+  Kind extends DescriptorKind,
+> = NodeAtPath<Node, Path> extends infer Leaf
+  ? IsMessageDescriptor<Leaf> extends true
+    ? DescriptorKindOf<Leaf> extends Kind
+      ? Extract<Leaf, object>
+      : never
+    : never
+  : never;
 
-type TextAt<Node, Path extends string> = DescriptorAt<
-  Node,
-  Path,
-  AnyTextDescriptor
->;
+type TextAt<Node, Path extends string> = DescriptorAt<Node, Path, "text">;
 
-type RichAt<Node, Path extends string> = DescriptorAt<
-  Node,
-  Path,
-  AnyRichDescriptor
->;
+type RichAt<Node, Path extends string> = DescriptorAt<Node, Path, "rich">;
 
-type ValueAt<Node, Path extends string> = DescriptorAt<
-  Node,
-  Path,
-  AnyValueDescriptor
->;
+type ValueAt<Node, Path extends string> = DescriptorAt<Node, Path, "value">;
 
 type NamespaceNode<Catalog, Namespace> = Namespace extends string
   ? Extract<NodeAtPath<Catalog, Namespace>, object>

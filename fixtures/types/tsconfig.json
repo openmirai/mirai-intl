@@ -22,5 +22,10 @@
     "types": [],
     "verbatimModuleSyntax": true
   },
-  "include": ["descriptors.ts", "negative.ts", "positive.ts"]
+  "include": [
+    "cross-install.ts",
+    "descriptors.ts",
+    "negative.ts",
+    "positive.ts"
+  ]
 }

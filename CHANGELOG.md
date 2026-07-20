@@ -1,5 +1,13 @@
 # Changelog
 
+# [0.1.0-beta.6](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.5...v0.1.0-beta.6) (2026-07-20)
+
+
+### Bug Fixes
+
+* **abi:** make descriptor types structurally compatible across duplicate package installs ([cross-install](https://github.com/openmirai/mirai-intl))
+* **runtime:** detect catalog message paths via string `brand`/`kind` instead of install-local unique symbols
+
 # [0.1.0-beta.5](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.4...v0.1.0-beta.5) (2026-07-20)
 
 
