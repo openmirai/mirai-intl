@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.1.0-beta.5](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.4...v0.1.0-beta.5) (2026-07-20)
+
+
+### Performance Improvements
+
+* **runtime:** cache validated descriptors to eliminate per-call inspection overhead ([e5fd68d](https://github.com/openmirai/mirai-intl/commit/e5fd68de05c430e123550ffa72001624200910a4))
+
 # [0.1.0-beta.4](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.3...v0.1.0-beta.4) (2026-07-19)
 
 
