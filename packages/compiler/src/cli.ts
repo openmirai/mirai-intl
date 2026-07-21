@@ -38,11 +38,61 @@ function assertConventionOnly(): void {
   }
 }
 
+function writeCheckReport(payload: unknown): void {
+  if (hasFlag("--json")) {
+    process.stdout.write(`${canonicalJson(payload)}\n`);
+    return;
+  }
+
+  const report =
+    payload && typeof payload === "object" && "report" in payload
+      ? (
+          payload as {
+            report?: {
+              catalog?: {
+                catalogId?: string;
+                locales?: Array<string>;
+                messageCounts?: Record<string, number>;
+              };
+              valid?: boolean;
+            };
+          }
+        ).report
+      : undefined;
+  const catalog = report?.catalog;
+  const catalogId = catalog?.catalogId ?? "catalog";
+  const locales = catalog?.locales?.join("+") ?? "unknown";
+  const messageCount = catalog?.messageCounts
+    ? Object.values(catalog.messageCounts).reduce(
+        (total, count) => total + count,
+        0
+      )
+    : undefined;
+  const valid =
+    payload &&
+    typeof payload === "object" &&
+    "valid" in payload &&
+    (payload as { valid?: boolean }).valid === false
+      ? false
+      : (report?.valid ?? true);
+
+  const summary = [
+    valid ? "ok" : "failed",
+    catalogId,
+    locales,
+    messageCount === undefined ? undefined : `${messageCount} messages`,
+  ]
+    .filter((part): part is string => typeof part === "string")
+    .join(" · ");
+
+  process.stdout.write(`mirai-intl check ${summary}\n`);
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] as Command | undefined;
   if (!command || !commands.includes(command)) {
     throw new Error(
-      "Usage: mirai-intl <generate|ensure|check|contract|explain> [--path <message>] [--skip-sources]"
+      "Usage: mirai-intl <generate|ensure|check|contract|explain> [--path <message>] [--skip-sources] [--json]"
     );
   }
   assertConventionOnly();
@@ -74,22 +124,21 @@ async function main(): Promise<void> {
       for (const diagnostic of sourceAnalysis.diagnostics) {
         process.stderr.write(`${diagnostic.file}: ${diagnostic.message}\n`);
       }
-      process.stdout.write(
-        `${canonicalJson({
-          ...result,
-          sourceAnalysis,
-          valid: false,
-        })}\n`
+      process.stderr.write(
+        `mirai-intl check failed: ${String(sourceAnalysis.diagnostics.length)} source diagnostic(s)\n`
       );
+      writeCheckReport({
+        ...result,
+        sourceAnalysis,
+        valid: false,
+      });
       process.exitCode = 1;
       return;
     }
-    process.stdout.write(
-      `${canonicalJson({
-        ...result,
-        sourceAnalysis,
-      })}\n`
-    );
+    writeCheckReport({
+      ...result,
+      sourceAnalysis,
+    });
     return;
   }
 
