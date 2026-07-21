@@ -88,7 +88,7 @@ describe("convention-only CLI", () => {
         },
       });
 
-      const checked = runCli(root, "check");
+      const checked = runCli(root, "check", "--json");
       expect(checked.error).toBeUndefined();
       expect(checked.signal).toBeNull();
       expect(checked.stderr).toBe("");
@@ -363,7 +363,7 @@ describe("convention-only CLI", () => {
         "utf8"
       );
 
-      const checked = runCli(root, "check");
+      const checked = runCli(root, "check", "--json");
       expect(checked.status).not.toBe(0);
       expect(`${checked.stdout}${checked.stderr}`).toMatch(
         /Unknown translation path missing/u
@@ -451,7 +451,7 @@ describe("convention-only CLI", () => {
         "utf8"
       );
 
-      const checked = runCli(root, "check");
+      const checked = runCli(root, "check", "--json");
       expect(checked.error).toBeUndefined();
       expect(checked.status).toBe(0);
       expect(JSON.parse(checked.stdout)).toMatchObject({

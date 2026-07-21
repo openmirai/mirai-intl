@@ -4,8 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createOtelDiagnosticSink } from "../src/otel";
 
-const emit = vi.fn();
-const getLogger = vi.fn(() => ({ emit }));
+const { emit, getLogger } = vi.hoisted(() => {
+  const emitMock = vi.fn();
+  return {
+    emit: emitMock,
+    getLogger: vi.fn(() => ({ emit: emitMock })),
+  };
+});
 
 vi.mock("@opentelemetry/api-logs", () => ({
   SeverityNumber: {
