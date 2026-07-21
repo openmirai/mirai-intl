@@ -12,7 +12,7 @@ vi.mock("@opentelemetry/api-logs", () => ({
     WARN: 13,
   },
   logs: {
-    getLogger: (...args: Array<unknown>) => getLogger(...args),
+    getLogger,
   },
 }));
 

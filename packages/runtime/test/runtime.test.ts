@@ -931,8 +931,9 @@ describe.each(backendMatrix)("$name production trust mode", (backendCase) => {
   });
 
   it("defaults production trust mode to soft-fail without throwing", () => {
-    const previousNodeEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
+    const processEnv = process.env as { NODE_ENV?: string };
+    const previousNodeEnv = processEnv.NODE_ENV;
+    processEnv.NODE_ENV = "production";
     try {
       const runtime = createIntlRuntime({
         backend: {
@@ -955,7 +956,7 @@ describe.each(backendMatrix)("$name production trust mode", (backendCase) => {
         } as never)
       ).toBe("Content is unavailable.");
     } finally {
-      process.env.NODE_ENV = previousNodeEnv;
+      processEnv.NODE_ENV = previousNodeEnv;
     }
   });
 
