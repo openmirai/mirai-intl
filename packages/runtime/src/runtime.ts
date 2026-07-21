@@ -29,6 +29,7 @@ import type {
 } from "@openmirai/intl-abi";
 
 import type { RendererBackend, RuntimeFormatter } from "./backend";
+import { isMissingResourceError } from "./backend";
 import { validateDynamicCall } from "./dynamic";
 import {
   getEmbeddedRuntimeMessage,
@@ -68,8 +69,32 @@ export type IntlRuntimeOptions = Readonly<{
   escapeValues?: boolean;
   formatters?: Readonly<Record<string, RuntimeFormatter>>;
   locale: string;
+  /**
+   * Soft-fail copy for recoverable missing resources when `strictValidation` is
+   * false. Never returns a dotted message path. Defaults to `""`.
+   */
+  missingMessageFallback?: string | ((diagnostic: IntlDiagnostic) => string);
+  /**
+   * When false, skip exact value-schema and deep descriptor re-hash checks.
+   * Defaults to true outside production (`NODE_ENV !== "production"`).
+   * Brand / kind / catalog identity checks still run so unlowered markers fail closed.
+   * Recoverable missing resources soft-fail instead of throwing.
+   */
+  strictValidation?: boolean;
   trustedRichComponents?: Readonly<Record<string, RichComponentMap>>;
 }>;
+
+function resolveStrictValidation(options: IntlRuntimeOptions): boolean {
+  if (options.strictValidation !== undefined) {
+    return options.strictValidation;
+  }
+  const nodeProcess = (
+    globalThis as typeof globalThis & {
+      process?: { env?: { NODE_ENV?: string } };
+    }
+  ).process;
+  return nodeProcess?.env?.NODE_ENV !== "production";
+}
 
 export type LanguageChangedSource = Readonly<{
   off: (
@@ -134,6 +159,7 @@ const diagnosticCodes = new Set<IntlDiagnostic["code"]>([
   "INTL_DYNAMIC_UNSUPPORTED",
   "INTL_FORMATTER_CAPABILITY_MISSING",
   "INTL_LOCALE_INVALID",
+  "INTL_MISSING_RESOURCE",
   "INTL_RENDERER_FAILURE",
   "INTL_REPLACEMENT_INVALID",
   "INTL_RICH_COMPONENT_INVALID",
@@ -354,6 +380,8 @@ export class StrictIntlRuntime {
   readonly #escapeValues: boolean;
   readonly #formatters: Readonly<Record<string, RuntimeFormatter>>;
   readonly #localeListeners = new Set<() => void>();
+  readonly #missingMessageFallback: IntlRuntimeOptions["missingMessageFallback"];
+  readonly #strictValidation: boolean;
   readonly #trustedRichComponents: Readonly<Record<string, RichComponentMap>>;
   readonly #validatedDescriptors = new WeakMap<object, ValidatedDescriptor>();
   #locale: string;
@@ -365,9 +393,15 @@ export class StrictIntlRuntime {
     this.#diagnosticSink = options.diagnosticSink;
     this.#escapeValues = options.escapeValues ?? false;
     this.#formatters = options.formatters ?? {};
+    this.#missingMessageFallback = options.missingMessageFallback;
+    this.#strictValidation = resolveStrictValidation(options);
     this.#trustedRichComponents = options.trustedRichComponents ?? {};
     this.#assertCatalogCompatibility();
     this.#locale = this.#resolveLocale(options.locale);
+  }
+
+  get strictValidation(): boolean {
+    return this.#strictValidation;
   }
 
   get locale(): string {
@@ -647,9 +681,10 @@ export class StrictIntlRuntime {
           });
         }
         if (
-          cached.descriptor.catalogHash !== manifest.hash ||
-          cached.descriptor.buildToken !== manifest.buildToken ||
-          cached.descriptor.capabilitySetHash !== manifest.capabilitySetHash
+          this.#strictValidation &&
+          (cached.descriptor.catalogHash !== manifest.hash ||
+            cached.descriptor.buildToken !== manifest.buildToken ||
+            cached.descriptor.capabilitySetHash !== manifest.capabilitySetHash)
         ) {
           this.#fail({
             buildToken: cached.descriptor.buildToken,
@@ -689,10 +724,19 @@ export class StrictIntlRuntime {
         message: "Descriptor belongs to another catalog",
       });
     }
+    if (descriptor.kind !== expectedKind) {
+      this.#fail({
+        code: "INTL_WRONG_KIND",
+        expected: expectedKind,
+        kind: descriptor.kind,
+        message: "Descriptor was used with the wrong strict operation",
+      });
+    }
     if (
-      descriptor.catalogHash !== manifest.hash ||
-      descriptor.buildToken !== manifest.buildToken ||
-      descriptor.capabilitySetHash !== manifest.capabilitySetHash
+      this.#strictValidation &&
+      (descriptor.catalogHash !== manifest.hash ||
+        descriptor.buildToken !== manifest.buildToken ||
+        descriptor.capabilitySetHash !== manifest.capabilitySetHash)
     ) {
       this.#fail({
         buildToken: descriptor.buildToken,
@@ -701,14 +745,6 @@ export class StrictIntlRuntime {
         code: "INTL_STALE_DESCRIPTOR",
         expected: manifest.hash,
         message: "Descriptor is stale or bound to another build",
-      });
-    }
-    if (descriptor.kind !== expectedKind) {
-      this.#fail({
-        code: "INTL_WRONG_KIND",
-        expected: expectedKind,
-        kind: descriptor.kind,
-        message: "Descriptor was used with the wrong strict operation",
       });
     }
     const message =
@@ -744,6 +780,9 @@ export class StrictIntlRuntime {
     const acceptsValues =
       Object.keys(message.argumentSchema.properties).length > 0;
     if (input !== omittedValues && !acceptsValues) {
+      if (!this.#strictValidation) {
+        return {} as JsonObject;
+      }
       this.#fail({
         actual: actualSummary(input),
         code: "INTL_VALUES_INVALID",
@@ -755,6 +794,17 @@ export class StrictIntlRuntime {
     }
     if (!acceptsValues && input === omittedValues) {
       return {} as JsonObject;
+    }
+    if (!this.#strictValidation) {
+      if (
+        input === omittedValues ||
+        input === null ||
+        typeof input !== "object" ||
+        Array.isArray(input)
+      ) {
+        return {} as JsonObject;
+      }
+      return input as JsonObject;
     }
     const result = validateSchemaValue(
       message.argumentSchema,
@@ -928,6 +978,13 @@ export class StrictIntlRuntime {
       }
       return rendered;
     } catch (error) {
+      if (!this.#strictValidation && isMissingResourceError(error)) {
+        return this.#recoverMissingResource({
+          kind,
+          locale,
+          validated,
+        });
+      }
       this.#fail({
         actual: actualSummary(error),
         code: "INTL_RENDERER_FAILURE",
@@ -937,6 +994,56 @@ export class StrictIntlRuntime {
         messageId: validated.message.id,
         provenanceRef: validated.message.provenanceRef,
       });
+    }
+  }
+
+  #recoverMissingResource(options: {
+    kind: MessageDescriptor["kind"];
+    locale: string;
+    validated: ValidatedDescriptor;
+  }): string {
+    const diagnostic = sanitizeDiagnostic({
+      catalogId: this.#catalog.manifest.catalogId,
+      code: "INTL_MISSING_RESOURCE",
+      kind: options.kind,
+      locale: options.locale,
+      message: "Translation resource is unavailable",
+      messageId: options.validated.message.id,
+      path: options.validated.message.path,
+      provenanceRef: options.validated.message.provenanceRef,
+      runtimeAbi: this.#catalog.manifest.runtimeAbi,
+    });
+    this.#emitDiagnostic(diagnostic);
+    return this.#resolveMissingFallback(diagnostic);
+  }
+
+  #resolveMissingFallback(diagnostic: IntlDiagnostic): string {
+    const configured = this.#missingMessageFallback;
+    if (typeof configured === "function") {
+      try {
+        const value = configured(diagnostic);
+        return typeof value === "string" ? value : "";
+      } catch {
+        return "";
+      }
+    }
+    if (typeof configured === "string") {
+      return configured;
+    }
+    return "";
+  }
+
+  #emitDiagnostic(diagnostic: IntlDiagnostic): void {
+    if (!this.#diagnosticSink || this.#sinkDispatching) {
+      return;
+    }
+    this.#sinkDispatching = true;
+    try {
+      this.#diagnosticSink(diagnostic);
+    } catch {
+      // Soft-fail paths must remain available when telemetry sinks fail.
+    } finally {
+      this.#sinkDispatching = false;
     }
   }
 

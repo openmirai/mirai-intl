@@ -1907,6 +1907,7 @@ async function resolveMountedSource(
 type ConventionExceptions = Readonly<{
   formatterVersions: Readonly<Record<string, string>>;
   present: boolean;
+  requiredLocales?: ReadonlyArray<string>;
   schema: MessageSchema;
   sources: ReadonlyArray<MountedSourceDeclaration>;
   sourceLocale?: string;
@@ -1921,6 +1922,43 @@ function emptyConventionExceptions(): ConventionExceptions {
   };
 }
 
+function parseRequiredLocales(
+  value: unknown,
+  configContext: string
+): ReadonlyArray<string> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TypeError(
+      `${configContext}.requiredLocales must be a non-empty array`
+    );
+  }
+  const locales = value.map((entry, index) => {
+    if (
+      typeof entry !== "string" ||
+      entry.length === 0 ||
+      entry.normalize("NFC") !== entry
+    ) {
+      throw new TypeError(
+        `${configContext}.requiredLocales[${index}] must be a non-empty NFC locale`
+      );
+    }
+    assertMessagePathSegment(
+      entry,
+      `${configContext}.requiredLocales[${index}]`
+    );
+    return entry;
+  });
+  const sorted = [...locales].toSorted(compareCanonicalStrings);
+  if (canonicalJson(sorted) !== canonicalJson([...new Set(sorted)])) {
+    throw new TypeError(
+      `${configContext}.requiredLocales must not contain duplicates`
+    );
+  }
+  return sorted;
+}
+
 function conventionExceptions(
   value: unknown,
   configContext: string
@@ -1928,7 +1966,13 @@ function conventionExceptions(
   const root = assertObject(value, configContext);
   assertExactKeys(
     root,
-    ["formatterVersions", "sourceLocale", "sources", "values"],
+    [
+      "formatterVersions",
+      "requiredLocales",
+      "sourceLocale",
+      "sources",
+      "values",
+    ],
     configContext
   );
   const formatterObject =
@@ -1985,11 +2029,16 @@ function conventionExceptions(
       `${configContext}.sourceLocale must be a non-empty NFC locale`
     );
   }
+  const requiredLocales = parseRequiredLocales(
+    root.requiredLocales,
+    configContext
+  );
   return {
     formatterVersions,
     present: true,
     schema: { messages },
     sources: mountedSourceDeclarations(root.sources, configContext),
+    ...(requiredLocales === undefined ? {} : { requiredLocales }),
     ...(sourceLocaleValue === undefined
       ? {}
       : { sourceLocale: sourceLocaleValue }),
@@ -2086,6 +2135,13 @@ export async function loadConventionCatalog(
     throw new Error("Convention locale root is missing");
   }
   const locales = await conventionalLocales(join(repositoryRoot, sourceRoot));
+  if (exceptions.requiredLocales !== undefined) {
+    if (canonicalJson(locales) !== canonicalJson(exceptions.requiredLocales)) {
+      throw new Error(
+        `Convention locales must be exactly ${exceptions.requiredLocales.join(",")}; found ${locales.join(",")}`
+      );
+    }
+  }
   let inferredSourceLocale: string | undefined;
   if (locales.includes("en")) {
     inferredSourceLocale = "en";

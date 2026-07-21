@@ -1247,6 +1247,27 @@ function analyzeSource(
   const symbolAt = (identifier: ts.Identifier): ts.Symbol | undefined =>
     checker.getSymbolAtLocation(identifier);
 
+  const referenceSymbol = (
+    identifier: ts.Identifier
+  ): ts.Symbol | undefined => {
+    if (
+      ts.isShorthandPropertyAssignment(identifier.parent) &&
+      identifier.parent.name === identifier
+    ) {
+      return (
+        checker.getShorthandAssignmentValueSymbol(identifier.parent) ??
+        checker.resolveName(
+          identifier.text,
+          identifier,
+          ts.SymbolFlags.Value | ts.SymbolFlags.Alias,
+          false
+        ) ??
+        symbolAt(identifier)
+      );
+    }
+    return symbolAt(identifier);
+  };
+
   const diagnostic = (node: ts.Node, message: string): never => {
     const start = node.getStart(sourceFile);
     const { character, line } = sourceFile.getLineAndCharacterOfPosition(start);
@@ -1632,6 +1653,131 @@ function analyzeSource(
     }
     const namespace = textTranslator(value.expression);
     return namespace === undefined ? undefined : { namespace, operation };
+  };
+
+  const bindingPatternDefinesName = (
+    name: ts.BindingName,
+    expected: string
+  ): boolean => {
+    if (ts.isIdentifier(name)) {
+      return name.text === expected;
+    }
+    return name.elements.some(
+      (element) =>
+        !ts.isOmittedExpression(element) &&
+        bindingPatternDefinesName(element.name, expected)
+    );
+  };
+
+  const typeMentionsTranslator = (
+    typeNode: ts.TypeNode | undefined
+  ): boolean => {
+    if (!typeNode) {
+      return false;
+    }
+    if (/Translator|TranslationFunction/u.test(typeNode.getText(sourceFile))) {
+      return true;
+    }
+    const type = checker.getTypeFromTypeNode(typeNode);
+    if (/Translator|TranslationFunction/u.test(checker.typeToString(type))) {
+      return true;
+    }
+    for (const property of type.getProperties()) {
+      const propertyType = checker.getTypeOfSymbolAtLocation(
+        property,
+        typeNode
+      );
+      if (
+        /Translator|TranslationFunction/u.test(
+          checker.typeToString(propertyType)
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const parameterDefinesTranslatorProp = (
+    parameter: ts.ParameterDeclaration,
+    name: string
+  ): boolean => {
+    if (!bindingPatternDefinesName(parameter.name, name)) {
+      return false;
+    }
+    if (!parameter.type) {
+      return false;
+    }
+    if (
+      /Translator|TranslationFunction/u.test(parameter.type.getText(sourceFile))
+    ) {
+      return true;
+    }
+    const type = checker.getTypeFromTypeNode(parameter.type);
+    const property = type.getProperty(name);
+    if (!property) {
+      return typeMentionsTranslator(parameter.type);
+    }
+    const propertyType = checker.getTypeOfSymbolAtLocation(property, parameter);
+    return /Translator|TranslationFunction/u.test(
+      checker.typeToString(propertyType)
+    );
+  };
+
+  const isTranslatorPropIdentifier = (identifier: ts.Identifier): boolean => {
+    const symbol = symbolAt(identifier);
+    if (symbol && translatorSymbols.has(symbol)) {
+      return false;
+    }
+
+    let current: ts.Node | undefined = identifier.parent;
+    while (current) {
+      if (ts.isFunctionLike(current)) {
+        for (const parameter of current.parameters) {
+          if (parameterDefinesTranslatorProp(parameter, identifier.text)) {
+            return true;
+          }
+        }
+        // Nested function with its own non-Translator `t` parameter shadows outer props.
+        if (
+          current.parameters.some(
+            (parameter) =>
+              bindingPatternDefinesName(parameter.name, identifier.text) &&
+              !parameterDefinesTranslatorProp(parameter, identifier.text)
+          )
+        ) {
+          return false;
+        }
+      }
+      current = current.parent;
+    }
+    return false;
+  };
+
+  const unboundTranslationCallee = (
+    expression: ts.Expression
+  ): ts.Node | undefined => {
+    const value = unwrapExpression(expression);
+    if (ts.isIdentifier(value) && value.text === "t") {
+      return isTranslatorPropIdentifier(value) ? value : undefined;
+    }
+    if (!ts.isPropertyAccessExpression(value)) {
+      return undefined;
+    }
+    const operation = value.name.text;
+    if (
+      operation !== "rich" &&
+      operation !== "value" &&
+      operation !== "dynamic" &&
+      operation !== "map"
+    ) {
+      return undefined;
+    }
+    const object = unwrapExpression(value.expression);
+    if (!ts.isIdentifier(object) || object.text !== "t") {
+      return undefined;
+    }
+    return isTranslatorPropIdentifier(object) ? object : undefined;
   };
 
   const translationKeyNamespace = (
@@ -2144,6 +2290,14 @@ function analyzeSource(
           kind: "message",
           local: uniqueAlias(message),
         });
+      } else {
+        const unbound = unboundTranslationCallee(node.expression);
+        if (unbound) {
+          diagnostic(
+            unbound,
+            "Translation call must use a useTranslations()/getServerTranslations() binding in this module"
+          );
+        }
       }
     }
     ts.forEachChild(node, visitCalls);
@@ -2152,7 +2306,7 @@ function analyzeSource(
 
   const validateTranslatorReferences = (node: ts.Node): void => {
     if (ts.isIdentifier(node)) {
-      const symbol = symbolAt(node);
+      const symbol = referenceSymbol(node);
       const dependencyArray = ts.isArrayLiteralExpression(node.parent)
         ? node.parent
         : undefined;
@@ -2661,6 +2815,9 @@ export async function transformMiraiIntlSource(
   };
 }
 
+const TRANSLATION_CALL_CANDIDATE =
+  /(?:\buseTranslations\b|\bgetServerTranslations\b|\bcreateTranslationKey\b|\bparseTranslationKey\b|\bt\.rich\s*\(|\bt\.value\s*\(|\bt\.map\s*\(|\bt\s*\(\s*["'`])/u;
+
 export function isMiraiIntlTransformCandidate(
   source: string,
   id: string
@@ -2669,9 +2826,6 @@ export function isMiraiIntlTransformCandidate(
   return (
     !cleanId.includes(`${sep}node_modules${sep}`) &&
     supportedSource.test(cleanId) &&
-    (source.includes("useTranslations") ||
-      source.includes("getServerTranslations") ||
-      source.includes("createTranslationKey") ||
-      source.includes("parseTranslationKey"))
+    TRANSLATION_CALL_CANDIDATE.test(source)
   );
 }

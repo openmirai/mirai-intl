@@ -64,6 +64,33 @@ export type TFunctionBridgeOptions = Readonly<{
   resolveResourceLocale?: (key: string, locale: string) => string | undefined;
 }>;
 
+export const MISSING_RESOURCE_CODE = "missing-resource" as const;
+
+export class MissingResourceError extends Error {
+  readonly code = MISSING_RESOURCE_CODE;
+
+  override readonly name = "MissingResourceError";
+
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export function isMissingResourceError(
+  error: unknown
+): error is MissingResourceError {
+  if (error instanceof MissingResourceError) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    "code" in error &&
+    (error as { code: unknown }).code === MISSING_RESOURCE_CODE
+  );
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -127,7 +154,7 @@ export function createTFunctionBridgeBackend(
 ): RendererBackend {
   const resourceLocale = (request: RenderRequest): string => {
     if (!options.resourceExists(request.message.path, request.locale)) {
-      throw new Error("TFunction resource is unavailable");
+      throw new MissingResourceError("TFunction resource is unavailable");
     }
     const locale =
       options.resolveResourceLocale?.(request.message.path, request.locale) ??
@@ -143,7 +170,7 @@ export function createTFunctionBridgeBackend(
       if (request.message.kind === "value") {
         const value = request.message.localeValues?.[request.locale];
         if (value === undefined) {
-          throw new Error("Missing structured locale value");
+          throw new MissingResourceError("Missing structured locale value");
         }
         return value;
       }
@@ -173,7 +200,9 @@ export function createTFunctionBridgeBackend(
       }
       const nodes = request.message.localeNodes?.[locale];
       if (!nodes) {
-        throw new Error("Rich TFunction resource has no normalized message IR");
+        throw new MissingResourceError(
+          "Rich TFunction resource has no normalized message IR"
+        );
       }
       return renderRichNodes(nodes, state);
     },

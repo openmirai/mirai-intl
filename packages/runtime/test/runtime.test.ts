@@ -27,6 +27,7 @@ import {
 } from "@openmirai/intl-compiler/internal";
 import type { DescriptorRepresentation } from "@openmirai/intl-compiler/internal";
 import {
+  MissingResourceError,
   createIntlRuntime,
   createPrecompiledBackend,
   createTFunctionBridgeBackend,
@@ -269,6 +270,8 @@ type RuntimeOverrides = Readonly<{
   escapeValues?: boolean;
   formatters?: FormatterMap;
   locale?: string;
+  missingMessageFallback?: string | ((diagnostic: IntlDiagnostic) => string);
+  strictValidation?: boolean;
   trustedRichComponents?: Readonly<
     Record<
       string,
@@ -293,6 +296,12 @@ function runtimeFor(
     ...(overrides.escapeValues === undefined
       ? {}
       : { escapeValues: overrides.escapeValues }),
+    ...(overrides.missingMessageFallback === undefined
+      ? {}
+      : { missingMessageFallback: overrides.missingMessageFallback }),
+    ...(overrides.strictValidation === undefined
+      ? {}
+      : { strictValidation: overrides.strictValidation }),
     ...(overrides.trustedRichComponents
       ? { trustedRichComponents: overrides.trustedRichComponents }
       : {}),
@@ -845,6 +854,107 @@ describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
   });
 });
 
+describe.each(backendMatrix)("$name production trust mode", (backendCase) => {
+  it("skips exact value schema validation while keeping brand fail-closed", () => {
+    const runtime = runtimeFor(backendCase, { strictValidation: false });
+    expect(runtime.strictValidation).toBe(false);
+    const descriptor = textDescriptorAt("greeting.morning");
+
+    expect(runtime.t(descriptor, { name: "Mali" } as never)).toBe(
+      "Good morning, Mali"
+    );
+    expect(runtime.t(descriptor, { extra: true, name: "Mali" } as never)).toBe(
+      "Good morning, Mali"
+    );
+
+    expect(
+      captureRuntimeError(() =>
+        runtime.t(
+          {} as TextDescriptor<Record<string, unknown>>,
+          { name: "Mali" } as never
+        )
+      ).diagnostic.code
+    ).toBe("INTL_DESCRIPTOR_INVALID");
+  });
+
+  it("skips stale hash re-checks while still rejecting wrong kind", () => {
+    const runtime = runtimeFor(backendCase, { strictValidation: false });
+    const text = textDescriptorAt("greeting.morning");
+
+    expect(
+      runtime.t(
+        descriptorWith(text, {
+          buildToken: "previous-build",
+        }) as TextDescriptor<Record<string, unknown>>,
+        { name: "Mali" } as never
+      )
+    ).toBe("Good morning, Mali");
+
+    expect(
+      captureRuntimeError(() =>
+        runtime.value(
+          text as unknown as ValueDescriptor<Record<string, unknown>>,
+          undefined as never
+        )
+      ).diagnostic.code
+    ).toBe("INTL_WRONG_KIND");
+  });
+
+  it("soft-fails missing resources without returning dotted key paths", () => {
+    const diagnostics: Array<IntlDiagnostic> = [];
+    const runtime = createIntlRuntime({
+      backend: {
+        id: "tfunction-bridge-v1",
+        render() {
+          throw new MissingResourceError("TFunction resource is unavailable");
+        },
+        supportsPortableIr: true,
+      },
+      catalog: compiled.catalog,
+      diagnosticSink(diagnostic) {
+        diagnostics.push(diagnostic);
+      },
+      formatters: catalogFormatters,
+      locale: "en",
+      missingMessageFallback: "Content is unavailable.",
+      strictValidation: false,
+    });
+    const rendered = runtime.t(textDescriptorAt("greeting.morning"), {
+      name: "Mali",
+    } as never);
+
+    expect(rendered).toBe("Content is unavailable.");
+    expect(rendered).not.toContain("greeting.morning");
+    expect(diagnostics.map((entry) => entry.code)).toEqual([
+      "INTL_MISSING_RESOURCE",
+    ]);
+  });
+
+  it("still throws for missing resources under strict validation", () => {
+    const runtime = createIntlRuntime({
+      backend: {
+        id: "tfunction-bridge-v1",
+        render() {
+          throw new MissingResourceError("TFunction resource is unavailable");
+        },
+        supportsPortableIr: true,
+      },
+      catalog: compiled.catalog,
+      formatters: catalogFormatters,
+      locale: "en",
+      strictValidation: true,
+    });
+
+    expect(
+      captureRuntimeError(() =>
+        runtime.t(textDescriptorAt("greeting.morning"), {
+          name: "Mali",
+        } as never)
+      ).diagnostic.code
+    ).toBe("INTL_RENDERER_FAILURE");
+  });
+});
+
 describe("renderer conformance evidence", () => {
   it("does not treat a backend-specific precompiled catalog as portable IR", () => {
     const backendSpecific = compileCatalog({
@@ -1002,7 +1112,8 @@ describe("renderer conformance evidence", () => {
 
     expect(error.diagnostic.code).toBe("INTL_RENDERER_FAILURE");
     expect(error.message).toBe("Strict translation renderer failed");
-    expect(error.diagnostic.actual).toEqual({ length: 2, type: "instance" });
+    expect(error.diagnostic.actual?.type).toBe("instance");
+    expect(JSON.stringify(error.diagnostic)).not.toContain("greeting.morning");
   });
 
   it.each(["constants", "proxy", "precompiled"] as const)(

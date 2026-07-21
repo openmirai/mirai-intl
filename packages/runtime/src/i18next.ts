@@ -4,6 +4,7 @@ import { createTFunctionBridgeBackend } from "./backend";
 import type { TypedCatalogManifest } from "./catalog";
 import { defineRuntimeCatalog } from "./catalog";
 import { StrictIntlRuntime } from "./runtime";
+import type { IntlRuntimeOptions } from "./runtime";
 
 export type I18nextCatalogResource<Translation extends object = object> =
   Readonly<{
@@ -130,7 +131,16 @@ export type I18nextRuntimeOptions<Instance extends I18nextLike> = Readonly<{
     requestedLocale: string,
     candidates: ReadonlyArray<string>
   ) => string | undefined;
-}>;
+}> &
+  Pick<
+    IntlRuntimeOptions,
+    | "diagnosticSink"
+    | "escapeValues"
+    | "formatters"
+    | "missingMessageFallback"
+    | "strictValidation"
+    | "trustedRichComponents"
+  >;
 
 function uniqueLocales(
   locales: ReadonlyArray<string | undefined>
@@ -261,6 +271,15 @@ export function createI18nextRuntime<
   return new StrictIntlRuntime({
     backend,
     catalog: defineRuntimeCatalog({ manifest: catalogManifest, messages: [] }),
+    ...(options.diagnosticSink === undefined
+      ? {}
+      : { diagnosticSink: options.diagnosticSink }),
+    ...(options.escapeValues === undefined
+      ? {}
+      : { escapeValues: options.escapeValues }),
+    ...(options.formatters === undefined
+      ? {}
+      : { formatters: options.formatters }),
     locale: resolveI18nextCatalogLocale(
       catalogManifest,
       instance,
@@ -269,5 +288,14 @@ export function createI18nextRuntime<
         instance.language ??
         catalogManifest.sourceLocale
     ),
+    ...(options.missingMessageFallback === undefined
+      ? {}
+      : { missingMessageFallback: options.missingMessageFallback }),
+    ...(options.strictValidation === undefined
+      ? {}
+      : { strictValidation: options.strictValidation }),
+    ...(options.trustedRichComponents === undefined
+      ? {}
+      : { trustedRichComponents: options.trustedRichComponents }),
   });
 }

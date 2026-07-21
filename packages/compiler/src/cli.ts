@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { analyzeConventionSources } from "./analyze-sources";
 import { canonicalJson } from "./canonical";
 import { compileCatalog } from "./compile";
 import {
@@ -24,6 +25,10 @@ function option(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(name);
+}
+
 function assertConventionOnly(): void {
   const legacy = removedOptions.find((name) => process.argv.includes(name));
   if (legacy) {
@@ -37,7 +42,7 @@ async function main(): Promise<void> {
   const command = process.argv[2] as Command | undefined;
   if (!command || !commands.includes(command)) {
     throw new Error(
-      "Usage: mirai-intl <generate|ensure|check|contract|explain> [--path <message>]"
+      "Usage: mirai-intl <generate|ensure|check|contract|explain> [--path <message>] [--skip-sources]"
     );
   }
   assertConventionOnly();
@@ -62,7 +67,29 @@ async function main(): Promise<void> {
   }
   if (command === "check") {
     const result = await verifyConventionCatalog(process.cwd());
-    process.stdout.write(`${canonicalJson(result)}\n`);
+    const sourceAnalysis = await analyzeConventionSources(process.cwd(), {
+      skipSources: hasFlag("--skip-sources"),
+    });
+    if (sourceAnalysis.diagnostics.length > 0) {
+      for (const diagnostic of sourceAnalysis.diagnostics) {
+        process.stderr.write(`${diagnostic.file}: ${diagnostic.message}\n`);
+      }
+      process.stdout.write(
+        `${canonicalJson({
+          ...result,
+          sourceAnalysis,
+          valid: false,
+        })}\n`
+      );
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(
+      `${canonicalJson({
+        ...result,
+        sourceAnalysis,
+      })}\n`
+    );
     return;
   }
 

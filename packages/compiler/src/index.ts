@@ -1,3 +1,9 @@
+export { analyzeConventionSources } from "./analyze-sources";
+export type {
+  AnalyzeConventionSourcesOptions,
+  ConventionSourceAnalysis,
+  ConventionSourceDiagnostic,
+} from "./analyze-sources";
 export { COMPILER_VERSION } from "./compile";
 export {
   generateConventionCatalog,

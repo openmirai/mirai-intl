@@ -346,4 +346,124 @@ describe("convention-only CLI", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("fails check when source analysis finds unknown translation keys", async () => {
+    const root = await createConventionApp();
+    try {
+      expect(runCli(root, "generate").status).toBe(0);
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(
+        join(root, "src/page.tsx"),
+        [
+          'import { useTranslations } from "x";',
+          "const { t } = useTranslations();",
+          't("missing");',
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const checked = runCli(root, "check");
+      expect(checked.status).not.toBe(0);
+      expect(`${checked.stdout}${checked.stderr}`).toMatch(
+        /Unknown translation path missing/u
+      );
+      expect(JSON.parse(checked.stdout)).toMatchObject({
+        sourceAnalysis: {
+          candidates: 1,
+          diagnostics: [
+            { message: expect.stringContaining("Unknown translation path") },
+          ],
+        },
+        valid: false,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("fails check when translator bindings escape supported call syntax", async () => {
+    const root = await createConventionApp();
+    try {
+      expect(runCli(root, "generate").status).toBe(0);
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(
+        join(root, "src/page.tsx"),
+        [
+          'import { useTranslations } from "x";',
+          "const { t } = useTranslations();",
+          "consume(t);",
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const checked = runCli(root, "check");
+      expect(checked.status).not.toBe(0);
+      expect(`${checked.stdout}${checked.stderr}`).toMatch(
+        /Translator binding t escapes the supported call syntax/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("fails check when translation calls use unbound translator props", async () => {
+    const root = await createConventionApp();
+    try {
+      expect(runCli(root, "generate").status).toBe(0);
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(
+        join(root, "src/items.tsx"),
+        [
+          'import type { Translator } from "@/hooks/useTranslations";',
+          'export const items = ({ t }: { t: Translator<"pages.home"> }) => [',
+          '  { label: t("title") },',
+          "];",
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const checked = runCli(root, "check");
+      expect(checked.status).not.toBe(0);
+      expect(`${checked.stdout}${checked.stderr}`).toMatch(
+        /Translation call must use a useTranslations\(\)\/getServerTranslations\(\) binding in this module/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("passes check for valid source calls and reports sourceAnalysis", async () => {
+    const root = await createConventionApp();
+    try {
+      expect(runCli(root, "generate").status).toBe(0);
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(
+        join(root, "src/page.tsx"),
+        [
+          'import { useTranslations } from "x";',
+          "const { t } = useTranslations();",
+          't("greeting", { name: "Ada" });',
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const checked = runCli(root, "check");
+      expect(checked.error).toBeUndefined();
+      expect(checked.status).toBe(0);
+      expect(JSON.parse(checked.stdout)).toMatchObject({
+        sourceAnalysis: {
+          candidates: 1,
+          diagnostics: [],
+          filesAnalyzed: 1,
+        },
+        valid: true,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
 });

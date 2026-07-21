@@ -916,4 +916,27 @@ describe("convention-first catalog discovery", () => {
       semanticMessageExportName("pages.{-$locale}.short-links.title")
     ).toMatch(/^message_[A-Za-z0-9_$]+_[a-f0-9]{16}$/u);
   });
+
+  it("rejects catalogs that do not match requiredLocales", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mirai-intl-required-locales-"));
+    try {
+      await writeJson(join(root, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@fixture/required-locales",
+        version: "1.0.0",
+      });
+      await writeJson(join(root, "src/locales/global/en.json"), {
+        greeting: "Hello",
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /Convention locales must be exactly en,th/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

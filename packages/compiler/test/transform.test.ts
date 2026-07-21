@@ -1168,6 +1168,17 @@ describe("private named-key lowering", () => {
           'import { useTranslations } from "x"; const { t } = useTranslations("pages.home"); consume(t);',
       },
       {
+        error: /Translator binding t escapes the supported call syntax/u,
+        source:
+          'import { useTranslations } from "x"; const { t } = useTranslations("pages.home"); factory({ t });',
+      },
+      {
+        error:
+          /Translation call must use a useTranslations\(\)\/getServerTranslations\(\) binding in this module/u,
+        source:
+          'import type { Translator } from "@/hooks/useTranslations"; export const items = ({ t }: { t: Translator<"pages.home"> }) => t("title");',
+      },
+      {
         error: /parseTranslationKey requires a literal namespace/u,
         source:
           'import { parseTranslationKey } from "@/i18n/generated"; declare const namespace: string; parseTranslationKey(namespace, "title");',

@@ -27,6 +27,11 @@ mirai-intl generate
 mirai-intl check
 ```
 
+`check` verifies selected catalog artifacts and runs a full-tree source analysis
+(same diagnostics as the Vite/Next transform) so unknown keys, widened strings,
+and translator escapes fail in CI/build without visiting every lazy route. Pass
+`--skip-sources` only for fixture packages that intentionally have no app sources.
+
 The compiler derives the locale root, paired locales, source locale, framework,
 package/catalog identity, generated output, and semantic paths. ICU ASTs infer
 required arguments, safe scalar roles, finite plural/number roles, selects,
@@ -122,9 +127,21 @@ release/debug work.
 
 `@openmirai/intl-runtime` supplies the generic client/server bindings and an
 i18next bridge. i18next remains responsible for resource loading, fallback,
-locale selection, readiness, and language-change events. The strict boundary
-rejects missing, extra, inherited, accessor-backed, nullish, non-scalar, and
-otherwise unsafe translation inputs before rendering.
+locale selection, readiness, and language-change events.
+
+In development and test, the strict boundary rejects missing, extra, inherited,
+accessor-backed, nullish, non-scalar, and otherwise unsafe translation inputs
+before rendering. In production (`NODE_ENV === "production"`, or
+`strictValidation: false`), exact value-schema and descriptor hash re-checks are
+skipped for performance after build-time lowering; brand/kind/catalog identity
+checks remain so unlowered markers still fail closed. Recoverable missing
+resources soft-fail via `missingMessageFallback` (default `""`) and emit
+`INTL_MISSING_RESOURCE` — they never return dotted message paths.
+
+`mirai-intl check` also fails closed on high-confidence hardcoded JSX text,
+user-facing string props (`label`, `placeholder`, `title`, …), and Zod
+validation message literals. Suppress a single site with
+`// mirai-intl-allow-literal`.
 
 ## Packages
 

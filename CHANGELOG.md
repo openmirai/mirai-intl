@@ -1,4 +1,31 @@
+## 0.1.0-beta.11
+
+### Added
+- Runtime soft-fail for recoverable missing resources when `strictValidation` is false (production): optional `missingMessageFallback`, `INTL_MISSING_RESOURCE`, never returns dotted key paths. Brand/kind/unlowered markers still fail closed.
+- `mirai-intl check` scans sources for high-confidence hardcoded JSX/user-facing props and Zod validation message literals (`mirai-intl-allow-literal` escape hatch).
+
+## 0.1.0-beta.10
+
+### Added
+- `requiredLocales` in `mirai-intl.config.json` to fail closed when discovered locales are not exactly the declared set (OpenMirai: `en` + `th`).
+
+# [0.1.0-beta.9](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.8...v0.1.0-beta.9) (2026-07-20)
+
+### Bug Fixes
+
+* detect translator escapes through object shorthand (`factory({ t })`) via shorthand value symbols
+* fail source analysis when `t(...)` / `t.rich(...)` uses a `Translator`-typed prop
+* treat `t("…")` call sites as transform candidates even without a local factory import
+
 # Changelog
+
+# [0.1.0-beta.8](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.7...v0.1.0-beta.8) (2026-07-20)
+
+
+### Features
+
+* **compiler:** full-tree source analysis in \`mirai-intl check\` for early build failures
+* **runtime:** skip exact value/hash validation in production (\`strictValidation\` / \`NODE_ENV\`)
 
 # [0.1.0-beta.7](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.6...v0.1.0-beta.7) (2026-07-20)
 
