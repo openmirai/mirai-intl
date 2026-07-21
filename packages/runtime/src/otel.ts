@@ -109,10 +109,13 @@ export function createOtelDiagnosticSink(
       "i18n.namespace": namespace,
     } as const;
 
-    if (
-      typeof process !== "undefined" &&
-      process.env.NODE_ENV === "development"
-    ) {
+    const nodeProcess = (
+      globalThis as typeof globalThis & {
+        process?: { env?: { NODE_ENV?: string } };
+      }
+    ).process;
+
+    if (nodeProcess?.env?.NODE_ENV === "development") {
       try {
         globalThis.console.warn("[WARN]", "Missing translation", attributes);
       } catch {
