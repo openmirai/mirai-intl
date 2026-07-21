@@ -323,7 +323,7 @@ await writeFile(
     'import { getServerTranslations } from "./translations.mjs";',
     'if (RUNTIME_ABI !== "1.0.0") throw new Error("Unexpected ABI");',
     `if (COMPILER_VERSION !== ${JSON.stringify(compilerPackage.version)}) throw new Error("Unexpected compiler");`,
-    'if (JSON.stringify(Object.keys(compilerPackage).sort()) !== JSON.stringify(["COMPILER_VERSION", "generateConventionCatalog", "loadConventionCatalog", "verifyConventionCatalog"])) throw new Error("Unexpected compiler public API");',
+    'if (JSON.stringify(Object.keys(compilerPackage).sort()) !== JSON.stringify(["COMPILER_VERSION", "analyzeConventionSources", "generateConventionCatalog", "loadConventionCatalog", "verifyConventionCatalog"])) throw new Error("Unexpected compiler public API");',
     'const { t } = await getServerTranslations({ locale: "en", namespace: "greeting" });',
     'const renderedTranslation = t("morning", { name: "Mali" });',
     'if (renderedTranslation !== "Good morning, Mali") throw new Error("Unexpected translation");',
