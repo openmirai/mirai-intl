@@ -103,7 +103,6 @@ function propName(node: ts.JsxAttribute): string | undefined {
   return undefined;
 }
 
-
 function callMethodName(callee: ts.Expression): string | undefined {
   if (ts.isPropertyAccessExpression(callee)) {
     return callee.name.text;
