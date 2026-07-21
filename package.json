@@ -38,6 +38,7 @@
     "@openmirai/intl-abi": "workspace:*",
     "@openmirai/intl-compiler": "workspace:*",
     "@openmirai/intl-runtime": "workspace:*",
+    "@opentelemetry/api-logs": "^0.220.0",
     "@release-it/bumper": "7.0.6",
     "@release-it/conventional-changelog": "11.0.1",
     "@tsconfig/node24": "24.0.4",

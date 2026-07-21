@@ -36,6 +36,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
+    },
+    "./otel": {
+      "types": "./dist/otel.d.ts",
+      "import": "./dist/otel.js",
+      "default": "./dist/otel.js"
     }
   },
   "publishConfig": {
@@ -50,10 +55,14 @@
     "@openmirai/intl-abi": "workspace:*"
   },
   "peerDependencies": {
+    "@opentelemetry/api-logs": "^0.220.0",
     "i18next": "26.3.6",
     "react": "19.2.7"
   },
   "peerDependenciesMeta": {
+    "@opentelemetry/api-logs": {
+      "optional": true
+    },
     "i18next": {
       "optional": true
     },

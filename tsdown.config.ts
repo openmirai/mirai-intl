@@ -43,6 +43,7 @@ export default defineConfig([
     entry: {
       index: "src/index.ts",
       node: "src/node.ts",
+      otel: "src/otel.ts",
       react: "src/react.ts",
       "react-i18next": "src/react-i18next.ts",
       server: "src/server.ts",
