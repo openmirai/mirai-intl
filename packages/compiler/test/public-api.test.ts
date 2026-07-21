@@ -5,6 +5,7 @@ describe("published compiler root", () => {
   it("exports only the convention production API", () => {
     expect(Object.keys(compiler).toSorted()).toEqual([
       "COMPILER_VERSION",
+      "analyzeConventionSources",
       "generateConventionCatalog",
       "loadConventionCatalog",
       "verifyConventionCatalog",
