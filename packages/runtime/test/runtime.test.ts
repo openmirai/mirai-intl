@@ -930,6 +930,35 @@ describe.each(backendMatrix)("$name production trust mode", (backendCase) => {
     ]);
   });
 
+  it("defaults production trust mode to soft-fail without throwing", () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const runtime = createIntlRuntime({
+        backend: {
+          id: "tfunction-bridge-v1",
+          render() {
+            throw new MissingResourceError("TFunction resource is unavailable");
+          },
+          supportsPortableIr: true,
+        },
+        catalog: compiled.catalog,
+        formatters: catalogFormatters,
+        locale: "en",
+        missingMessageFallback: "Content is unavailable.",
+      });
+
+      expect(runtime.strictValidation).toBe(false);
+      expect(
+        runtime.t(textDescriptorAt("greeting.morning"), {
+          name: "Mali",
+        } as never)
+      ).toBe("Content is unavailable.");
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
   it("still throws for missing resources under strict validation", () => {
     const runtime = createIntlRuntime({
       backend: {
