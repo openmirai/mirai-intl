@@ -49,4 +49,17 @@ describe("analyzeHardcodedLiterals", () => {
     });
     expect(diagnostics).toEqual([]);
   });
+
+  it("does not flag String.prototype helpers as Zod messages", () => {
+    const diagnostics = analyzeHardcodedLiterals({
+      filePath: "/app/src/console-utils.ts",
+      packageRoot: "/app",
+      source: `
+        export const shouldSuppressMessage = (message: string) =>
+          message.includes("Each child in a list should have a unique") ||
+          message.startsWith("failed to prepare learner account");
+      `,
+    });
+    expect(diagnostics).toEqual([]);
+  });
 });
