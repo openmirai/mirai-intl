@@ -94,12 +94,6 @@ function propName(node: ts.JsxAttribute): string | undefined {
   if (ts.isIdentifier(node.name)) {
     return node.name.text;
   }
-  if (
-    ts.isStringLiteral(node.name) ||
-    ts.isNoSubstitutionTemplateLiteral(node.name)
-  ) {
-    return node.name.text;
-  }
   return undefined;
 }
 
