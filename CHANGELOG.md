@@ -1,3 +1,7 @@
+# Changelog
+
+# [0.1.0-beta.11](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.7...v0.1.0-beta.11) (2026-07-21)
+
 ## 0.1.0-beta.11
 
 ### Added
@@ -17,7 +21,7 @@
 * fail source analysis when `t(...)` / `t.rich(...)` uses a `Translator`-typed prop
 * treat `t("…")` call sites as transform candidates even without a local factory import
 
-# Changelog
+
 
 # [0.1.0-beta.8](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.7...v0.1.0-beta.8) (2026-07-20)
 
