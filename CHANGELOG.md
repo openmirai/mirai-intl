@@ -1,5 +1,7 @@
 # Changelog
 
+# [0.1.0-beta.13](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.12...v0.1.0-beta.13) (2026-07-21)
+
 # [0.1.0-beta.12](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.11...v0.1.0-beta.12) (2026-07-21)
 
 # [0.1.0-beta.11](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.7...v0.1.0-beta.11) (2026-07-21)
