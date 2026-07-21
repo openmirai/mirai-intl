@@ -160,4 +160,9 @@ async function main(): Promise<void> {
   process.stdout.write(`${canonicalJson({ descriptor, provenance })}\n`);
 }
 
-await main();
+await main().catch((error: unknown) => {
+  const message =
+    error instanceof Error ? error.message : "mirai-intl failed unexpectedly";
+  process.stderr.write(`mirai-intl: ${message}\n`);
+  process.exitCode = 1;
+});

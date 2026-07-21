@@ -30,7 +30,9 @@ mirai-intl check
 `check` verifies selected catalog artifacts and runs a full-tree source analysis
 (same diagnostics as the Vite/Next transform) so unknown keys, widened strings,
 and translator escapes fail in CI/build without visiting every lazy route. Pass
-`--skip-sources` only for fixture packages that intentionally have no app sources.
+`--skip-sources` only for fixture packages that intentionally have no app
+sources. Default output is a one-line human summary; pass `--json` for the full
+machine report.
 
 The compiler derives the locale root, paired locales, source locale, framework,
 package/catalog identity, generated output, and semantic paths. ICU ASTs infer
