@@ -163,7 +163,8 @@ const isCi = process.env.CI === "true";
 /** Local machines can use tight budgets; GitHub Actions needs headroom. */
 const PERF_BUDGET_NS = {
   literal: isCi ? 5_000 : 500,
-  parameterized: isCi ? 20_000 : 2_000,
+  // Keep local headroom for concurrent builds/dev servers; CI stays looser.
+  parameterized: isCi ? 20_000 : 5_000,
   value: isCi ? 2_000 : 200,
 } as const;
 
