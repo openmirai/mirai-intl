@@ -956,7 +956,11 @@ describe.each(backendMatrix)("$name production trust mode", (backendCase) => {
         } as never)
       ).toBe("Content is unavailable.");
     } finally {
-      processEnv.NODE_ENV = previousNodeEnv;
+      if (previousNodeEnv === undefined) {
+        delete processEnv.NODE_ENV;
+      } else {
+        processEnv.NODE_ENV = previousNodeEnv;
+      }
     }
   });
 
