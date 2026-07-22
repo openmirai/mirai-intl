@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1-beta.0](https://github.com/openmirai/mirai-intl/compare/v0.1.0...v0.1.1-beta.0) (2026-07-22)
+
+
+### Bug Fixes
+
+* synchronize workspace package versions for releases ([9d84695](https://github.com/openmirai/mirai-intl/commit/9d846952e35b3bc6e9e8fdf20d72a6be9f888742))
+
+
+### Features
+
+* add compiler-lowered form error translators ([8a9ddab](https://github.com/openmirai/mirai-intl/commit/8a9ddabf54a4b890454369a1d587914359cba1f5))
+
 # [0.1.0](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.13...v0.1.0) (2026-07-21)
 
 # [0.1.0-beta.13](https://github.com/openmirai/mirai-intl/compare/v0.1.0-beta.12...v0.1.0-beta.13) (2026-07-21)
