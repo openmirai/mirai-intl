@@ -86,7 +86,8 @@ for (const { directory, manifest } of manifests) {
     "public",
     "--tag",
     tag,
-    ...(dryRun || preflight ? ["--dry-run", "--no-git-checks"] : []),
+    "--no-git-checks",
+    ...(dryRun || preflight ? ["--dry-run"] : []),
   ];
 
   console.log(
