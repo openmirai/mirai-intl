@@ -68,6 +68,12 @@ type MapEntry = Readonly<{
 
 type Replacement =
   | Readonly<{ kind: "dynamic"; namespace: string; registry: string }>
+  | Readonly<{
+      kind: "form-error";
+      namespace: string;
+      registry: string;
+      translator: ts.Expression;
+    }>
   | Readonly<{ kind: "literal"; value: string }>
   | Readonly<{ kind: "map"; entries: ReadonlyArray<MapEntry> }>
   | Readonly<{ kind: "message"; local: string }>
@@ -75,6 +81,7 @@ type Replacement =
 
 type GeneratedFacadeImportNames = Readonly<{
   facadeModules: ReadonlySet<string>;
+  formErrorFactories: ReadonlySet<string>;
   keyFactories: ReadonlySet<string>;
   keyParsers: ReadonlySet<string>;
 }>;
@@ -592,6 +599,7 @@ async function generatedFacadeImportNames(
   );
   const keyFactories = new Set<string>();
   const keyParsers = new Set<string>();
+  const formErrorFactories = new Set<string>();
   const facadeModules = new Set<string>();
   for (const statement of sourceFile.statements) {
     if (
@@ -609,6 +617,7 @@ async function generatedFacadeImportNames(
         return (
           importedName === "createTranslationKey" ||
           importedName === "parseTranslationKey" ||
+          importedName === "createFormErrorTranslator" ||
           importedName === "TranslationKey" ||
           importedName === "TranslationNamespace"
         );
@@ -652,10 +661,12 @@ async function generatedFacadeImportNames(
         keyFactories.add(specifier.name.text);
       } else if (importedName === "parseTranslationKey") {
         keyParsers.add(specifier.name.text);
+      } else if (importedName === "createFormErrorTranslator") {
+        formErrorFactories.add(specifier.name.text);
       }
     }
   }
-  return { facadeModules, keyFactories, keyParsers };
+  return { facadeModules, formErrorFactories, keyFactories, keyParsers };
 }
 
 function factoryKind(name: string): FactoryKind | undefined {
@@ -707,6 +718,7 @@ function generatedFacadeTypeModule(catalog: CurrentCatalog): string {
     "export type TranslationKey<Namespace extends TranslationNamespace> = __MiraiIntlTranslationKeys[Namespace];",
     "export declare const createTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace) => <const Key extends TranslationKey<Namespace>>(key: Key) => `${Namespace}.${Key}`;",
     "export declare const parseTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace, input: unknown) => `${Namespace}.${TranslationKey<Namespace>}` | undefined;",
+    "export declare const createFormErrorTranslator: <const Namespace extends TranslationNamespace>(namespace: Namespace, translator: unknown) => { (input: string): string; has(input: string): boolean; };",
     "",
   ].join("\n");
 }
@@ -1208,6 +1220,7 @@ function analyzeSource(
     }>
   >;
   translationKeyParserHelper: string | undefined;
+  formErrorTranslatorHelper: string | undefined;
   removedNodes: ReadonlySet<string>;
   replacements: ReadonlyMap<string, Replacement>;
 }> {
@@ -1222,10 +1235,12 @@ function analyzeSource(
   const objectSymbols = new Map<ts.Symbol, string>();
   const translationKeyFactorySymbols = new Set<ts.Symbol>();
   const translationKeyParserSymbols = new Set<ts.Symbol>();
+  const formErrorTranslatorFactorySymbols = new Set<ts.Symbol>();
   const translationKeySymbols = new Map<ts.Symbol, string>();
   const translatorSymbols = new Map<ts.Symbol, string>();
   const allowedTranslationKeyFactoryReferences = new Set<string>();
   const allowedTranslationKeyParserReferences = new Set<string>();
+  const allowedFormErrorTranslatorFactoryReferences = new Set<string>();
   const allowedTranslationKeyReferences = new Set<string>();
   const allowedTranslatorReferences = new Set<string>();
   const declaredNames = new Set<string>();
@@ -1235,6 +1250,7 @@ function analyzeSource(
     | Readonly<{ createRegistry: string; translate: string }>
     | undefined;
   let translationKeyParserHelper: string | undefined;
+  let formErrorTranslatorHelper: string | undefined;
   const dynamicRegistries = new Map<
     string,
     {
@@ -1342,6 +1358,14 @@ function analyzeSource(
         symbol
       ) {
         translationKeyParserSymbols.add(symbol);
+        removedNodes.add(nodeKey(specifier));
+      }
+      if (
+        importedName === "createFormErrorTranslator" &&
+        generatedImports.formErrorFactories.has(specifier.name.text) &&
+        symbol
+      ) {
+        formErrorTranslatorFactorySymbols.add(symbol);
         removedNodes.add(nodeKey(specifier));
       }
     }
@@ -2184,6 +2208,54 @@ function analyzeSource(
         ts.forEachChild(node, visitCalls);
         return;
       }
+      if (parserSymbol && formErrorTranslatorFactorySymbols.has(parserSymbol)) {
+        allowedFormErrorTranslatorFactoryReferences.add(
+          nodeKey(parserExpression)
+        );
+        if (node.arguments.length !== 2) {
+          diagnostic(
+            node,
+            "createFormErrorTranslator requires one literal namespace and one translator"
+          );
+        }
+        const namespaceArgument = node.arguments[0];
+        const namespace =
+          (namespaceArgument ? literalString(namespaceArgument) : undefined) ??
+          diagnostic(
+            namespaceArgument ?? node,
+            "createFormErrorTranslator requires a literal namespace"
+          );
+        const formMessages = [...catalog.messages.values()].filter(
+          (message) =>
+            message.path.startsWith(`${namespace}.error.form.`) &&
+            message.kind === "text"
+        );
+        if (formMessages.length === 0) {
+          diagnostic(
+            namespaceArgument ?? node,
+            `Translation namespace ${namespace} has no argument-free error.form messages`
+          );
+        }
+        const translator =
+          node.arguments[1] ??
+          diagnostic(node, "createFormErrorTranslator requires a translator");
+        const translatorIdentifier = unwrapExpression(translator);
+        if (ts.isIdentifier(translatorIdentifier)) {
+          allowedTranslatorReferences.add(nodeKey(translatorIdentifier));
+        }
+        const registry = dynamicRegistry(namespace, formMessages);
+        formErrorTranslatorHelper ??= uniqueName(
+          "__miraiIntlCreateFormErrorTranslator"
+        );
+        replacements.set(nodeKey(node), {
+          kind: "form-error",
+          namespace,
+          registry: registry.local,
+          translator,
+        });
+        ts.forEachChild(node, visitCalls);
+        return;
+      }
       const keyNamespace = translationKeyNamespace(node.expression);
       if (keyNamespace !== undefined) {
         if (node.arguments.length !== 1) {
@@ -2378,6 +2450,17 @@ function analyzeSource(
           `parseTranslationKey escapes the supported generated-parser syntax`
         );
       }
+      if (
+        symbol &&
+        formErrorTranslatorFactorySymbols.has(symbol) &&
+        !isDeclarationIdentifier(node) &&
+        !allowedFormErrorTranslatorFactoryReferences.has(nodeKey(node))
+      ) {
+        diagnostic(
+          node,
+          "createFormErrorTranslator escapes the supported generated-factory syntax"
+        );
+      }
     }
     ts.forEachChild(node, validateTranslatorReferences);
   };
@@ -2401,6 +2484,7 @@ function analyzeSource(
     }),
     removedNodes,
     replacements,
+    formErrorTranslatorHelper,
     translationKeyParserHelper,
   };
 }
@@ -2546,6 +2630,24 @@ function transformSource(
                   ]
                 );
               }
+              if (replacement?.kind === "form-error") {
+                const helper = analysis.formErrorTranslatorHelper;
+                if (!helper) {
+                  throw new Error("Form error translator helper is missing");
+                }
+                return factory.createCallExpression(
+                  factory.createIdentifier(helper),
+                  undefined,
+                  [
+                    ts.visitNode(
+                      replacement.translator,
+                      visitor
+                    ) as ts.Expression,
+                    factory.createStringLiteral(replacement.namespace),
+                    factory.createIdentifier(replacement.registry),
+                  ]
+                );
+              }
               if (replacement?.kind === "parse") {
                 const helper = analysis.translationKeyParserHelper;
                 if (!helper) {
@@ -2657,6 +2759,17 @@ function transformSource(
                     factory.createIdentifier(
                       analysis.translationKeyParserHelper
                     )
+                  )
+                );
+              }
+              if (analysis.formErrorTranslatorHelper) {
+                runtimeSpecifiers.push(
+                  factory.createImportSpecifier(
+                    false,
+                    factory.createIdentifier(
+                      "createCompilerFormErrorTranslator"
+                    ),
+                    factory.createIdentifier(analysis.formErrorTranslatorHelper)
                   )
                 );
               }
@@ -2816,7 +2929,7 @@ export async function transformMiraiIntlSource(
 }
 
 const TRANSLATION_CALL_CANDIDATE =
-  /(?:\buseTranslations\b|\bgetServerTranslations\b|\bcreateTranslationKey\b|\bparseTranslationKey\b|\bt\.rich\s*\(|\bt\.value\s*\(|\bt\.map\s*\(|\bt\s*\(\s*["'`])/u;
+  /(?:\buseTranslations\b|\bgetServerTranslations\b|\bcreateFormErrorTranslator\b|\bcreateTranslationKey\b|\bparseTranslationKey\b|\bt\.rich\s*\(|\bt\.value\s*\(|\bt\.map\s*\(|\bt\s*\(\s*["'`])/u;
 
 export function isMiraiIntlTransformCandidate(
   source: string,

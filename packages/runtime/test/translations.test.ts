@@ -24,6 +24,7 @@ import { createServerIntl, createTranslationFunction } from "../src/server";
 import type { StrictIntlRuntime } from "../src/runtime";
 import type { TranslationFunction } from "../src/translations";
 import {
+  createCompilerFormErrorTranslator,
   createCompilerDynamicTextRegistry,
   parseCompilerTranslationKey,
   translateCompilerDynamicText,
@@ -282,6 +283,26 @@ describe("conventional translation bindings", () => {
         ["schema.staticText"]: staticTextDescriptor(),
       })
     ).toThrow("was not created by compiler lowering");
+  });
+
+  it("translates only known error.form keys through the compiler registry", () => {
+    const translate = createTranslationFunction(staticRichRuntime());
+    const translator = createCompilerFormErrorTranslator(
+      translate,
+      "pages.home",
+      createCompilerDynamicTextRegistry({
+        ["pages.home.error.form.required"]: staticTextDescriptor(),
+      })
+    );
+
+    expect(translator.has("error.form.required")).toBe(true);
+    expect(translator.has("pages.home.error.form.required")).toBe(true);
+    expect(translator.has("error.form.unknown")).toBe(false);
+    expect(translator.has("pages.home.title")).toBe(false);
+    expect(translator("error.form.required")).toBe("Static text");
+    expect(translator("server validation failed")).toBe(
+      "server validation failed"
+    );
   });
 
   it("rejects malformed dynamic registries without invoking accessors or inherited properties", () => {

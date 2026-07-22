@@ -49,6 +49,7 @@ async function createGeneratedCatalog(): Promise<
     [
       `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${fixtureHash}`, directory, schemaVersion: 1 })}`,
       `export type { CatalogContract } from "./${directory}/catalog.schema.gen.js";`,
+      "export const createFormErrorTranslator = undefined;",
       "export const createTranslationKey = undefined;",
       "",
     ].join("\n"),
@@ -62,6 +63,8 @@ async function createGeneratedCatalog(): Promise<
         kind: "text",
         path: "pages.home.title",
       },
+      { kind: "text", path: "pages.home.error.form.required" },
+      { kind: "text", path: "pages.home.error.form.invalid" },
       { kind: "rich", path: "pages.home.description" },
       { kind: "value", path: "pages.home.settings" },
       { kind: "text", path: "pages.about.title" },
@@ -102,6 +105,8 @@ async function createGeneratedCatalog(): Promise<
     entries: [],
     exports: [
       "pages.home.title",
+      "pages.home.error.form.required",
+      "pages.home.error.form.invalid",
       "pages.home.description",
       "pages.home.settings",
       "pages.about.title",
@@ -403,6 +408,36 @@ describe("private named-key lowering", () => {
       expect(result.code).not.toContain('["components.toast.rich"]');
       expect(result.code).not.toContain("parseKey");
       expect(result.code).not.toContain("parseTranslationKey as");
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("lowers generated form-error translators to a closed error.form registry", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/form-error.tsx");
+    const source = [
+      'import { createFormErrorTranslator } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      'const { t } = useTranslations("pages.home");',
+      'export const translateError = createFormErrorTranslator("pages.home", t);',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain("createCompilerFormErrorTranslator");
+      expect(result.code).toContain('"pages.home"');
+      expect(result.code).toContain('"pages.home.error.form.invalid"');
+      expect(result.code).toContain('"pages.home.error.form.required"');
+      expect(result.code).not.toContain("createFormErrorTranslator");
+      expect(result.code).not.toContain('"pages.home.title"');
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }

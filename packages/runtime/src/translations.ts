@@ -376,6 +376,47 @@ export function bindTranslationKeyParser<
   return unloweredTranslationKeyParser as ParseTranslationKey<Catalog>;
 }
 
+export interface FormErrorTranslator {
+  (input: string): string;
+  has(input: string): boolean;
+}
+
+export type FormErrorKeysFor<
+  Catalog extends object,
+  Namespace extends NamespacePaths<Catalog>,
+> = Extract<
+  ArgumentFreeTextKeysFor<Catalog, Namespace>,
+  `error.form.${string}`
+>;
+
+export type FormErrorNamespaces<Catalog extends object> = {
+  [Namespace in NamespacePaths<Catalog>]: [
+    FormErrorKeysFor<Catalog, Namespace>,
+  ] extends [never]
+    ? never
+    : Namespace;
+}[NamespacePaths<Catalog>];
+
+export type CreateFormErrorTranslator<Catalog extends object> = <
+  const Namespace extends FormErrorNamespaces<Catalog>,
+  RichResult,
+>(
+  namespace: Namespace,
+  translator: TranslationFunctionFor<Catalog, Namespace, RichResult>
+) => FormErrorTranslator;
+
+const unloweredFormErrorTranslator = (): never => {
+  throw new TypeError(
+    "Form error translator was not lowered by the Mirai Intl compiler"
+  );
+};
+
+export function bindFormErrorTranslator<
+  Catalog extends object,
+>(): CreateFormErrorTranslator<Catalog> {
+  return unloweredFormErrorTranslator as CreateFormErrorTranslator<Catalog>;
+}
+
 /** @internal Compiler lowering target. Application code must not call this. */
 export function parseCompilerTranslationKey(
   input: unknown,
@@ -407,6 +448,33 @@ export function parseCompilerTranslationKey(
     throw new TypeError("Dynamic translation registry cannot use accessors");
   }
   return normalized;
+}
+
+/** @internal Compiler lowering target. Application code must not call this. */
+export function createCompilerFormErrorTranslator(
+  translator: unknown,
+  namespace: unknown,
+  registry: unknown
+): FormErrorTranslator {
+  if (typeof namespace !== "string" || namespace.length === 0) {
+    throw new TypeError("Form error namespace must be a non-empty string");
+  }
+  const formPrefix = `${namespace}.error.form.`;
+  const has = (input: string): boolean => {
+    const key = parseCompilerTranslationKey(input, namespace, registry);
+    return key?.startsWith(formPrefix) ?? false;
+  };
+  const translate = (input: string): string => {
+    if (!has(input)) {
+      return input;
+    }
+    return translateCompilerDynamicText(translator, input, namespace, registry);
+  };
+  Object.defineProperty(translate, "has", {
+    enumerable: true,
+    value: has,
+  });
+  return Object.freeze(translate) as FormErrorTranslator;
 }
 
 export function createTranslationFunction<

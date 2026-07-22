@@ -410,7 +410,7 @@ function stableFacadeModule(
   return [
     `${selectorPrefix}${canonicalJson({ contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
     generatedSourceHeader,
-    'import { bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
+    'import { bindFormErrorTranslator, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
     'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
     `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
     `export type { CatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
@@ -419,6 +419,7 @@ function stableFacadeModule(
     "export type TranslationKey<Namespace extends TranslationNamespace> = ArgumentFreeTextKeysFor<BoundCatalogContract, Namespace>;",
     "export const createTranslationKey = /* @__PURE__ */ bindTranslationKeyFactory<BoundCatalogContract>();",
     "export const parseTranslationKey = /* @__PURE__ */ bindTranslationKeyParser<BoundCatalogContract>();",
+    "export const createFormErrorTranslator = /* @__PURE__ */ bindFormErrorTranslator<BoundCatalogContract>();",
     `export { catalogManifest } from "./${relativeDirectory}/catalog.manifest.gen.mjs";`,
     `export { isCatalogLocale, loadCatalogResource } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,
     "",
