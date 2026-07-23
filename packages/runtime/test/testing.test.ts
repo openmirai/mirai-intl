@@ -37,6 +37,14 @@ describe("resolveTranslationMockPath", () => {
     );
   });
 
+  it("resolves callable compiler-lowered descriptor carriers", () => {
+    const callableDescriptor = Object.assign(() => undefined, descriptor);
+
+    expect(
+      resolveTranslationMockPath(callableDescriptor, "components.example")
+    ).toBe("title");
+  });
+
   it("rejects descriptor-shaped values that were not compiler lowered", () => {
     expect(() =>
       resolveTranslationMockPath({

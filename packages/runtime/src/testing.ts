@@ -6,7 +6,7 @@ type TranslationMockInput = string | MessageDescriptor;
 function isTranslationMockInput(input: unknown): input is TranslationMockInput {
   return (
     typeof input === "string" ||
-    (typeof input === "object" &&
+    ((typeof input === "object" || typeof input === "function") &&
       input !== null &&
       "brand" in input &&
       input.brand === DESCRIPTOR_BRAND_VALUE &&
