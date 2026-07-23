@@ -5,7 +5,10 @@ import {
 } from "@openmirai/intl-abi";
 import { describe, expect, it } from "vitest";
 
-import { resolveTranslationMockPath } from "../src/testing";
+import {
+  createTranslationMock,
+  resolveTranslationMockPath,
+} from "../src/testing";
 
 const descriptor = defineMessageDescriptor({
   buildToken: "test-build",
@@ -43,6 +46,17 @@ describe("resolveTranslationMockPath", () => {
     expect(
       resolveTranslationMockPath(callableDescriptor, "components.example")
     ).toBe("title");
+  });
+
+  it("renders fixture messages with interpolated values", () => {
+    const t = createTranslationMock({
+      messages: { openLabel: "View details for promotion {code}" },
+      namespace: "components.example",
+    });
+
+    expect(t("openLabel", { code: "SAVE20" })).toBe(
+      "View details for promotion SAVE20"
+    );
   });
 
   it("rejects descriptor-shaped values that were not compiler lowered", () => {
