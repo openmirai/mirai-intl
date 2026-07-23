@@ -47,6 +47,7 @@ export default defineConfig([
       react: "src/react.ts",
       "react-i18next": "src/react-i18next.ts",
       server: "src/server.ts",
+      testing: "src/testing.ts",
     },
     name: "@openmirai/intl-runtime",
     platform: "neutral",

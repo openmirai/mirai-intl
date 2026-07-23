@@ -41,6 +41,11 @@
       "types": "./dist/otel.d.ts",
       "import": "./dist/otel.js",
       "default": "./dist/otel.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
     }
   },
   "publishConfig": {
