@@ -755,7 +755,11 @@ function generatedFacadeTypeModule(catalog: CurrentCatalog): string {
     "export declare const createTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace) => <const Key extends TranslationKey<Namespace>>(key: Key) => `${Namespace}.${Key}`;",
     "export declare const parseTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace, input: unknown) => `${Namespace}.${TranslationKey<Namespace>}` | undefined;",
     "export declare const createFormErrorTranslator: <const Namespace extends TranslationNamespace>(namespace: Namespace, translator: unknown) => { (input: string): string | undefined; has(input: string): boolean; };",
-    "export declare const createFormSchema: <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: <const Key extends __MiraiIntlFormErrorKeys[Namespace]>(key: Key) => `error.form.${Key}` }>) => Schema) => Schema;",
+    "type __MiraiIntlCreateFormSchema = {",
+    "  <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: <const Key extends __MiraiIntlFormErrorKeys[Namespace]>(key: Key) => `error.form.${Key}` }>) => Schema): Schema;",
+    "  helper<Args extends ReadonlyArray<unknown>, Schema>(factory: (...args: Args) => Schema): (...args: Args) => Schema;",
+    "};",
+    "export declare const createFormSchema: __MiraiIntlCreateFormSchema;",
     "",
   ].join("\n");
 }
@@ -1304,6 +1308,22 @@ function analyzeSource(
   const symbolAt = (identifier: ts.Identifier): ts.Symbol | undefined =>
     checker.getSymbolAtLocation(identifier);
 
+  const collectFormSchemaHelperReferences = (symbol: ts.Symbol): boolean => {
+    let found = false;
+    const visit = (node: ts.Node): void => {
+      if (ts.isPropertyAccessExpression(node) && node.name.text === "helper") {
+        const expression = unwrapExpression(node.expression);
+        if (ts.isIdentifier(expression) && symbolAt(expression) === symbol) {
+          allowedFormSchemaFactoryReferences.add(nodeKey(expression));
+          found = true;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return found;
+  };
+
   const referenceSymbol = (
     identifier: ts.Identifier
   ): ts.Symbol | undefined => {
@@ -1415,7 +1435,9 @@ function analyzeSource(
         symbol
       ) {
         formSchemaFactorySymbols.add(symbol);
-        removedNodes.add(nodeKey(specifier));
+        if (!collectFormSchemaHelperReferences(symbol)) {
+          removedNodes.add(nodeKey(specifier));
+        }
       }
     }
   }

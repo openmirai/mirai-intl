@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3](https://github.com/openmirai/mirai-intl/compare/v0.1.2...v0.1.3) (2026-07-23)
+
+### Bug Fixes
+
+* preserve generated form schema helpers during compiler lowering
+
 ## [0.1.2](https://github.com/openmirai/mirai-intl/compare/v0.1.1-beta.0...v0.1.2) (2026-07-23)
 
 ### Features
