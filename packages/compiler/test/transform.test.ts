@@ -50,6 +50,7 @@ async function createGeneratedCatalog(): Promise<
       `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${fixtureHash}`, directory, schemaVersion: 1 })}`,
       `export type { CatalogContract } from "./${directory}/catalog.schema.gen.js";`,
       "export const createFormErrorTranslator = undefined;",
+      "export const createFormSchema = undefined;",
       "export const createTranslationKey = undefined;",
       "",
     ].join("\n"),
@@ -438,6 +439,121 @@ describe("private named-key lowering", () => {
       expect(result.code).toContain('"pages.home.error.form.required"');
       expect(result.code).not.toContain("createFormErrorTranslator");
       expect(result.code).not.toContain('"pages.home.title"');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("lowers form-error translators for namespaces without form entries", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/empty-form-error.ts");
+    const source = [
+      'import { createFormErrorTranslator } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      'const { t } = useTranslations("pages.about");',
+      'export const translateError = createFormErrorTranslator("pages.about", t);',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain("createCompilerFormErrorTranslator");
+      expect(result.code).toContain('"pages.about"');
+      expect(result.code).not.toContain("error.form");
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("lowers generated form schemas to a closed error.form registry", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/form-schema.ts");
+    const source = [
+      'import { createFormSchema as createSchema } from "@/i18n/generated";',
+      'export const schema = createSchema("pages.home", ({ error }) => ({ required: error("required"), invalid: error("invalid") }));',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain("createCompilerFormSchema");
+      expect(result.code).toContain('"pages.home"');
+      expect(result.code).toContain('"pages.home.error.form.invalid"');
+      expect(result.code).toContain('"pages.home.error.form.required"');
+      expect(result.code).not.toContain("createSchema");
+      expect(result.code).not.toContain("createFormSchema as");
+      expect(result.code).not.toContain('"pages.home.title"');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("allocates a collision-safe compiler form-schema helper", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/form-schema-collision.ts");
+    const source = [
+      'import { createFormSchema } from "@/i18n/generated";',
+      'const createCompilerFormSchema = "occupied";',
+      'export const schema = createFormSchema("pages.home", ({ error }) => ({ required: error("required") }));',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain(
+        "createCompilerFormSchema as __miraiIntlCreateCompilerFormSchema"
+      );
+      expect(result.code).toContain(
+        '__miraiIntlCreateCompilerFormSchema("pages.home"'
+      );
+      expect(result.code).toContain(
+        'const createCompilerFormSchema = "occupied"'
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("requires form-schema factory provenance from the generated facade", async () => {
+    const fixture = await createGeneratedCatalog();
+    const options = {
+      generatedDirectory: fixture.generatedDirectory,
+      root: fixture.root,
+    };
+    await writeFile(
+      join(fixture.root, "src/spoof-form-schema.ts"),
+      "export const createFormSchema = () => undefined;\n",
+      "utf8"
+    );
+
+    try {
+      await expect(
+        transformMiraiIntlSource(
+          'import { createFormSchema } from "@/spoof-form-schema"; createFormSchema("pages.home", ({ error }) => error("required"));',
+          join(fixture.root, "src/spoof-form-schema-use.ts"),
+          options
+        )
+      ).rejects.toThrowError(
+        /must be imported directly from the configured generated facade/u
+      );
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }

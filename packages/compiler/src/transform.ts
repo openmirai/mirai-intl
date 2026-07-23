@@ -74,6 +74,12 @@ type Replacement =
       registry: string;
       translator: ts.Expression;
     }>
+  | Readonly<{
+      build: ts.Expression;
+      kind: "form-schema";
+      namespace: string;
+      registry: string;
+    }>
   | Readonly<{ kind: "literal"; value: string }>
   | Readonly<{ kind: "map"; entries: ReadonlyArray<MapEntry> }>
   | Readonly<{ kind: "message"; local: string }>
@@ -82,6 +88,7 @@ type Replacement =
 type GeneratedFacadeImportNames = Readonly<{
   facadeModules: ReadonlySet<string>;
   formErrorFactories: ReadonlySet<string>;
+  formSchemaFactories: ReadonlySet<string>;
   keyFactories: ReadonlySet<string>;
   keyParsers: ReadonlySet<string>;
 }>;
@@ -600,6 +607,7 @@ async function generatedFacadeImportNames(
   const keyFactories = new Set<string>();
   const keyParsers = new Set<string>();
   const formErrorFactories = new Set<string>();
+  const formSchemaFactories = new Set<string>();
   const facadeModules = new Set<string>();
   for (const statement of sourceFile.statements) {
     if (
@@ -618,6 +626,7 @@ async function generatedFacadeImportNames(
           importedName === "createTranslationKey" ||
           importedName === "parseTranslationKey" ||
           importedName === "createFormErrorTranslator" ||
+          importedName === "createFormSchema" ||
           importedName === "TranslationKey" ||
           importedName === "TranslationNamespace"
         );
@@ -663,10 +672,18 @@ async function generatedFacadeImportNames(
         keyParsers.add(specifier.name.text);
       } else if (importedName === "createFormErrorTranslator") {
         formErrorFactories.add(specifier.name.text);
+      } else if (importedName === "createFormSchema") {
+        formSchemaFactories.add(specifier.name.text);
       }
     }
   }
-  return { facadeModules, formErrorFactories, keyFactories, keyParsers };
+  return {
+    facadeModules,
+    formErrorFactories,
+    formSchemaFactories,
+    keyFactories,
+    keyParsers,
+  };
 }
 
 function factoryKind(name: string): FactoryKind | undefined {
@@ -708,6 +725,21 @@ function generatedFacadeTypeModule(catalog: CurrentCatalog): string {
       return `  readonly ${JSON.stringify(namespace)}: ${keyType};`;
     })
     .join("\n");
+  const formErrorEntries = entries
+    .map(([namespace, keys]) => {
+      const formErrorKeys = [...keys]
+        .filter((key) => key.startsWith("error.form."))
+        .map((key) => key.slice("error.form.".length));
+      if (formErrorKeys.length === 0) {
+        return undefined;
+      }
+      return `  readonly ${JSON.stringify(namespace)}: ${formErrorKeys
+        .toSorted()
+        .map((key) => JSON.stringify(key))
+        .join(" | ")};`;
+    })
+    .filter((entry): entry is string => entry !== undefined)
+    .join("\n");
   return [
     `export type { CatalogLocale } from ${JSON.stringify(resolve(catalog.selectedDirectory, "catalog.resources.gen.mjs"))};`,
     `export { catalogManifest } from ${JSON.stringify(resolve(catalog.selectedDirectory, "catalog.manifest.gen.mjs"))};`,
@@ -716,9 +748,14 @@ function generatedFacadeTypeModule(catalog: CurrentCatalog): string {
     keyMap,
     "};",
     "export type TranslationKey<Namespace extends TranslationNamespace> = __MiraiIntlTranslationKeys[Namespace];",
+    "type __MiraiIntlFormErrorKeys = {",
+    formErrorEntries,
+    "};",
+    "type __MiraiIntlFormNamespace = keyof __MiraiIntlFormErrorKeys;",
     "export declare const createTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace) => <const Key extends TranslationKey<Namespace>>(key: Key) => `${Namespace}.${Key}`;",
     "export declare const parseTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace, input: unknown) => `${Namespace}.${TranslationKey<Namespace>}` | undefined;",
-    "export declare const createFormErrorTranslator: <const Namespace extends TranslationNamespace>(namespace: Namespace, translator: unknown) => { (input: string): string; has(input: string): boolean; };",
+    "export declare const createFormErrorTranslator: <const Namespace extends TranslationNamespace>(namespace: Namespace, translator: unknown) => { (input: string): string | undefined; has(input: string): boolean; };",
+    "export declare const createFormSchema: <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: <const Key extends __MiraiIntlFormErrorKeys[Namespace]>(key: Key) => `error.form.${Key}` }>) => Schema) => Schema;",
     "",
   ].join("\n");
 }
@@ -1221,6 +1258,7 @@ function analyzeSource(
   >;
   translationKeyParserHelper: string | undefined;
   formErrorTranslatorHelper: string | undefined;
+  formSchemaHelper: string | undefined;
   removedNodes: ReadonlySet<string>;
   replacements: ReadonlyMap<string, Replacement>;
 }> {
@@ -1236,11 +1274,13 @@ function analyzeSource(
   const translationKeyFactorySymbols = new Set<ts.Symbol>();
   const translationKeyParserSymbols = new Set<ts.Symbol>();
   const formErrorTranslatorFactorySymbols = new Set<ts.Symbol>();
+  const formSchemaFactorySymbols = new Set<ts.Symbol>();
   const translationKeySymbols = new Map<ts.Symbol, string>();
   const translatorSymbols = new Map<ts.Symbol, string>();
   const allowedTranslationKeyFactoryReferences = new Set<string>();
   const allowedTranslationKeyParserReferences = new Set<string>();
   const allowedFormErrorTranslatorFactoryReferences = new Set<string>();
+  const allowedFormSchemaFactoryReferences = new Set<string>();
   const allowedTranslationKeyReferences = new Set<string>();
   const allowedTranslatorReferences = new Set<string>();
   const declaredNames = new Set<string>();
@@ -1251,6 +1291,7 @@ function analyzeSource(
     | undefined;
   let translationKeyParserHelper: string | undefined;
   let formErrorTranslatorHelper: string | undefined;
+  let formSchemaHelper: string | undefined;
   const dynamicRegistries = new Map<
     string,
     {
@@ -1366,6 +1407,14 @@ function analyzeSource(
         symbol
       ) {
         formErrorTranslatorFactorySymbols.add(symbol);
+        removedNodes.add(nodeKey(specifier));
+      }
+      if (
+        importedName === "createFormSchema" &&
+        generatedImports.formSchemaFactories.has(specifier.name.text) &&
+        symbol
+      ) {
+        formSchemaFactorySymbols.add(symbol);
         removedNodes.add(nodeKey(specifier));
       }
     }
@@ -2225,17 +2274,22 @@ function analyzeSource(
             namespaceArgument ?? node,
             "createFormErrorTranslator requires a literal namespace"
           );
+        if (
+          ![...catalog.messages.keys()].some((path) =>
+            path.startsWith(`${namespace}.`)
+          )
+        ) {
+          diagnostic(
+            namespaceArgument ?? node,
+            `Unknown translation namespace ${namespace}`
+          );
+        }
         const formMessages = [...catalog.messages.values()].filter(
           (message) =>
             message.path.startsWith(`${namespace}.error.form.`) &&
-            message.kind === "text"
+            message.kind === "text" &&
+            !message.hasArguments
         );
-        if (formMessages.length === 0) {
-          diagnostic(
-            namespaceArgument ?? node,
-            `Translation namespace ${namespace} has no argument-free error.form messages`
-          );
-        }
         const translator =
           node.arguments[1] ??
           diagnostic(node, "createFormErrorTranslator requires a translator");
@@ -2252,6 +2306,47 @@ function analyzeSource(
           namespace,
           registry: registry.local,
           translator,
+        });
+        ts.forEachChild(node, visitCalls);
+        return;
+      }
+      if (parserSymbol && formSchemaFactorySymbols.has(parserSymbol)) {
+        allowedFormSchemaFactoryReferences.add(nodeKey(parserExpression));
+        if (node.arguments.length !== 2) {
+          diagnostic(
+            node,
+            "createFormSchema requires one literal namespace and one schema builder"
+          );
+        }
+        const namespaceArgument = node.arguments[0];
+        const namespace =
+          (namespaceArgument ? literalString(namespaceArgument) : undefined) ??
+          diagnostic(
+            namespaceArgument ?? node,
+            "createFormSchema requires a literal namespace"
+          );
+        const formMessages = [...catalog.messages.values()].filter(
+          (message) =>
+            message.path.startsWith(`${namespace}.error.form.`) &&
+            message.kind === "text" &&
+            !message.hasArguments
+        );
+        if (formMessages.length === 0) {
+          diagnostic(
+            namespaceArgument ?? node,
+            `Translation namespace ${namespace} has no argument-free error.form messages`
+          );
+        }
+        const build =
+          node.arguments[1] ??
+          diagnostic(node, "createFormSchema requires a schema builder");
+        const registry = dynamicRegistry(namespace, formMessages);
+        formSchemaHelper ??= uniqueName("__miraiIntlCreateCompilerFormSchema");
+        replacements.set(nodeKey(node), {
+          build,
+          kind: "form-schema",
+          namespace,
+          registry: registry.local,
         });
         ts.forEachChild(node, visitCalls);
         return;
@@ -2461,6 +2556,17 @@ function analyzeSource(
           "createFormErrorTranslator escapes the supported generated-factory syntax"
         );
       }
+      if (
+        symbol &&
+        formSchemaFactorySymbols.has(symbol) &&
+        !isDeclarationIdentifier(node) &&
+        !allowedFormSchemaFactoryReferences.has(nodeKey(node))
+      ) {
+        diagnostic(
+          node,
+          "createFormSchema escapes the supported generated-factory syntax"
+        );
+      }
     }
     ts.forEachChild(node, validateTranslatorReferences);
   };
@@ -2485,6 +2591,7 @@ function analyzeSource(
     removedNodes,
     replacements,
     formErrorTranslatorHelper,
+    formSchemaHelper,
     translationKeyParserHelper,
   };
 }
@@ -2648,6 +2755,21 @@ function transformSource(
                   ]
                 );
               }
+              if (replacement?.kind === "form-schema") {
+                const helper = analysis.formSchemaHelper;
+                if (!helper) {
+                  throw new Error("Form schema helper is missing");
+                }
+                return factory.createCallExpression(
+                  factory.createIdentifier(helper),
+                  undefined,
+                  [
+                    factory.createStringLiteral(replacement.namespace),
+                    factory.createIdentifier(replacement.registry),
+                    ts.visitNode(replacement.build, visitor) as ts.Expression,
+                  ]
+                );
+              }
               if (replacement?.kind === "parse") {
                 const helper = analysis.translationKeyParserHelper;
                 if (!helper) {
@@ -2770,6 +2892,15 @@ function transformSource(
                       "createCompilerFormErrorTranslator"
                     ),
                     factory.createIdentifier(analysis.formErrorTranslatorHelper)
+                  )
+                );
+              }
+              if (analysis.formSchemaHelper) {
+                runtimeSpecifiers.push(
+                  factory.createImportSpecifier(
+                    false,
+                    factory.createIdentifier("createCompilerFormSchema"),
+                    factory.createIdentifier(analysis.formSchemaHelper)
                   )
                 );
               }
@@ -2929,7 +3060,7 @@ export async function transformMiraiIntlSource(
 }
 
 const TRANSLATION_CALL_CANDIDATE =
-  /(?:\buseTranslations\b|\bgetServerTranslations\b|\bcreateFormErrorTranslator\b|\bcreateTranslationKey\b|\bparseTranslationKey\b|\bt\.rich\s*\(|\bt\.value\s*\(|\bt\.map\s*\(|\bt\s*\(\s*["'`])/u;
+  /(?:\buseTranslations\b|\bgetServerTranslations\b|\bcreateFormErrorTranslator\b|\bcreateFormSchema\b|\bcreateTranslationKey\b|\bparseTranslationKey\b|\bt\.rich\s*\(|\bt\.value\s*\(|\bt\.map\s*\(|\bt\s*\(\s*["'`])/u;
 
 export function isMiraiIntlTransformCandidate(
   source: string,

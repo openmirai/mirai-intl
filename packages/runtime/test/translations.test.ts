@@ -22,10 +22,15 @@ import { describe, expect, it } from "vitest";
 import { createUseIntl, createUseTranslations } from "../src/react";
 import { createServerIntl, createTranslationFunction } from "../src/server";
 import type { StrictIntlRuntime } from "../src/runtime";
-import type { TranslationFunction } from "../src/translations";
+import type {
+  FormErrorMessage,
+  TranslationFunction,
+} from "../src/translations";
 import {
   createCompilerFormErrorTranslator,
+  createCompilerFormSchema,
   createCompilerDynamicTextRegistry,
+  bindFormSchema,
   parseCompilerTranslationKey,
   translateCompilerDynamicText,
 } from "../src/translations";
@@ -300,8 +305,52 @@ describe("conventional translation bindings", () => {
     expect(translator.has("error.form.unknown")).toBe(false);
     expect(translator.has("pages.home.title")).toBe(false);
     expect(translator("error.form.required")).toBe("Static text");
-    expect(translator("server validation failed")).toBe(
-      "server validation failed"
+    expect(translator("server validation failed")).toBeUndefined();
+  });
+
+  it("builds schemas with closed relative form-error keys", () => {
+    const registry = createCompilerDynamicTextRegistry({
+      ["pages.home.error.form.required"]: staticTextDescriptor(),
+    });
+    const schema = createCompilerFormSchema(
+      "pages.home",
+      registry,
+      ({ error }: { error: (key: string) => string }) => ({
+        required: error("required"),
+      })
+    );
+
+    expect(schema).toEqual({ required: "error.form.required" });
+    expect(() =>
+      createCompilerFormSchema(
+        "pages.home",
+        registry,
+        ({ error }: { error: (key: string) => string }) => error("missing")
+      )
+    ).toThrow("not registered for this namespace");
+    expect(() =>
+      createCompilerFormSchema(
+        "pages.home",
+        registry,
+        ({ error }: { error: (key: string) => string }) =>
+          error("pages.home.error.form.required")
+      )
+    ).toThrow("not registered for this namespace");
+    expect(() =>
+      createCompilerFormSchema("pages.home", {}, () => undefined)
+    ).toThrow("was not created by compiler lowering");
+    expect(() =>
+      createCompilerFormSchema("pages.home", registry, undefined)
+    ).toThrow("builder must be a function");
+  });
+
+  it("keeps form-schema helpers as identity wrappers and the main factory unlowered", () => {
+    const createFormSchema = bindFormSchema<object>();
+    const helper = (value: FormErrorMessage) => ({ value });
+
+    expect(createFormSchema.helper(helper)).toBe(helper);
+    expect(() => createFormSchema("pages.home" as never, () => ({}))).toThrow(
+      "was not lowered by the Mirai Intl compiler"
     );
   });
 

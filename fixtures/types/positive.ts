@@ -1,4 +1,5 @@
 import {
+  bindFormSchema,
   bindTranslationKeyFactory,
   bindTranslationKeyParser,
   createI18nextCatalogBackend,
@@ -7,9 +8,12 @@ import {
 import { createUseTranslations } from "@openmirai/intl-runtime/react-i18next";
 import type {
   CatalogContractOf,
+  FormErrorMessage,
+  FormSchemaPart,
   TranslationFunctionFor,
   UseTranslations,
 } from "@openmirai/intl-runtime";
+import type { TextDescriptor } from "@openmirai/intl-abi";
 import type {
   ArgumentFreeTextKeysFor,
   DeferredTranslationKeyFor,
@@ -38,6 +42,37 @@ import type {
 } from "./descriptors";
 
 const renderChildren = (children: ReadonlyArray<unknown>): unknown => children;
+
+interface FormSchemaFixtureCatalog {
+  form: {
+    error: {
+      form: {
+        invalid: TextDescriptor;
+        required: TextDescriptor;
+      };
+    };
+  };
+}
+
+const createFormSchema = bindFormSchema<FormSchemaFixtureCatalog>();
+declare const requiredFormMessage: FormErrorMessage<"error.form.required">;
+const requiredFieldHelper = createFormSchema.helper(
+  (input: Readonly<{ message: FormErrorMessage<"error.form.required"> }>) => ({
+    message: input.message,
+  })
+);
+const requiredField = requiredFieldHelper({ message: requiredFormMessage });
+requiredField satisfies FormSchemaPart<{
+  message: FormErrorMessage<"error.form.required">;
+}>;
+const formSchema = createFormSchema("form", ({ error }) => ({
+  invalid: error("invalid"),
+  required: requiredField,
+}));
+formSchema satisfies FormSchemaPart<{
+  invalid: FormErrorMessage<"error.form.invalid">;
+  required: typeof requiredField;
+}>;
 
 const staticTextResult = intl.t(staticText);
 staticTextResult satisfies string;

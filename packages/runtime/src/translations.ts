@@ -376,10 +376,43 @@ export function bindTranslationKeyParser<
   return unloweredTranslationKeyParser as ParseTranslationKey<Catalog>;
 }
 
-export interface FormErrorTranslator {
-  (input: string): string;
-  has(input: string): boolean;
+declare const formErrorMessageBrand: unique symbol;
+declare const formSchemaPartBrand: unique symbol;
+declare const formSchemaBrand: unique symbol;
+declare const formErrorTranslatorBrand: unique symbol;
+
+export type FormErrorMessage<
+  Key extends `error.form.${string}` = `error.form.${string}`,
+> = Key & {
+  readonly [formErrorMessageBrand]: Readonly<{ key: Key }>;
+};
+
+export type FormSchemaPart<Schema> = Schema & {
+  readonly [formSchemaPartBrand]: Readonly<{ schema: Schema }>;
+};
+
+export type FormSchema<
+  Schema,
+  Namespace extends string,
+> = FormSchemaPart<Schema> & {
+  readonly [formSchemaBrand]: Readonly<{
+    namespace: Namespace;
+    schema: Schema;
+  }>;
+};
+
+export interface FormSchemaHelperInputRecord {
+  readonly [key: string]: FormSchemaHelperInput;
 }
+
+export type FormSchemaHelperInput =
+  | FormErrorMessage
+  | FormSchemaHelperInputRecord;
+
+export type FormErrorTranslator = ((input: string) => string | undefined) & {
+  has(input: string): boolean;
+  readonly [formErrorTranslatorBrand]: never;
+};
 
 export type FormErrorKeysFor<
   Catalog extends object,
@@ -389,13 +422,36 @@ export type FormErrorKeysFor<
   `error.form.${string}`
 >;
 
-export type FormErrorNamespaces<Catalog extends object> = {
-  [Namespace in NamespacePaths<Catalog>]: [
-    FormErrorKeysFor<Catalog, Namespace>,
-  ] extends [never]
-    ? never
-    : Namespace;
-}[NamespacePaths<Catalog>];
+export type RelativeFormErrorKeysFor<
+  Catalog extends object,
+  Namespace extends NamespacePaths<Catalog>,
+> =
+  FormErrorKeysFor<Catalog, Namespace> extends `error.form.${infer Key}`
+    ? Key
+    : never;
+
+export type FormErrorNamespaces<Catalog extends object> =
+  NamespacePaths<Catalog>;
+
+export type FormSchemaContext<
+  Catalog extends object,
+  Namespace extends NamespacePaths<Catalog>,
+> = Readonly<{
+  error: <const Key extends RelativeFormErrorKeysFor<Catalog, Namespace>>(
+    key: Key
+  ) => FormErrorMessage<`error.form.${Key}`>;
+}>;
+
+export interface CreateFormSchema<Catalog extends object> {
+  <const Namespace extends NamespacePaths<Catalog>, Schema>(
+    namespace: Namespace,
+    build: (context: FormSchemaContext<Catalog, Namespace>) => Schema
+  ): FormSchema<Schema, Namespace>;
+
+  helper<Args extends ReadonlyArray<FormSchemaHelperInput>, Schema>(
+    factory: (...args: Args) => Schema
+  ): (...args: Args) => FormSchemaPart<Schema>;
+}
 
 export type CreateFormErrorTranslator<Catalog extends object> = <
   const Namespace extends FormErrorNamespaces<Catalog>,
@@ -415,6 +471,22 @@ export function bindFormErrorTranslator<
   Catalog extends object,
 >(): CreateFormErrorTranslator<Catalog> {
   return unloweredFormErrorTranslator as CreateFormErrorTranslator<Catalog>;
+}
+
+const unloweredFormSchema = (): never => {
+  throw new TypeError("Form schema was not lowered by the Mirai Intl compiler");
+};
+
+const formSchemaHelper = <Factory>(factory: Factory): Factory => factory;
+
+export function bindFormSchema<
+  Catalog extends object,
+>(): CreateFormSchema<Catalog> {
+  Object.defineProperty(unloweredFormSchema, "helper", {
+    enumerable: true,
+    value: formSchemaHelper,
+  });
+  return unloweredFormSchema as unknown as CreateFormSchema<Catalog>;
 }
 
 /** @internal Compiler lowering target. Application code must not call this. */
@@ -464,9 +536,9 @@ export function createCompilerFormErrorTranslator(
     const key = parseCompilerTranslationKey(input, namespace, registry);
     return key?.startsWith(formPrefix) ?? false;
   };
-  const translate = (input: string): string => {
+  const translate = (input: string): string | undefined => {
     if (!has(input)) {
-      return input;
+      return undefined;
     }
     return translateCompilerDynamicText(translator, input, namespace, registry);
   };
@@ -474,7 +546,47 @@ export function createCompilerFormErrorTranslator(
     enumerable: true,
     value: has,
   });
-  return Object.freeze(translate) as FormErrorTranslator;
+  return Object.freeze(translate) as unknown as FormErrorTranslator;
+}
+
+/** @internal Compiler lowering target. Application code must not call this. */
+export function createCompilerFormSchema(
+  namespace: unknown,
+  registry: unknown,
+  build: unknown
+): unknown {
+  if (typeof namespace !== "string" || namespace.length === 0) {
+    throw new TypeError("Form schema namespace must be a non-empty string");
+  }
+  if (
+    !registry ||
+    typeof registry !== "object" ||
+    !dynamicTextRegistries.has(registry)
+  ) {
+    throw new TypeError(
+      "Form schema registry was not created by compiler lowering"
+    );
+  }
+  if (typeof build !== "function") {
+    throw new TypeError("Form schema builder must be a function");
+  }
+  const error = (input: unknown): string => {
+    if (typeof input !== "string") {
+      throw new TypeError("Form schema error key must be a string");
+    }
+    const key = parseCompilerTranslationKey(
+      `error.form.${input}`,
+      namespace,
+      registry
+    );
+    if (!key?.startsWith(`${namespace}.error.form.`)) {
+      throw new TypeError(
+        "Form schema error key is not registered for this namespace"
+      );
+    }
+    return `error.form.${input}`;
+  };
+  return Reflect.apply(build, undefined, [Object.freeze({ error })]);
 }
 
 export function createTranslationFunction<

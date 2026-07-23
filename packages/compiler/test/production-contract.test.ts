@@ -205,7 +205,7 @@ describe("generated named-key contract", () => {
       await writeFile(
         join(typeFixtureRoot, "runtime-shim.d.ts"),
         [
-          `export { bindFormErrorTranslator, bindTranslationKeyFactory, bindTranslationKeyParser } from ${JSON.stringify(runtimeTranslations)};`,
+          `export { bindFormErrorTranslator, bindFormSchema, bindTranslationKeyFactory, bindTranslationKeyParser } from ${JSON.stringify(runtimeTranslations)};`,
           `export type { ArgumentFreeTextKeysFor, NamespacePaths } from ${JSON.stringify(runtimeTranslations)};`,
           `export type { TypedCatalogManifest } from ${JSON.stringify(runtimeCatalog)};`,
           "",

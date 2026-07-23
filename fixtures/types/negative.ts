@@ -11,6 +11,7 @@ import {
   useTranslations,
 } from "./descriptors";
 import {
+  bindFormSchema,
   bindTranslationKeyFactory,
   bindTranslationKeyParser,
   createTranslationFunction,
@@ -21,8 +22,31 @@ import type {
   FixtureCatalogManifest,
 } from "./descriptors";
 import type { ArgumentFreeTextKeysFor } from "@openmirai/intl-runtime/react";
+import type { TextDescriptor } from "@openmirai/intl-abi";
 
 const renderChildren = (children: ReadonlyArray<unknown>): unknown => children;
+
+interface FormSchemaFixtureCatalog {
+  form: {
+    error: {
+      form: {
+        required: TextDescriptor;
+      };
+    };
+  };
+}
+
+const createFormSchema = bindFormSchema<FormSchemaFixtureCatalog>();
+declare const formErrorPrefix: `error.form.${string}`;
+
+// @ts-expect-error Form-schema helpers cannot accept raw strings.
+createFormSchema.helper((message: string) => ({ message }));
+
+// @ts-expect-error Form-schema helpers cannot accept unbranded error prefixes.
+createFormSchema.helper((message: typeof formErrorPrefix) => ({ message }));
+
+// @ts-expect-error Form-schema helpers cannot give errors raw-string defaults.
+createFormSchema.helper((message = "error.form.required") => ({ message }));
 
 // @ts-expect-error A no-value text descriptor accepts no values argument.
 intl.t(staticText, {});
