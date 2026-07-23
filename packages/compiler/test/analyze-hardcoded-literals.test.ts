@@ -36,7 +36,7 @@ describe("analyzeHardcodedLiterals", () => {
     );
   });
 
-  it("allows mirai-intl-allow-literal escapes", () => {
+  it("does not allow comment-based escapes for production prose", () => {
     const diagnostics = analyzeHardcodedLiterals({
       filePath: "/app/src/Button.tsx",
       packageRoot: "/app",
@@ -47,7 +47,12 @@ describe("analyzeHardcodedLiterals", () => {
         }
       `,
     });
-    expect(diagnostics).toEqual([]);
+    expect(diagnostics.map((entry) => entry.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("hardcoded title string"),
+        expect.stringContaining("hardcoded JSX text"),
+      ])
+    );
   });
 
   it("does not flag String.prototype helpers as Zod messages", () => {

@@ -23,7 +23,6 @@ const USER_FACING_PROPS = new Set([
   "tooltip",
 ]);
 
-const ALLOW_COMMENT = /mirai-intl-allow-literal\b/u;
 const PROSE_LITERAL =
   /(?:[A-Za-z]{2,}(?:\s+[A-Za-z]{2,})+)|(?:[\u0E00-\u0E7F]{2,})/u;
 const SKIP_PATH =
@@ -55,25 +54,6 @@ export function shouldSkipHardcodedLiteralFile(filePath: string): boolean {
 
 function lineOf(sourceFile: ts.SourceFile, position: number): number {
   return sourceFile.getLineAndCharacterOfPosition(position).line + 1;
-}
-
-function hasAllowComment(sourceFile: ts.SourceFile, node: ts.Node): boolean {
-  let current: ts.Node | undefined = node;
-  while (current) {
-    const ranges = [
-      ...(ts.getLeadingCommentRanges(sourceFile.text, current.pos) ?? []),
-      ...(ts.getTrailingCommentRanges(sourceFile.text, current.end) ?? []),
-    ];
-    if (
-      ranges.some((range) =>
-        ALLOW_COMMENT.test(sourceFile.text.slice(range.pos, range.end))
-      )
-    ) {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
 }
 
 function isProseLiteral(value: string): boolean {
@@ -187,16 +167,12 @@ export function analyzeHardcodedLiterals(options: {
   const diagnostics: Array<HardcodedLiteralDiagnostic> = [];
 
   const visit = (node: ts.Node): void => {
-    if (hasAllowComment(sourceFile, node)) {
-      return;
-    }
-
     if (ts.isJsxText(node)) {
       const text = node.getText(sourceFile);
       if (isProseLiteral(text)) {
         diagnostics.push({
           file: relativeFile,
-          message: `${lineOf(sourceFile, node.getStart(sourceFile))}: hardcoded JSX text must use t()/t.rich() from locale JSON (or mirai-intl-allow-literal)`,
+          message: `${lineOf(sourceFile, node.getStart(sourceFile))}: hardcoded JSX text must use t()/t.rich() from locale JSON`,
         });
       }
     }
@@ -208,7 +184,7 @@ export function analyzeHardcodedLiterals(options: {
         if (literal !== undefined && isProseLiteral(literal)) {
           diagnostics.push({
             file: relativeFile,
-            message: `${lineOf(sourceFile, node.getStart(sourceFile))}: hardcoded ${name} string must use t()/t.rich() from locale JSON (or mirai-intl-allow-literal)`,
+            message: `${lineOf(sourceFile, node.getStart(sourceFile))}: hardcoded ${name} string must use t()/t.rich() from locale JSON`,
           });
         }
       }
@@ -220,7 +196,7 @@ export function analyzeHardcodedLiterals(options: {
     ) {
       diagnostics.push({
         file: relativeFile,
-        message: `${lineOf(sourceFile, node.getStart(sourceFile))}: hardcoded Zod validation message must use a catalog key via parseTranslationKey/createTranslationKey (or mirai-intl-allow-literal)`,
+        message: `${lineOf(sourceFile, node.getStart(sourceFile))}: hardcoded Zod validation message must use a catalog key via parseTranslationKey/createTranslationKey`,
       });
     }
 

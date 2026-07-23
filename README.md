@@ -142,8 +142,7 @@ resources soft-fail via `missingMessageFallback` (default `""`) and emit
 
 `mirai-intl check` also fails closed on high-confidence hardcoded JSX text,
 user-facing string props (`label`, `placeholder`, `title`, …), and Zod
-validation message literals. Suppress a single site with
-`// mirai-intl-allow-literal`.
+validation message literals. Production UI prose must come from the catalog.
 
 ## Packages
 
