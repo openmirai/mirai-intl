@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.2.0](https://github.com/openmirai/mirai-intl/compare/v0.1.7...v0.2.0) (2026-07-25)
+
+
+### Features
+
+* add production proof and recovery ([8a5fa4a](https://github.com/openmirai/mirai-intl/commit/8a5fa4a515700d2ae2099c414a0be3dbdafe8a73))
+
 ## [0.1.7](https://github.com/openmirai/mirai-intl/compare/v0.1.6...v0.1.7) (2026-07-23)
 
 ## [0.1.6](https://github.com/openmirai/mirai-intl/compare/v0.1.5...v0.1.6) (2026-07-23)
