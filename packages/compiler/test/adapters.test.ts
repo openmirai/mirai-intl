@@ -504,18 +504,16 @@ describe("Vite adapter", () => {
       const current = JSON.parse(
         await readFile(join(root, "src/i18n/generated/current.json"), "utf8")
       ) as { directory: string };
-      const runtime = JSON.parse(
-        await readFile(
-          join(
-            root,
-            "src/i18n/generated",
-            current.directory,
-            "catalog.runtime.gen.json"
-          ),
-          "utf8"
-        )
-      ) as { manifest: { rendererCapabilityId: string } };
-      expect(runtime.manifest.rendererCapabilityId).toBe("portable-ir-v1");
+      const manifest = await readFile(
+        join(
+          root,
+          "src/i18n/generated",
+          current.directory,
+          "catalog.manifest.gen.mjs"
+        ),
+        "utf8"
+      );
+      expect(manifest).toContain('"rendererCapabilityId":"portable-ir-v1"');
 
       const cleanup = plugin.configureServer(server);
       expect(watcher.add).toHaveBeenCalledWith(

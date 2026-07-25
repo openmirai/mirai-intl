@@ -868,7 +868,7 @@ describe("catalog compiler fixture", () => {
       );
       const first = await writeArtifactSet(root, artifacts);
       await writeFile(
-        join(first.directory, "catalog.runtime.gen.json"),
+        join(first.directory, "catalog.contract.gen.json"),
         "stale\n",
         "utf8"
       );

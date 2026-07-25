@@ -178,7 +178,7 @@ function lowerHomeTitle(
 }
 
 describe("private named-key lowering", () => {
-  it("filters transform candidates without catalog I/O", () => {
+  it("selects every eligible first-party source without source-text authority", () => {
     expect(
       isMiraiIntlTransformCandidate(
         'import { useTranslations as useT } from "x";',
@@ -214,7 +214,7 @@ describe("private named-key lowering", () => {
         "export const answer = 42;",
         join("/repo", "src", "plain.ts")
       )
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("lowers aliases plus text, rich, value, root, and direct-result calls", async () => {

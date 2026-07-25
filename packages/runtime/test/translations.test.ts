@@ -31,6 +31,9 @@ import {
   createCompilerFormSchema,
   createCompilerDynamicTextRegistry,
   bindFormSchema,
+  bindRecoveringFormErrorTranslator,
+  bindRecoveringTranslationKeyFactory,
+  bindRecoveringTranslationKeyParser,
   parseCompilerTranslationKey,
   translateCompilerDynamicText,
 } from "../src/translations";
@@ -352,6 +355,21 @@ describe("conventional translation bindings", () => {
     expect(() => createFormSchema("pages.home" as never, () => ({}))).toThrow(
       "was not lowered by the Mirai Intl compiler"
     );
+  });
+
+  it("keeps unlowered production key and form helpers terminal", () => {
+    const createKey = bindRecoveringTranslationKeyFactory<object>();
+    const parseKey = bindRecoveringTranslationKeyParser<object>();
+    const createFormTranslator = bindRecoveringFormErrorTranslator<object>();
+
+    expect(createKey("pages.home" as never)("title" as never)).toBe("title");
+    expect(parseKey("pages.home" as never, "title")).toBeUndefined();
+    const translate = createFormTranslator(
+      "pages.home" as never,
+      (() => "") as never
+    );
+    expect(translate("error.form.required")).toBeUndefined();
+    expect(translate.has("error.form.required")).toBe(false);
   });
 
   it("rejects malformed dynamic registries without invoking accessors or inherited properties", () => {

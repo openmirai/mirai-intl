@@ -5,6 +5,12 @@ import type { TypedCatalogManifest } from "./catalog";
 import { defineRuntimeCatalog } from "./catalog";
 import { StrictIntlRuntime } from "./runtime";
 import type { IntlRuntimeOptions } from "./runtime";
+import { createRecoveringRuntimeFrom } from "./recovering";
+import type {
+  IntlRecoveryDiagnostic,
+  RecoveringIntlRuntimeOptions,
+  RecoveringIntlRuntime,
+} from "./recovering";
 
 export type I18nextCatalogResource<Translation extends object = object> =
   Readonly<{
@@ -141,6 +147,16 @@ export type I18nextRuntimeOptions<Instance extends I18nextLike> = Readonly<{
     | "strictValidation"
     | "trustedRichComponents"
   >;
+
+export type RecoveringI18nextRuntimeOptions<Instance extends I18nextLike> =
+  I18nextRuntimeOptions<Instance> &
+    Pick<
+      RecoveringIntlRuntimeOptions,
+      "proofIdentity" | "release" | "richFallback" | "valueFallback"
+    > &
+    Readonly<{
+      recoveryDiagnosticSink?: (diagnostic: IntlRecoveryDiagnostic) => void;
+    }>;
 
 function uniqueLocales(
   locales: ReadonlyArray<string | undefined>
@@ -298,4 +314,35 @@ export function createI18nextRuntime<
       ? {}
       : { trustedRichComponents: options.trustedRichComponents }),
   });
+}
+
+export function createRecoveringI18nextRuntime<
+  Contract extends object,
+  Instance extends I18nextLike,
+>(
+  catalogManifest: TypedCatalogManifest<Contract>,
+  instance: Instance,
+  locale?: string,
+  options: RecoveringI18nextRuntimeOptions<Instance> = {}
+): RecoveringIntlRuntime {
+  const {
+    proofIdentity,
+    recoveryDiagnosticSink,
+    release,
+    richFallback,
+    valueFallback,
+    ...strictOptions
+  } = options;
+  return createRecoveringRuntimeFrom(
+    createI18nextRuntime(catalogManifest, instance, locale, strictOptions),
+    {
+      ...(proofIdentity === undefined ? {} : { proofIdentity }),
+      ...(recoveryDiagnosticSink === undefined
+        ? {}
+        : { diagnosticSink: recoveryDiagnosticSink }),
+      ...(release === undefined ? {} : { release }),
+      ...(richFallback === undefined ? {} : { richFallback }),
+      ...(valueFallback === undefined ? {} : { valueFallback }),
+    }
+  );
 }

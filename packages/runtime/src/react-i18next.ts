@@ -4,12 +4,21 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { CatalogContractOf, TypedCatalogManifest } from "./catalog";
 import {
   activeI18nextLocale,
+  createRecoveringI18nextRuntime,
   createI18nextRuntime,
   resolveI18nextCatalogLocale,
 } from "./i18next";
-import type { I18nextLike, I18nextRuntimeOptions } from "./i18next";
+import type {
+  I18nextLike,
+  I18nextRuntimeOptions,
+  RecoveringI18nextRuntimeOptions,
+} from "./i18next";
+import type { RecoveringIntlRuntime } from "./recovering";
 import type { StrictIntlRuntime } from "./runtime";
-import { createTranslationFunction } from "./translations";
+import {
+  createRecoveringTranslationFunction,
+  createTranslationFunction,
+} from "./translations";
 import type { NamespacePaths, TranslationFunctionFor } from "./translations";
 
 export type TranslationHookResult<Instance extends I18nextLike> = Readonly<{
@@ -38,6 +47,15 @@ interface RuntimeResource<Instance extends I18nextLike> {
   readonly instance: Instance;
   readonly listeners: Set<() => void>;
   readonly runtime: StrictIntlRuntime;
+  languageSnapshot: string;
+  revision: number;
+  unbind: (() => void) | undefined;
+}
+
+interface RecoveringRuntimeResource<Instance extends I18nextLike> {
+  readonly instance: Instance;
+  readonly listeners: Set<() => void>;
+  readonly runtime: RecoveringIntlRuntime;
   languageSnapshot: string;
   revision: number;
   unbind: (() => void) | undefined;
@@ -156,6 +174,121 @@ export function createUseTranslations<
     );
     const t = useMemo(
       () => createTranslationFunction(resource.runtime),
+      [resource.runtime, revision]
+    );
+    return { i18n: hookResult.i18n, ready: hookResult.ready, t };
+  };
+  return useTranslations as BoundUseTranslations<Contract, Instance>;
+}
+
+/** Production-only hook factory. Development and Storybook keep the strict factory. */
+export function createRecoveringUseTranslations<
+  Manifest extends TypedCatalogManifest<object>,
+  Instance extends I18nextLike,
+>(
+  catalogManifest: Manifest,
+  useTranslation: UseTranslationHook<Instance>,
+  options: RecoveringI18nextRuntimeOptions<Instance> = {}
+): BoundUseTranslations<CatalogContractOf<Manifest>, Instance> {
+  type Contract = CatalogContractOf<Manifest>;
+  const resources = new WeakMap<object, RecoveringRuntimeResource<Instance>>();
+
+  const synchronizeResource = (
+    resource: RecoveringRuntimeResource<Instance>,
+    locale?: string,
+    forceRevision = false
+  ): boolean => {
+    resource.runtime.setLocale(
+      locale === undefined
+        ? activeI18nextLocale(catalogManifest, resource.instance)
+        : resolveI18nextCatalogLocale(
+            catalogManifest,
+            resource.instance,
+            locale
+          )
+    );
+    const nextSnapshot = i18nextLanguageSnapshot(resource.instance);
+    if (!forceRevision && nextSnapshot === resource.languageSnapshot) {
+      return false;
+    }
+    resource.languageSnapshot = nextSnapshot;
+    resource.revision += 1;
+    return true;
+  };
+
+  const resourceFor = (
+    instance: Instance
+  ): RecoveringRuntimeResource<Instance> => {
+    const existing = resources.get(instance);
+    if (existing) {
+      if (existing.listeners.size === 0) {
+        synchronizeResource(existing);
+      }
+      return existing;
+    }
+    const resource: RecoveringRuntimeResource<Instance> = {
+      instance,
+      languageSnapshot: i18nextLanguageSnapshot(instance),
+      listeners: new Set(),
+      runtime: createRecoveringI18nextRuntime(
+        catalogManifest,
+        instance,
+        undefined,
+        options
+      ),
+      revision: 0,
+      unbind: undefined,
+    };
+    resources.set(instance, resource);
+    return resource;
+  };
+
+  const subscribeResource = (
+    resource: RecoveringRuntimeResource<Instance>,
+    subscriber: () => void
+  ): (() => void) => {
+    resource.listeners.add(subscriber);
+    if (resource.listeners.size === 1) {
+      const listener = (locale: string): void => {
+        synchronizeResource(resource, locale, true);
+        for (const notify of resource.listeners) {
+          notify();
+        }
+      };
+      resource.instance.on("languageChanged", listener);
+      resource.unbind = () => {
+        resource.instance.off("languageChanged", listener);
+      };
+      synchronizeResource(resource);
+    }
+    return () => {
+      resource.listeners.delete(subscriber);
+      if (resource.listeners.size === 0) {
+        resource.unbind?.();
+        resource.unbind = undefined;
+      }
+    };
+  };
+
+  const useTranslations = (_namespace?: string) => {
+    const hookResult = useTranslation(
+      options.resourceNamespace ?? "translation"
+    );
+    const resource = useMemo(
+      () => resourceFor(hookResult.i18n),
+      [hookResult.i18n]
+    );
+    const subscribe = useMemo(
+      () => (subscriber: () => void) => subscribeResource(resource, subscriber),
+      [resource]
+    );
+    const revision = useSyncExternalStore(
+      subscribe,
+      () => resource.revision,
+      () => 0
+    );
+    const t = useMemo(
+      () => createRecoveringTranslationFunction(resource.runtime),
       [resource.runtime, revision]
     );
     return { i18n: hookResult.i18n, ready: hookResult.ready, t };

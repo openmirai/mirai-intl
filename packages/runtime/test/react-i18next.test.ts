@@ -17,10 +17,16 @@ import type { ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TypedCatalogManifest } from "../src/catalog";
-import { createI18nextRuntime } from "../src/i18next";
+import {
+  createI18nextRuntime,
+  createRecoveringI18nextRuntime,
+} from "../src/i18next";
 import { createPrecompiledDescriptor } from "../src/representations";
 import { createUseTranslations } from "../src/react-i18next";
-import { createTranslationFunction } from "../src/translations";
+import {
+  createRecoveringTranslationFunction,
+  createTranslationFunction,
+} from "../src/translations";
 
 const compiled = compileCatalog({
   buildId: "react-i18next-runtime-test",
@@ -138,6 +144,35 @@ describe("i18next runtime binding", () => {
     expect(() =>
       callGreeting(createI18nextRuntime(catalogManifest, missing))
     ).toThrow("Strict translation renderer failed");
+  });
+
+  it("forwards recovery proof identity and release through i18next", async () => {
+    const instance = await i18nextFixture({
+      resources: { en: { translation: {} } },
+    });
+    const diagnostics: Array<unknown> = [];
+    const runtime = createRecoveringI18nextRuntime(
+      catalogManifest,
+      instance,
+      undefined,
+      {
+        proofIdentity: "proof-fixture",
+        recoveryDiagnosticSink: (diagnostic) => diagnostics.push(diagnostic),
+        release: "release-fixture",
+      }
+    );
+    const t = createRecoveringTranslationFunction<CatalogContract>(runtime);
+    expect(Reflect.apply(t, undefined, [greeting])).toBe("");
+    expect(diagnostics).toEqual([
+      {
+        locale: "en",
+        operation: "text",
+        proofIdentity: "proof-fixture",
+        recovery: "terminal",
+        release: "release-fixture",
+        stage: "runtime",
+      },
+    ]);
   });
 
   it("shares one listener per instance, cleans it up, and isolates instances", async () => {

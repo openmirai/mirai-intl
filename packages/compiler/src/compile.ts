@@ -29,6 +29,8 @@ import type { CatalogSource, MessageSource } from "./source";
 import compilerPackage from "../package.json" with { type: "json" };
 
 export const COMPILER_VERSION = compilerPackage.version;
+/** Generated payload ABI, intentionally independent of the compiler release. */
+export const CATALOG_ARTIFACT_ABI = "mirai-intl-artifact-v2";
 const LOCALE_POLICY = "exact-then-primary-then-source-v1";
 const customFormatterStyle = /^custom:([^:]+)(?::([^:]*))?$/u;
 const safeFormatterId = /^[\dA-Za-z][\dA-Za-z._/-]{0,127}$/u;
@@ -411,7 +413,7 @@ function createManifest(
     capabilitySetHash: identity.capabilitySetHash,
     catalogId: source.id,
     catalogPackage: source.catalogPackage,
-    compilerVersion: COMPILER_VERSION,
+    compilerVersion: CATALOG_ARTIFACT_ABI,
     formatVersion: FORMAT_VERSION,
     formatterVersions: identity.formatterVersions,
     hash,

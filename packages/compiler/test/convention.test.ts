@@ -432,6 +432,7 @@ describe("convention-first catalog discovery", () => {
       await writeJson(join(root, "package.json"), {
         dependencies: { vite: "8.1.4" },
         miraiIntl: {
+          checkProjects: [{ path: "tsconfig.json", role: "owner" }],
           formatterVersions: { money: "1.0.0" },
           values: {
             settings: {
@@ -456,9 +457,15 @@ describe("convention-first catalog discovery", () => {
         price: "{amount, number, custom:money:compact}",
         settings: { retries: 2, theme: "light" },
       });
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["src/**/*.ts", "src/**/*.tsx"],
+      });
 
       const loaded = await loadConventionCatalog(root);
       expect(loaded.inputs.exceptionsPresent).toBe(true);
+      expect(loaded.checkProjects).toEqual([
+        { path: "tsconfig.json", role: "owner" },
+      ]);
       expect(loaded.source.formatterVersions).toEqual({ money: "1.0.0" });
       expect(loaded.source.messages).toEqual(
         expect.arrayContaining([

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { inflateRawSync } from "node:zlib";
 
 import { emptyObjectSchema } from "@openmirai/intl-abi";
 import {
@@ -35,9 +36,12 @@ describe("compact catalog contracts", () => {
     expect(contract).not.toContain("catalogTree");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.d.mts");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.mjs");
-    expect(artifacts["catalog.messages.gen.mjs"]).toBe(
-      `${generatedSourceHeader}\n`
+    expect(artifacts["catalog.messages.gen.mjs"]).toMatch(
+      new RegExp(
+        `^${generatedSourceHeader.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`
+      )
     );
+    expect(artifacts["catalog.messages.gen.mjs"]).not.toContain("import ");
   });
 
   it("preserves exact catalog/path/value/kind/tag types in the public contract", async () => {
@@ -177,11 +181,17 @@ describe("compact catalog contracts", () => {
     expect(Buffer.byteLength(compact, "utf8")).toBeLessThan(
       Buffer.byteLength(legacyContract, "utf8") / 2
     );
-    expect(privateModule.match(/export const m\d+ =/gu)).toHaveLength(700);
-    expect(privateModule.match(/export const r\d+ =/gu)).toHaveLength(700);
-    expect(privateModule).not.toContain("catalogTree");
-    expect(privateModule).not.toContain("namespace_");
-    expect(privateModule).not.toContain("registry");
+    const privateSource = inflateRawSync(
+      Buffer.from(
+        privateModule.slice(`${generatedSourceHeader}\n`.length),
+        "base64"
+      )
+    ).toString("utf8");
+    expect(privateSource.match(/export const m\d+ =/gu)).toHaveLength(700);
+    expect(privateSource.match(/export const r\d+ =/gu)).toHaveLength(700);
+    expect(privateSource).not.toContain("catalogTree");
+    expect(privateSource).not.toContain("namespace_");
+    expect(privateSource).not.toContain("registry");
     expect(
       Object.keys(compactArtifacts).some(
         (name) => name.startsWith("catalog.message.") && name.endsWith(".d.mts")

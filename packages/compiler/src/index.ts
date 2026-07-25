@@ -1,4 +1,11 @@
 export { analyzeConventionSources } from "./analyze-sources";
+export {
+  finalizeBuildProof,
+  proveConventionCatalog,
+  verifyConventionCheckReceipt,
+  verifyFinalizedBuildProof,
+  writeProvisionalBuildProof,
+} from "./proof";
 export type {
   AnalyzeConventionSourcesOptions,
   ConventionSourceAnalysis,

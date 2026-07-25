@@ -39,16 +39,17 @@ describe("generated artifact verification", () => {
       const expectedFacade = [
         `// @mirai-intl-selector ${JSON.stringify({ contentHash: written.contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
         generatedSourceHeader,
-        'import { bindFormErrorTranslator, bindFormSchema, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
+        'import { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
         'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
         `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
         `export type { CatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
         `export type { CatalogLocale } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,
         "export type TranslationNamespace = NamespacePaths<BoundCatalogContract>;",
         "export type TranslationKey<Namespace extends TranslationNamespace> = ArgumentFreeTextKeysFor<BoundCatalogContract, Namespace>;",
-        "export const createTranslationKey = /* @__PURE__ */ bindTranslationKeyFactory<BoundCatalogContract>();",
-        "export const parseTranslationKey = /* @__PURE__ */ bindTranslationKeyParser<BoundCatalogContract>();",
-        "export const createFormErrorTranslator = /* @__PURE__ */ bindFormErrorTranslator<BoundCatalogContract>();",
+        'const __miraiIntlProduction = process.env.NODE_ENV === "production";',
+        "export const createTranslationKey = /* @__PURE__ */ (__miraiIntlProduction ? bindRecoveringTranslationKeyFactory<BoundCatalogContract>() : bindTranslationKeyFactory<BoundCatalogContract>());",
+        "export const parseTranslationKey = /* @__PURE__ */ (__miraiIntlProduction ? bindRecoveringTranslationKeyParser<BoundCatalogContract>() : bindTranslationKeyParser<BoundCatalogContract>());",
+        "export const createFormErrorTranslator = /* @__PURE__ */ (__miraiIntlProduction ? bindRecoveringFormErrorTranslator<BoundCatalogContract>() : bindFormErrorTranslator<BoundCatalogContract>());",
         "export const createFormSchema = /* @__PURE__ */ bindFormSchema<BoundCatalogContract>();",
         `export { catalogManifest } from "./${relativeDirectory}/catalog.manifest.gen.mjs";`,
         `export { isCatalogLocale, loadCatalogResource } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,
@@ -72,7 +73,7 @@ describe("generated artifact verification", () => {
         changed: false,
       });
 
-      const runtimePath = join(written.directory, "catalog.runtime.gen.json");
+      const runtimePath = join(written.directory, "catalog.contract.gen.json");
       await writeFile(runtimePath, "corrupted\n", "utf8");
       await expect(verifyArtifactSet(root, artifacts)).rejects.toThrowError(
         /does not match its destination files/u
@@ -80,7 +81,7 @@ describe("generated artifact verification", () => {
 
       await writeFile(
         runtimePath,
-        artifacts["catalog.runtime.gen.json"],
+        artifacts["catalog.contract.gen.json"],
         "utf8"
       );
       await unlink(join(written.directory, "catalog.descriptors.gen.mjs"));
@@ -124,6 +125,15 @@ describe("generated artifact verification", () => {
         `${JSON.stringify({
           contentHash: written.contentHash,
           directory: relativeDirectory,
+        })}\n`
+      );
+      await expect(
+        readFile(join(root, "catalog.lock.json"), "utf8")
+      ).resolves.toBe(
+        `${JSON.stringify({
+          contentHash: written.contentHash,
+          directory: relativeDirectory,
+          schemaVersion: 1,
         })}\n`
       );
     } finally {

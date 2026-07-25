@@ -4,11 +4,15 @@ import { join, relative, resolve, sep } from "node:path";
 import { loadConventionCatalog } from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
 import { ensureMiraiIntlCatalogOnce } from "./lifecycle";
+import { verifyConventionCheckReceipt } from "./proof";
 import {
   authorizePrivateMessageSliceRequest,
   loadPrivateMessageSlice,
 } from "./private-module";
-import { transformMiraiIntlSource } from "./transform";
+import {
+  invalidateMiraiIntlCatalogCache,
+  transformMiraiIntlSource,
+} from "./transform";
 import type {
   MiraiIntlSourceMap,
   MiraiIntlTransformOptions,
@@ -19,6 +23,7 @@ export type MiraiIntlVitePlugin = Readonly<{
     this: Readonly<{ addWatchFile(file: string): void }>
   ): Promise<void>;
   configResolved(config: Readonly<{ root: string }>): void;
+  closeBundle(): Promise<void>;
   configureServer(server: MiraiIntlViteServer): () => void;
   enforce: "pre";
   handleHotUpdate(context: MiraiIntlHotUpdateContext): Promise<[] | undefined>;
@@ -31,6 +36,13 @@ export type MiraiIntlVitePlugin = Readonly<{
     code: string,
     id: string
   ): Promise<Readonly<{ code: string; map: MiraiIntlSourceMap }> | null>;
+}>;
+
+export type MiraiIntlViteOptions = MiraiIntlTransformOptions & Readonly<{}>;
+
+type MiraiIntlViteBuildConfig = Readonly<{
+  build?: Readonly<{ outDir?: string; ssr?: boolean | string }>;
+  root: string;
 }>;
 
 type MiraiIntlViteWatcher = Readonly<{
@@ -93,7 +105,7 @@ async function hasPublishedCatalogPointer(
 }
 
 export function miraiIntlVite(
-  options: MiraiIntlTransformOptions = {}
+  options: MiraiIntlViteOptions = {}
 ): MiraiIntlVitePlugin {
   let resolvedRoot = options.root;
   let localeRoots: ReadonlyArray<string> = [];
@@ -163,6 +175,10 @@ export function miraiIntlVite(
     async buildStart() {
       const opts = currentOptions();
       const root = packageRoot();
+      invalidateMiraiIntlCatalogCache(opts);
+      if (opts.requireProof) {
+        await verifyConventionCheckReceipt(root);
+      }
       const generatedDirectory =
         opts.generatedDirectory ?? defaultGeneratedDirectory;
       const published = await hasPublishedCatalogPointer(
@@ -189,7 +205,12 @@ export function miraiIntlVite(
         registerBuildWatches(this, loaded);
       }
     },
-    configResolved(config) {
+    async closeBundle() {
+      // Vite/Nitro may relocate, prune, or mutate assets after this hook.
+      // The package lifecycle runs prove-artifact only after the final output
+      // is materialized, then finalizes the immutable byte proof.
+    },
+    configResolved(config: MiraiIntlViteBuildConfig) {
       resolvedRoot ??= config.root;
     },
     configureServer(server) {

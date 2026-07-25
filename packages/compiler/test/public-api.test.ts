@@ -6,9 +6,14 @@ describe("published compiler root", () => {
     expect(Object.keys(compiler).toSorted()).toEqual([
       "COMPILER_VERSION",
       "analyzeConventionSources",
+      "finalizeBuildProof",
       "generateConventionCatalog",
       "loadConventionCatalog",
+      "proveConventionCatalog",
       "verifyConventionCatalog",
+      "verifyConventionCheckReceipt",
+      "verifyFinalizedBuildProof",
+      "writeProvisionalBuildProof",
     ]);
     expect(compiler).not.toHaveProperty("compileCatalog");
     expect(compiler).not.toHaveProperty("emitArtifacts");

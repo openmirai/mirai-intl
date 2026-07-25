@@ -186,9 +186,9 @@ describe("tree-shakeable runtime exports", () => {
       runtimeExport: "r7",
     });
     const module = artifacts[greeting?.module ?? ""];
-    expect(module).toContain("Good morning");
-    expect(module).toContain("Certificate verification");
-    expect(module).toContain("export const m7 =");
+    expect(module).toMatch(/^\/\* eslint-disable \*\//u);
+    expect(module).not.toContain("Good morning");
+    expect(module).not.toContain("export const m7 =");
     expect(module).not.toContain("catalogTree");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.mjs");
     expect(
@@ -197,7 +197,7 @@ describe("tree-shakeable runtime exports", () => {
       )
     ).toHaveLength(1);
     expect(Object.keys(artifacts)).toHaveLength(
-      9 + output.catalog.manifest.locales.length
+      8 + output.catalog.manifest.locales.length
     );
   });
 

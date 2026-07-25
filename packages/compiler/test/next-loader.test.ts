@@ -63,34 +63,42 @@ function runLoader(
 }
 
 describe("mirai intl Next loader", () => {
-  it("returns unrelated modules before reading options or discovering a catalog", () => {
+  it("analyzes unrelated eligible modules before returning them unchanged", async () => {
+    const container = await mkdtemp(join(tmpdir(), "mirai-intl-next-plain-"));
+    const root = join(container, "dashboard");
+    await cp(dashboardFixture, root, { recursive: true });
     const inputMap = { mappings: "unchanged" };
-    const callback = vi.fn();
-    const cacheable = vi.fn();
-    const getOptions = vi.fn(() => {
-      throw new Error("Unrelated modules must not read intl options");
-    });
-
-    miraiIntlNextLoader.call(
-      {
-        addDependency: vi.fn(),
-        async: () => callback,
-        cacheable,
-        getOptions,
-        resourcePath: join("/repo", "src", "plain.ts"),
-      },
-      "export const answer = 42;\n",
-      inputMap
-    );
-
-    expect(cacheable).toHaveBeenCalledWith(true);
-    expect(getOptions).not.toHaveBeenCalled();
-    expect(callback).toHaveBeenCalledOnce();
-    expect(callback).toHaveBeenCalledWith(
-      null,
-      "export const answer = 42;\n",
-      inputMap
-    );
+    try {
+      const result = await new Promise<Readonly<{ code: string; map: object }>>(
+        (resolvePromise, rejectPromise) => {
+          miraiIntlNextLoader.call(
+            {
+              addDependency: vi.fn(),
+              async: () => (error, code, map) => {
+                if (error || code === undefined || map === undefined) {
+                  rejectPromise(
+                    error ?? new Error("Next loader returned no result")
+                  );
+                  return;
+                }
+                resolvePromise({ code, map });
+              },
+              cacheable: vi.fn(),
+              getOptions: () => ({ root }),
+              resourcePath: join(root, "src", "plain.ts"),
+            },
+            "export const answer = 42;\n",
+            inputMap
+          );
+        }
+      );
+      expect(result).toEqual({
+        code: "export const answer = 42;\n",
+        map: inputMap,
+      });
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
   });
 
   it("lowers canonical generated-facade deferred keys without message imports", async () => {
@@ -240,8 +248,9 @@ describe("mirai intl Next loader", () => {
         join(firstDirectory, messageModule),
         "utf8"
       );
-      expect(firstPrivateModule).toContain("Short links");
-      expect(firstPrivateModule).toContain("Manage");
+      expect(firstPrivateModule).not.toContain("Short links");
+      expect(firstPrivateModule).not.toContain("Manage");
+      expect(firstPrivateModule.length).toBeGreaterThan(1_000);
 
       await writeFile(
         join(root, "src/locales/pages/{-$locale}/short-links/en.json"),

@@ -11,6 +11,8 @@ import {
   emptyObjectSchema,
 } from "@openmirai/intl-abi";
 import type {
+  IntlCheckExceptionV1,
+  IntlCheckProjectV1,
   IrNode,
   JsonValue,
   RendererCapabilityId,
@@ -62,6 +64,7 @@ type ResolvedCatalogConfig = Readonly<{
     sourceLocale: string;
   }>;
   output: string;
+  checkProjects: ReadonlyArray<IntlCheckProjectV1>;
   representation: DescriptorRepresentation;
   sources: ReadonlyArray<ResolvedCatalogSource>;
 }>;
@@ -112,6 +115,8 @@ type CatalogEnvironmentEvidence = Readonly<{
 }>;
 
 export type LoadedConventionCatalog = Readonly<{
+  checkExceptions: ReadonlyArray<IntlCheckExceptionV1>;
+  checkProjects: ReadonlyArray<IntlCheckProjectV1>;
   config: ResolvedCatalogConfig;
   configPath: string;
   discovery: ConventionDiscoveryManifest;
@@ -1905,6 +1910,8 @@ async function resolveMountedSource(
 }
 
 type ConventionExceptions = Readonly<{
+  checkExceptions: ReadonlyArray<IntlCheckExceptionV1>;
+  checkProjects: ReadonlyArray<IntlCheckProjectV1>;
   formatterVersions: Readonly<Record<string, string>>;
   present: boolean;
   requiredLocales?: ReadonlyArray<string>;
@@ -1915,11 +1922,162 @@ type ConventionExceptions = Readonly<{
 
 function emptyConventionExceptions(): ConventionExceptions {
   return {
+    checkExceptions: [],
+    checkProjects: [],
     formatterVersions: {},
     present: false,
     schema: { messages: {} },
     sources: [],
   };
+}
+
+function checkProjects(
+  value: unknown,
+  configContext: string
+): ReadonlyArray<IntlCheckProjectV1> {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TypeError(
+      `${configContext}.checkProjects must be a non-empty array`
+    );
+  }
+  const projects = value.map((entry, index) => {
+    const project = assertObject(
+      entry,
+      `${configContext}.checkProjects[${index}]`
+    );
+    assertExactKeys(
+      project,
+      ["path", "role"],
+      `${configContext}.checkProjects[${index}]`
+    );
+    const path = requiredString(
+      project,
+      "path",
+      `${configContext}.checkProjects[${index}]`
+    );
+    const role = requiredString(
+      project,
+      "role",
+      `${configContext}.checkProjects[${index}]`
+    );
+    if (
+      path.startsWith("/") ||
+      path.includes("\\") ||
+      path
+        .split("/")
+        .some((part) => part === "" || part === "." || part === "..") ||
+      !/^tsconfig(?:\.[A-Za-z0-9_-]+)?\.json$/u.test(basename(path))
+    ) {
+      throw new TypeError(
+        `${configContext}.checkProjects[${index}].path must be a relative tsconfig JSON path`
+      );
+    }
+    if (role !== "owner" && role !== "checker") {
+      throw new TypeError(
+        `${configContext}.checkProjects[${index}].role must be owner or checker`
+      );
+    }
+    return { path, role } as IntlCheckProjectV1;
+  });
+  const sorted = [...projects].toSorted((left, right) =>
+    compareCanonicalStrings(
+      `${left.path}:${left.role}`,
+      `${right.path}:${right.role}`
+    )
+  );
+  if (
+    canonicalJson(sorted) !== canonicalJson(projects) ||
+    new Set(projects.map((project) => project.path)).size !== projects.length
+  ) {
+    throw new TypeError(
+      `${configContext}.checkProjects must be sorted and use each path once`
+    );
+  }
+  return sorted;
+}
+
+function checkExceptions(
+  value: unknown,
+  configContext: string
+): ReadonlyArray<IntlCheckExceptionV1> {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${configContext}.checkExceptions must be an array`);
+  }
+  const exceptions = value.map((entry, index) => {
+    const exception = assertObject(
+      entry,
+      `${configContext}.checkExceptions[${index}]`
+    );
+    assertExactKeys(
+      exception,
+      ["file", "nodeHash", "reason", "rule"],
+      `${configContext}.checkExceptions[${index}]`
+    );
+    const file = requiredString(
+      exception,
+      "file",
+      `${configContext}.checkExceptions[${index}]`
+    );
+    const nodeHash = requiredString(
+      exception,
+      "nodeHash",
+      `${configContext}.checkExceptions[${index}]`
+    );
+    const reason = requiredString(
+      exception,
+      "reason",
+      `${configContext}.checkExceptions[${index}]`
+    );
+    const rule = requiredString(
+      exception,
+      "rule",
+      `${configContext}.checkExceptions[${index}]`
+    );
+    if (
+      file.startsWith("/") ||
+      file.includes("\\") ||
+      file
+        .split("/")
+        .some((part) => part === "" || part === "." || part === "..") ||
+      ["*", "?", "[", "]", "{", "}"].some((character) =>
+        file.includes(character)
+      ) ||
+      !/^sha256:[a-f0-9]{64}$/u.test(nodeHash) ||
+      reason.trim().length === 0 ||
+      rule.trim().length === 0
+    ) {
+      throw new TypeError(
+        `${configContext}.checkExceptions[${index}] must use an exact regular file, sha256 nodeHash, rule, and non-empty reason`
+      );
+    }
+    return { file, nodeHash, reason, rule } as IntlCheckExceptionV1;
+  });
+  const sorted = [...exceptions].toSorted((left, right) =>
+    compareCanonicalStrings(
+      `${left.file}:${left.rule}:${left.nodeHash}`,
+      `${right.file}:${right.rule}:${right.nodeHash}`
+    )
+  );
+  if (
+    canonicalJson(sorted) !== canonicalJson(exceptions) ||
+    new Set(
+      exceptions.map(
+        (exception) =>
+          `${exception.file}:${exception.rule}:${exception.nodeHash}`
+      )
+    ).size !== exceptions.length
+  ) {
+    throw new TypeError(
+      `${configContext}.checkExceptions must be sorted and unique by file, rule, and nodeHash`
+    );
+  }
+  return sorted;
 }
 
 function parseRequiredLocales(
@@ -1968,6 +2126,8 @@ function conventionExceptions(
     root,
     [
       "formatterVersions",
+      "checkExceptions",
+      "checkProjects",
       "requiredLocales",
       "sourceLocale",
       "sources",
@@ -2034,6 +2194,8 @@ function conventionExceptions(
     configContext
   );
   return {
+    checkExceptions: checkExceptions(root.checkExceptions, configContext),
+    checkProjects: checkProjects(root.checkProjects, configContext),
     formatterVersions,
     present: true,
     schema: { messages },
@@ -2091,6 +2253,31 @@ export async function loadConventionCatalog(
       packageJson.miraiIntl,
       "package.json miraiIntl"
     );
+  }
+  for (const project of exceptions.checkProjects) {
+    const projectPath = resolve(repositoryRoot, project.path);
+    if (
+      !within(repositoryRoot, projectPath) ||
+      !(await regularFileExists(projectPath, `check project ${project.path}`))
+    ) {
+      throw new Error(
+        `Check project ${project.path} must be a readable regular tsconfig within its package root`
+      );
+    }
+  }
+  for (const exception of exceptions.checkExceptions) {
+    const exceptionPath = resolve(repositoryRoot, exception.file);
+    if (
+      !within(repositoryRoot, exceptionPath) ||
+      !(await regularFileExists(
+        exceptionPath,
+        `check exception ${exception.file}`
+      ))
+    ) {
+      throw new Error(
+        `Check exception ${exception.file} must name a readable regular source file within its package root`
+      );
+    }
   }
   const dependencies = packageDependencies(packageJson);
   const frameworks: Array<ConventionFramework> = [
@@ -2180,6 +2367,7 @@ export async function loadConventionCatalog(
       sourceLocale,
     },
     output: "src/i18n/generated",
+    checkProjects: exceptions.checkProjects,
     representation: "precompiled",
     sources: [
       {
@@ -2264,6 +2452,8 @@ export async function loadConventionCatalog(
         compareCanonicalStrings(left.root, right.root)
     );
   return {
+    checkExceptions: exceptions.checkExceptions,
+    checkProjects: config.checkProjects,
     config,
     configPath,
     discovery,
@@ -2274,6 +2464,8 @@ export async function loadConventionCatalog(
       exceptionsHash: sha256(
         canonicalJson({
           ...(hasJsonConfig ? { configFile: "mirai-intl.config.json" } : {}),
+          checkProjects: exceptions.checkProjects,
+          checkExceptions: exceptions.checkExceptions,
           formatterVersions: exceptions.formatterVersions,
           sourceLocale: exceptions.sourceLocale ?? null,
           sources: exceptions.sources.map(({ from, mount, path }) => ({

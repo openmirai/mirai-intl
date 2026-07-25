@@ -7,6 +7,7 @@ import { privateMessageSliceSpecifier } from "./private-module";
 
 export type MiraiIntlTransformOptions = Readonly<{
   generatedDirectory?: string;
+  requireProof?: boolean;
   root?: string;
 }>;
 
@@ -25,6 +26,16 @@ export type MiraiIntlTransformResult = Readonly<{
   dependencies: ReadonlyArray<string>;
   map: MiraiIntlSourceMap;
 }>;
+
+/** Begin each build/HMR epoch with a freshly validated generated catalog. */
+export function invalidateMiraiIntlCatalogCache(
+  options: MiraiIntlTransformOptions = {}
+): void {
+  const root = resolve(options.root ?? process.cwd());
+  catalogCache.delete(
+    resolve(root, options.generatedDirectory ?? defaultGeneratedDirectory)
+  );
+}
 
 type MessageKind = "rich" | "text" | "value";
 type FactoryKind = "client" | "server";
@@ -107,6 +118,14 @@ const reactDependencyHooks = new Set([
 ]);
 const catalogCache = new Map<string, CatalogCacheEntry>();
 const moduleResolutionOptionsCache = new Map<string, ts.CompilerOptions>();
+const miraiIntlImportedOperations = new Set([
+  "createFormErrorTranslator",
+  "createFormSchema",
+  "createTranslationKey",
+  "getServerTranslations",
+  "parseTranslationKey",
+  "useTranslations",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -363,81 +382,28 @@ async function loadCurrentCatalog(
     root,
     options.generatedDirectory ?? defaultGeneratedDirectory
   );
-  const canonicalGeneratedRoot = await canonicalCatalogRoot(generatedRoot);
   const pointerPath = resolve(generatedRoot, "current.json");
+  // A Vite build and an exhaustive receipt check operate against an immutable
+  // generated catalog. Re-validating every generated message module for every
+  // application source file made authority checking O(files × catalog). A
+  // single pointer-byte comparison retains warm-cache rotation correctness
+  // without replaying the full artifact audit for unrelated source modules.
+  const cached = catalogCache.get(generatedRoot);
+  if (cached) {
+    const pointerSource = await readFile(pointerPath, "utf8").catch(
+      () => undefined
+    );
+    if (pointerSource === cached.pointerSource) {
+      return cached.catalog;
+    }
+  }
+  const canonicalGeneratedRoot = await canonicalCatalogRoot(generatedRoot);
   const pointerSource = await readConfinedTextFile(
     canonicalGeneratedRoot,
     pointerPath,
     "Generated current pointer",
     "generated catalog root"
   );
-  const cached = catalogCache.get(generatedRoot);
-  if (cached?.pointerSource === pointerSource) {
-    const selectedCanonicalDirectory = await assertConfinedDirectory(
-      canonicalGeneratedRoot,
-      cached.catalog.selectedDirectory,
-      "Generated selected directory",
-      "generated catalog root"
-    );
-    if (
-      !isSamePath(
-        selectedCanonicalDirectory,
-        cached.catalog.selectedCanonicalDirectory
-      )
-    ) {
-      throw new Error(
-        "Generated selected directory canonical path changed while cached"
-      );
-    }
-    const generatedFacadePath = resolve(generatedRoot, "index.ts");
-    const [, generatedFacadeSource] = await Promise.all([
-      assertConfinedRegularFile(
-        selectedCanonicalDirectory,
-        cached.catalog.contractPath,
-        "Generated catalog contract",
-        "selected catalog directory"
-      ),
-      readConfinedTextFile(
-        canonicalGeneratedRoot,
-        generatedFacadePath,
-        "Generated stable facade",
-        "generated catalog root"
-      ),
-      assertConfinedRegularFile(
-        selectedCanonicalDirectory,
-        cached.catalog.provenancePath,
-        "Generated catalog provenance",
-        "selected catalog directory"
-      ),
-      assertConfinedRegularFile(
-        selectedCanonicalDirectory,
-        cached.catalog.privateCarrierPath,
-        "Generated private carrier",
-        "selected catalog directory"
-      ),
-      ...[
-        ...new Set(
-          [...cached.catalog.messages.values()].map(
-            ({ descriptorModule }) => descriptorModule
-          )
-        ),
-      ].map((module) =>
-        assertConfinedRegularFile(
-          selectedCanonicalDirectory,
-          module,
-          "Generated private message module",
-          "selected catalog directory"
-        )
-      ),
-    ]);
-    assertGeneratedFacadeSelector(
-      generatedFacadeSource,
-      cached.catalog.contentHash,
-      cached.catalog.selectedRelativeDirectory
-    );
-    return cached.catalog;
-  }
-
   const pointer = parseJson(pointerSource, "Generated current pointer");
   if (!isRecord(pointer)) {
     throw new TypeError("Generated current pointer must be an object");
@@ -547,6 +513,48 @@ function scriptKindFor(id: string): ts.ScriptKind {
     return ts.ScriptKind.TS;
   }
   return ts.ScriptKind.JS;
+}
+
+/**
+ * Avoid opening and validating a catalog for source that cannot possibly be
+ * translation-bearing. This is intentionally an AST preflight rather than an
+ * authority decision: imported operations and translator type references are
+ * both sent through the full TypeScript analysis below. A bare identifier `t`
+ * is not authority (it is used throughout ordinary application code); typed
+ * translator props are covered by their Translator/TranslationFunction type.
+ * False positives only cost work; false negatives would be a safety failure.
+ */
+function requiresMiraiIntlAnalysis(source: string, id: string): boolean {
+  const sourceFile = ts.createSourceFile(
+    id,
+    source,
+    ts.ScriptTarget.Latest,
+    false,
+    scriptKindFor(id)
+  );
+  let required = false;
+  const visit = (node: ts.Node): void => {
+    if (required) {
+      return;
+    }
+    if (ts.isImportSpecifier(node)) {
+      const imported = (node.propertyName ?? node.name).text;
+      if (miraiIntlImportedOperations.has(imported)) {
+        required = true;
+        return;
+      }
+    }
+    if (
+      ts.isIdentifier(node) &&
+      (node.text === "Translator" || node.text === "TranslationFunction")
+    ) {
+      required = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return required;
 }
 
 function moduleResolutionOptions(root: string): ts.CompilerOptions {
@@ -3035,6 +3043,9 @@ export async function transformMiraiIntlSource(
   if (!isMiraiIntlTransformCandidate(source, cleanId)) {
     return null;
   }
+  if (!requiresMiraiIntlAnalysis(source, cleanId)) {
+    return null;
+  }
   const catalog = await loadCurrentCatalog(options);
   if (
     cleanId === catalog.selectedDirectory ||
@@ -3081,17 +3092,18 @@ export async function transformMiraiIntlSource(
   };
 }
 
-const TRANSLATION_CALL_CANDIDATE =
-  /(?:\buseTranslations\b|\bgetServerTranslations\b|\bcreateFormErrorTranslator\b|\bcreateFormSchema\b|\bcreateTranslationKey\b|\bparseTranslationKey\b|\bt\.rich\s*\(|\bt\.value\s*\(|\bt\.map\s*\(|\bt\s*\(\s*["'`])/u;
-
 export function isMiraiIntlTransformCandidate(
-  source: string,
+  _source: string,
   id: string
 ): boolean {
   const cleanId = cleanModuleId(id);
+  // Source text is deliberately not used here. This function establishes the
+  // transform's eligible-file boundary only; translation ownership and safety
+  // are decided by the TypeScript analysis performed for every eligible file.
+  // A source regex previously made aliases and escaped translator references
+  // invisible to both the checker and production transforms.
   return (
     !cleanId.includes(`${sep}node_modules${sep}`) &&
-    supportedSource.test(cleanId) &&
-    TRANSLATION_CALL_CANDIDATE.test(source)
+    supportedSource.test(cleanId)
   );
 }

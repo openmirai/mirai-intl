@@ -6,6 +6,14 @@ import { delimiter, join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  discoverEmittedModules,
+  finalizeBuildProof,
+  verifyConventionCheckReceipt,
+  verifyFinalizedBuildProof,
+  writeProvisionalBuildProof,
+} from "../src/proof";
+
 const cli = resolve(import.meta.dirname, "../src/cli.ts");
 const tsx = resolve(
   import.meta.dirname,
@@ -341,6 +349,177 @@ describe("convention-only CLI", () => {
       expect(result.status).not.toBe(0);
       expect(`${result.stdout}${result.stderr}`).toContain(
         `${option} is not supported; mirai-intl uses convention discovery`
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each(["check", "generate"])(
+    "rejects source-analysis bypasses for %s",
+    async (command) => {
+      const root = await createConventionApp();
+      try {
+        const checked = runCli(root, command, "--skip-sources");
+        expect(checked.status).not.toBe(0);
+        expect(`${checked.stdout}${checked.stderr}`).toContain(
+          "--skip-sources is not supported"
+        );
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    }
+  );
+
+  it("writes a deterministic receipt only for configured source owners", async () => {
+    const root = await createConventionApp();
+    try {
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(join(root, "src", "page.ts"), "export const page = 1;\n");
+      await writeJson(join(root, "tsconfig.json"), {
+        compilerOptions: { allowJs: true },
+        include: ["src/**/*.ts"],
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+      });
+      expect(runCli(root, "generate").status).toBe(0);
+      const first = runCli(root, "prove", "--json");
+      expect(first.status).toBe(0);
+      const second = runCli(root, "prove", "--json");
+      expect(second.status).toBe(0);
+      expect(second.stdout).toBe(first.stdout);
+      expect(JSON.parse(first.stdout)).toMatchObject({
+        projects: [{ path: "tsconfig.json", role: "owner" }],
+        schemaVersion: 1,
+        sources: [
+          expect.objectContaining({
+            file: "src/page.ts",
+            owner: "tsconfig.json",
+          }),
+        ],
+      });
+      await expect(verifyConventionCheckReceipt(root)).resolves.toMatchObject({
+        schemaVersion: 1,
+      });
+      await writeFile(join(root, "src", "page.ts"), "export const page = 2;\n");
+      await expect(verifyConventionCheckReceipt(root)).rejects.toThrow(
+        /stale check receipt/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("rejects non-tsconfig check-project paths", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "package.json", role: "owner" }],
+      });
+      const result = runCli(root, "generate");
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(
+        /relative tsconfig JSON path/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("requires a byte-identical provisional and finalized build proof", async () => {
+    const root = await createConventionApp();
+    try {
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(join(root, "src", "page.ts"), "export const page = 1;\n");
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["src/**/*.ts"],
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+      });
+      expect(runCli(root, "generate").status).toBe(0);
+      expect(runCli(root, "prove").status).toBe(0);
+      const output = join(root, "dist");
+      await mkdir(output, { recursive: true });
+      await writeFile(join(output, "entry.js"), "export {};\n");
+      await writeFile(
+        join(output, "entry.js.map"),
+        '{"sources":["entry.ts"],"sourcesContent":["export {};"],"version":3}\n'
+      );
+      await writeFile(join(output, "server.mjs"), "export {};\n");
+      await writeFile(
+        join(output, "server.mjs.map"),
+        '{"sources":["server.ts"],"sourcesContent":["export {};"],"version":3}\n'
+      );
+      await expect(discoverEmittedModules(output)).resolves.toEqual([
+        { mapPath: "entry.js.map", path: "entry.js" },
+        { mapPath: "server.mjs.map", path: "server.mjs" },
+      ]);
+      const modules = [{ mapPath: "entry.js.map", path: "entry.js" }] as const;
+      await expect(
+        writeProvisionalBuildProof(root, output, "client", modules)
+      ).resolves.toMatchObject({ state: "provisional", target: "client" });
+      await writeFile(
+        join(output, "entry.js"),
+        "export const changed = true;\n"
+      );
+      await expect(
+        finalizeBuildProof(root, output, "client", modules)
+      ).rejects.toThrow(/changed after provisional proof/u);
+      await writeFile(join(output, "entry.js"), "export {};\n");
+      await expect(
+        finalizeBuildProof(root, output, "client", modules)
+      ).resolves.toMatchObject({ state: "finalized", target: "client" });
+      await expect(
+        verifyFinalizedBuildProof(root, output, "client", modules)
+      ).resolves.toMatchObject({ state: "finalized", target: "client" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("rejects globbed source-analysis exceptions", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkExceptions: [
+          {
+            file: "src/*.ts",
+            nodeHash: `sha256:${"0".repeat(64)}`,
+            reason: "fixture",
+            rule: "no-escape",
+          },
+        ],
+      });
+      const result = runCli(root, "generate");
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/exact regular file/u);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects stale exact source-analysis exceptions", async () => {
+    const root = await createConventionApp();
+    try {
+      await mkdir(join(root, "src"), { recursive: true });
+      await writeFile(join(root, "src/page.tsx"), "export const page = 1;\n");
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkExceptions: [
+          {
+            file: "src/page.tsx",
+            nodeHash: `sha256:${"0".repeat(64)}`,
+            reason: "fixture",
+            rule: "source-analysis",
+          },
+        ],
+      });
+      expect(runCli(root, "generate").status).toBe(0);
+      const result = runCli(root, "check");
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain(
+        "Stale or non-matching Mirai Intl check exception"
       );
     } finally {
       await rm(root, { force: true, recursive: true });

@@ -6,6 +6,7 @@ import type {
   RuntimeMessage,
   ValueSchema,
 } from "@openmirai/intl-abi";
+import { deflateRawSync } from "node:zlib";
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import type { CompileOutput } from "./compile";
@@ -27,7 +28,6 @@ export type EmittedArtifacts = ArtifactMap &
     "catalog.provenance.gen.json": string;
     "catalog.resources.gen.d.mts": string;
     "catalog.resources.gen.mjs": string;
-    "catalog.runtime.gen.json": string;
     "catalog.schema.gen.d.ts": string;
   }>;
 
@@ -458,6 +458,12 @@ function emitPrivateMessagesModule(
       "",
     ]),
   ].join("\n");
+}
+
+function compactPrivateMessagesModule(source: string): string {
+  return deflateRawSync(Buffer.from(source, "utf8"), { level: 9 }).toString(
+    "base64"
+  );
 }
 
 function emitDescriptorModule(
@@ -893,7 +899,6 @@ export function emitArtifacts(
     })}\n`,
     "catalog.resources.gen.d.mts": emitResourceLoaderDeclaration(output),
     "catalog.resources.gen.mjs": emitResourceLoaderModule(output),
-    "catalog.runtime.gen.json": `${canonicalJson(output.catalog)}\n`,
     "catalog.schema.gen.d.ts": contractDeclaration,
   };
   output.catalog.manifest.locales.forEach((locale, index) => {
@@ -901,9 +906,8 @@ export function emitArtifacts(
       `export const catalogResource = ${canonicalJson(catalogResource(output, locale))};\n`;
   });
   if (compact) {
-    artifacts[privateMessagesModuleName] = emitPrivateMessagesModule(
-      output,
-      representation
+    artifacts[privateMessagesModuleName] = compactPrivateMessagesModule(
+      emitPrivateMessagesModule(output, representation)
     );
   } else {
     artifacts["catalog.descriptors.gen.d.mts"] = emitDescriptorDeclaration(

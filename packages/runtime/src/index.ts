@@ -3,6 +3,7 @@ export * from "./catalog";
 export * from "./dynamic";
 export * from "./i18next";
 export * from "./precompiled";
+export * from "./recovering";
 export * from "./representations";
 export * from "./rich";
 export * from "./runtime";

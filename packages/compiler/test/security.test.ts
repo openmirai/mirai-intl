@@ -293,12 +293,12 @@ describe("catalog security identity", () => {
     ).toThrowError(/invalid custom formatter style/u);
   });
 
-  it("keeps raw source provenance out of the runtime artifact", () => {
+  it("keeps raw source provenance out of the private descriptor module", () => {
     const artifacts = emitArtifacts(
       compileCatalog(catalogFixtureSource),
       "constants"
     );
-    const runtime = artifacts["catalog.runtime.gen.json"];
+    const runtime = artifacts["catalog.descriptors.gen.mjs"];
     const provenance = artifacts["catalog.provenance.gen.json"];
 
     expect(runtime).toContain('"provenanceRef":"message:msg_');

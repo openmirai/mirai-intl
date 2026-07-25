@@ -179,8 +179,9 @@ describe("generated named-key contract", () => {
         module: "catalog.messages.gen.mjs",
         runtimeExport: "r6",
       });
-      expect(titleModule).toContain("export const m6 =");
-      expect(titleModule).toContain("Short links");
+      expect(titleModule).toMatch(/^\/\* eslint-disable \*\//u);
+      expect(titleModule).not.toContain("export const m6 =");
+      expect(titleModule).not.toContain("Short links");
       expect(titleModule).not.toContain("catalogTree");
       expect(titleModule).not.toContain("namespace_");
       await expect(
@@ -205,9 +206,10 @@ describe("generated named-key contract", () => {
       await writeFile(
         join(typeFixtureRoot, "runtime-shim.d.ts"),
         [
-          `export { bindFormErrorTranslator, bindFormSchema, bindTranslationKeyFactory, bindTranslationKeyParser } from ${JSON.stringify(runtimeTranslations)};`,
+          `export { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from ${JSON.stringify(runtimeTranslations)};`,
           `export type { ArgumentFreeTextKeysFor, NamespacePaths } from ${JSON.stringify(runtimeTranslations)};`,
           `export type { TypedCatalogManifest } from ${JSON.stringify(runtimeCatalog)};`,
+          `declare global { var process: { env: { NODE_ENV?: string } }; }`,
           "",
         ].join("\n"),
         "utf8"

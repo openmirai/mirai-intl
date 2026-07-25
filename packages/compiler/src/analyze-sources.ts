@@ -2,12 +2,12 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
+import { sha256 } from "./canonical";
 import { loadConventionCatalog } from "./catalog";
-import {
-  isMiraiIntlTransformCandidate,
-  transformMiraiIntlSource,
-} from "./transform";
+import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
+import { transformMiraiIntlSource } from "./transform";
 import type { MiraiIntlTransformOptions } from "./transform";
+import ts from "typescript";
 
 const SKIP_DIRECTORY_NAMES = new Set([
   ".git",
@@ -26,6 +26,12 @@ export type ConventionSourceDiagnostic = Readonly<{
   message: string;
 }>;
 
+type ExceptionDiagnostic = ConventionSourceDiagnostic &
+  Readonly<{
+    nodeHash: `sha256:${string}`;
+    rule: "source-analysis";
+  }>;
+
 export type ConventionSourceAnalysis = Readonly<{
   candidates: number;
   diagnostics: ReadonlyArray<ConventionSourceDiagnostic>;
@@ -33,28 +39,84 @@ export type ConventionSourceAnalysis = Readonly<{
 }>;
 
 export type AnalyzeConventionSourcesOptions = MiraiIntlTransformOptions &
-  Readonly<{
-    skipSources?: boolean;
-  }>;
+  Readonly<Record<never, never>>;
 
 function parseTransformDiagnostic(
   error: unknown,
-  fallbackFile: string
-): ConventionSourceDiagnostic {
+  fallbackFile: string,
+  source: string
+): ExceptionDiagnostic {
+  const fallback = (): ExceptionDiagnostic => ({
+    file: fallbackFile,
+    message: error instanceof Error ? error.message : String(error),
+    nodeHash: sha256(source),
+    rule: "source-analysis",
+  });
   if (!(error instanceof Error)) {
-    return { file: fallbackFile, message: String(error) };
+    return fallback();
   }
   const match = /^(.+):(\d+):(\d+): (.+)$/u.exec(error.message);
   if (!match) {
-    return { file: fallbackFile, message: error.message };
+    return fallback();
   }
+  const line = Number(match[2]);
+  const column = Number(match[3]);
+  const sourceFile = ts.createSourceFile(
+    fallbackFile,
+    source,
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const position = sourceFile.getPositionOfLineAndCharacter(
+    Math.max(0, line - 1),
+    Math.max(0, column - 1)
+  );
+  let token: ts.Node = sourceFile;
+  const visit = (node: ts.Node): void => {
+    if (position < node.getFullStart() || position > node.getEnd()) {
+      return;
+    }
+    token = node;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
   return {
     file: match[1] ?? fallbackFile,
     message: `${match[2]}:${match[3]}: ${match[4]}`,
+    nodeHash: sha256(token.getFullText(sourceFile)),
+    rule: "source-analysis",
   };
 }
 
-async function collectSourceFiles(
+function applyExactExceptions(
+  root: string,
+  diagnostics: ReadonlyArray<ExceptionDiagnostic>,
+  exceptions: ReadonlyArray<IntlCheckExceptionV1>
+): Array<ConventionSourceDiagnostic> {
+  const unmatched = new Set(
+    exceptions.map(
+      (exception) => `${exception.file}:${exception.rule}:${exception.nodeHash}`
+    )
+  );
+  const accepted: Array<ConventionSourceDiagnostic> = [];
+  for (const diagnostic of diagnostics) {
+    const file = relative(root, diagnostic.file).split(sep).join("/");
+    const key = `${file}:${diagnostic.rule}:${diagnostic.nodeHash}`;
+    if (unmatched.delete(key)) {
+      continue;
+    }
+    accepted.push(diagnostic);
+  }
+  for (const key of [...unmatched].toSorted()) {
+    accepted.push({
+      file: "mirai-intl.config.json",
+      message: `Stale or non-matching Mirai Intl check exception ${key}`,
+    });
+  }
+  return accepted;
+}
+
+export async function collectConventionSourceFiles(
   root: string,
   generatedRelative: string
 ): Promise<Array<string>> {
@@ -103,16 +165,16 @@ export async function analyzeConventionSources(
   packageRoot: string,
   options: AnalyzeConventionSourcesOptions = {}
 ): Promise<ConventionSourceAnalysis> {
-  if (options.skipSources) {
-    return { candidates: 0, diagnostics: [], filesAnalyzed: 0 };
-  }
-
   const loaded = await loadConventionCatalog(packageRoot);
   const root = resolve(options.root ?? loaded.repositoryRoot);
   const generatedDirectory =
     options.generatedDirectory ?? loaded.discovery.output;
-  const sourceFiles = await collectSourceFiles(root, generatedDirectory);
+  const sourceFiles = await collectConventionSourceFiles(
+    root,
+    generatedDirectory
+  );
   const diagnostics: Array<ConventionSourceDiagnostic> = [];
+  const exceptionDiagnostics: Array<ExceptionDiagnostic> = [];
   let candidates = 0;
   let filesAnalyzed = 0;
 
@@ -128,9 +190,11 @@ export async function analyzeConventionSources(
       })
     );
 
-    if (!isMiraiIntlTransformCandidate(source, file)) {
-      continue;
-    }
+    // The compiler owns authority for whether a module contains an intl
+    // operation. A lexical pre-filter let aliases, props and callbacks evade
+    // the deployment check while being rejected during an actual transform.
+    // Transform every eligible first-party source instead; it returns null for
+    // unrelated modules without changing the source.
     candidates += 1;
     try {
       await transformMiraiIntlSource(source, file, {
@@ -138,13 +202,20 @@ export async function analyzeConventionSources(
         root,
       });
     } catch (error) {
-      diagnostics.push(parseTransformDiagnostic(error, file));
+      exceptionDiagnostics.push(parseTransformDiagnostic(error, file, source));
     }
   }
 
   return {
     candidates,
-    diagnostics,
+    diagnostics: [
+      ...diagnostics,
+      ...applyExactExceptions(
+        root,
+        exceptionDiagnostics,
+        loaded.checkExceptions
+      ),
+    ],
     filesAnalyzed,
   };
 }

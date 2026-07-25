@@ -17,6 +17,7 @@ import type {
   StrictIntlRuntime,
   StrictRichInput,
 } from "./runtime";
+import type { RecoveringIntlRuntime } from "./recovering";
 
 type StringKeyOf<Value> = Extract<keyof Value, string>;
 
@@ -151,6 +152,21 @@ export function bindTranslationKeyFactory<
   Catalog extends object,
 >(): CreateTranslationKey<Catalog> {
   return unloweredTranslationKeyFactory as CreateTranslationKey<Catalog>;
+}
+
+/** Production-only terminal marker: unlowered keys remain inert strings. */
+export function bindRecoveringTranslationKeyFactory<
+  Catalog extends object,
+>(): CreateTranslationKey<Catalog> {
+  return (() =>
+    ((key: unknown) =>
+      (typeof key === "string" ? key : "") as DeferredTranslationKey<
+        string,
+        string
+      >) as TranslationKeyMarker<
+      Catalog,
+      NamespacePaths<Catalog>
+    >) as CreateTranslationKey<Catalog>;
 }
 
 type FiniteTuple<
@@ -376,6 +392,13 @@ export function bindTranslationKeyParser<
   return unloweredTranslationKeyParser as ParseTranslationKey<Catalog>;
 }
 
+/** Production-only parser fallback: unknown/unlowered keys are absent. */
+export function bindRecoveringTranslationKeyParser<
+  Catalog extends object,
+>(): ParseTranslationKey<Catalog> {
+  return (() => undefined) as ParseTranslationKey<Catalog>;
+}
+
 declare const formErrorMessageBrand: unique symbol;
 declare const formSchemaPartBrand: unique symbol;
 declare const formSchemaBrand: unique symbol;
@@ -471,6 +494,21 @@ export function bindFormErrorTranslator<
   Catalog extends object,
 >(): CreateFormErrorTranslator<Catalog> {
   return unloweredFormErrorTranslator as CreateFormErrorTranslator<Catalog>;
+}
+
+/** Production-only form fallback: unlowered form translators never throw. */
+export function bindRecoveringFormErrorTranslator<
+  Catalog extends object,
+>(): CreateFormErrorTranslator<Catalog> {
+  const factory = () => {
+    const translate = () => undefined;
+    Object.defineProperty(translate, "has", {
+      enumerable: true,
+      value: () => false,
+    });
+    return Object.freeze(translate) as unknown as FormErrorTranslator;
+  };
+  return factory as CreateFormErrorTranslator<Catalog>;
 }
 
 const unloweredFormSchema = (): never => {
@@ -625,6 +663,89 @@ export function createTranslationFunction<
     value: { enumerable: true, value },
   });
   return Object.freeze(translate) as unknown as TranslationFunctionFor<
+    Catalog,
+    Namespace,
+    RichResult
+  >;
+}
+
+/** Production counterpart that never lets an unlowered public operation throw. */
+export function createRecoveringTranslationFunction<
+  Catalog extends object = object,
+  Namespace extends NamespacePaths<Catalog> | undefined = undefined,
+  RichResult = RichRenderValue,
+>(
+  runtime: RecoveringIntlRuntime
+): TranslationFunctionFor<Catalog, Namespace, RichResult> {
+  const translate = (descriptor: unknown, ...values: Array<unknown>): string =>
+    Reflect.apply(runtime.t, runtime, [
+      descriptor as AnyTextDescriptor,
+      ...values,
+    ]) as string;
+  const rich = (
+    descriptor: unknown,
+    ...input: Array<unknown>
+  ): RichRenderValue =>
+    Reflect.apply(runtime.rich, runtime, [
+      descriptor as AnyRichDescriptor,
+      ...input,
+    ]);
+  const value = (descriptor: unknown, ...values: Array<unknown>): unknown =>
+    Reflect.apply(runtime.value, runtime, [
+      descriptor as AnyValueDescriptor,
+      ...values,
+    ]);
+  const map = (...input: Array<unknown>): never => {
+    runtime.recoverMap();
+    const text = "";
+    if (input.length === 1 && Array.isArray(input[0])) {
+      return Object.freeze(
+        Object.fromEntries(
+          input[0]
+            .filter((key): key is string => typeof key === "string")
+            .map((key) => [key, text])
+        )
+      ) as never;
+    }
+    if (
+      input.length === 2 &&
+      Array.isArray(input[0]) &&
+      Array.isArray(input[1])
+    ) {
+      const columns = input[1].filter(
+        (key): key is string => typeof key === "string"
+      );
+      return Object.freeze(
+        Object.fromEntries(
+          input[0]
+            .filter((key): key is string => typeof key === "string")
+            .map((row) => [
+              row,
+              Object.freeze(
+                Object.fromEntries(columns.map((column) => [column, text]))
+              ),
+            ])
+        )
+      ) as never;
+    }
+    if (
+      input.length === 1 &&
+      input[0] !== null &&
+      typeof input[0] === "object" &&
+      !Array.isArray(input[0])
+    ) {
+      return Object.freeze(
+        Object.fromEntries(Object.keys(input[0]).map((key) => [key, text]))
+      ) as never;
+    }
+    return Object.freeze({}) as never;
+  };
+  Object.defineProperties(translate, {
+    map: { enumerable: true, value: map },
+    rich: { enumerable: true, value: rich },
+    value: { enumerable: true, value },
+  });
+  return Object.freeze(translate) as TranslationFunctionFor<
     Catalog,
     Namespace,
     RichResult

@@ -359,6 +359,41 @@ function parseSelectorIdentity(
   return { contentHash, directory, schemaVersion };
 }
 
+function catalogLockContent(
+  contentHash: `sha256:${string}`,
+  directory: string
+): string {
+  return `${canonicalJson({ contentHash, directory, schemaVersion: 1 })}\n`;
+}
+
+async function catalogLockMatches(
+  root: string,
+  outputRoot: string,
+  contentHash: `sha256:${string}`,
+  directory: string
+): Promise<boolean> {
+  const source = await readManagedTextFile(
+    outputRoot,
+    join(root, "catalog.lock.json"),
+    "Generated catalog lock"
+  );
+  if (source === undefined) {
+    return false;
+  }
+  let lock: unknown;
+  try {
+    lock = JSON.parse(source) as unknown;
+  } catch {
+    return false;
+  }
+  const identity = parseSelectorIdentity(lock, "Generated catalog lock");
+  return (
+    source === catalogLockContent(contentHash, directory) &&
+    identity.contentHash === contentHash &&
+    identity.directory === directory
+  );
+}
+
 async function readSelector(
   root: string,
   outputRoot: string,
@@ -410,16 +445,17 @@ function stableFacadeModule(
   return [
     `${selectorPrefix}${canonicalJson({ contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
     generatedSourceHeader,
-    'import { bindFormErrorTranslator, bindFormSchema, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
+    'import { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
     'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
     `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
     `export type { CatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
     `export type { CatalogLocale } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,
     "export type TranslationNamespace = NamespacePaths<BoundCatalogContract>;",
     "export type TranslationKey<Namespace extends TranslationNamespace> = ArgumentFreeTextKeysFor<BoundCatalogContract, Namespace>;",
-    "export const createTranslationKey = /* @__PURE__ */ bindTranslationKeyFactory<BoundCatalogContract>();",
-    "export const parseTranslationKey = /* @__PURE__ */ bindTranslationKeyParser<BoundCatalogContract>();",
-    "export const createFormErrorTranslator = /* @__PURE__ */ bindFormErrorTranslator<BoundCatalogContract>();",
+    'const __miraiIntlProduction = process.env.NODE_ENV === "production";',
+    "export const createTranslationKey = /* @__PURE__ */ (__miraiIntlProduction ? bindRecoveringTranslationKeyFactory<BoundCatalogContract>() : bindTranslationKeyFactory<BoundCatalogContract>());",
+    "export const parseTranslationKey = /* @__PURE__ */ (__miraiIntlProduction ? bindRecoveringTranslationKeyParser<BoundCatalogContract>() : bindTranslationKeyParser<BoundCatalogContract>());",
+    "export const createFormErrorTranslator = /* @__PURE__ */ (__miraiIntlProduction ? bindRecoveringFormErrorTranslator<BoundCatalogContract>() : bindFormErrorTranslator<BoundCatalogContract>());",
     "export const createFormSchema = /* @__PURE__ */ bindFormSchema<BoundCatalogContract>();",
     `export { catalogManifest } from "./${relativeDirectory}/catalog.manifest.gen.mjs";`,
     `export { isCatalogLocale, loadCatalogResource } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,
@@ -1054,6 +1090,16 @@ export async function verifyArtifactSet(
       `Current artifact set ${contentHash} does not match its destination files`
     );
   }
+  if (
+    !(await catalogLockMatches(
+      root,
+      outputRoot,
+      contentHash,
+      relativeDirectory
+    ))
+  ) {
+    throw new Error("Generated catalog lock is stale or tampered");
+  }
   await assertSingleSelectedBuild(root, directoryName);
   if (
     !(await stableFacadeMatches(
@@ -1118,8 +1164,21 @@ async function writeArtifactSetUnlocked(
       current?.contentHash === contentHash &&
       current.directory === relativeDirectory;
     const pointer = `${canonicalJson({ contentHash, directory: relativeDirectory })}\n`;
+    const lockMatches = await catalogLockMatches(
+      root,
+      outputRoot,
+      contentHash,
+      relativeDirectory
+    );
     if (!currentMatches) {
       await replaceTextFile(root, "current.json", pointer);
+    }
+    if (!lockMatches) {
+      await replaceTextFile(
+        root,
+        "catalog.lock.json",
+        catalogLockContent(contentHash, relativeDirectory)
+      );
     }
     if (!facadeMatches) {
       await writeStableFacade(
@@ -1136,7 +1195,7 @@ async function writeArtifactSetUnlocked(
     );
     await assertSingleSelectedBuild(root, directoryName);
     return {
-      changed: !facadeMatches || !currentMatches || pruned,
+      changed: !facadeMatches || !currentMatches || !lockMatches || pruned,
       contentHash,
       directory: destination,
     };
@@ -1217,6 +1276,11 @@ async function writeArtifactSetUnlocked(
   // The selector replacement is atomic, but this path makes no live-reader or
   // power-loss durability guarantee.
   await replaceTextFile(root, "current.json", pointer);
+  await replaceTextFile(
+    root,
+    "catalog.lock.json",
+    catalogLockContent(contentHash, relativeDirectory)
+  );
   await writeStableFacade(root, relativeDirectory, facade, contentHash);
   await pruneGeneratedState(outputRoot, buildsRoot, directoryName);
   await assertSingleSelectedBuild(root, directoryName);
