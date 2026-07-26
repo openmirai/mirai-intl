@@ -310,6 +310,33 @@ describe("private named-key lowering", () => {
     }
   });
 
+  it("lowers translation calls nested in interpolation values", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/nested.tsx");
+    const source = [
+      'import { useTranslations } from "@/hooks/useTranslations";',
+      'const { t } = useTranslations("pages.home");',
+      't("title", { fallback: t("error.form.invalid") });',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toMatch(
+        /t\(__miraiIntlMessage\d+, \{ fallback: t\(__miraiIntlMessage\d+\) \}\)/u
+      );
+      expect(result.code).not.toContain('t("error.form.invalid")');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("lowers generated-facade deferred keys to standalone literals without descriptor retention", async () => {
     const fixture = await createGeneratedCatalog();
     const id = join(fixture.root, "src/schema.ts");

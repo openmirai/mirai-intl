@@ -36,6 +36,8 @@ describe("createOtelDiagnosticSink", () => {
     emit.mockReset();
     getLogger.mockClear();
     getLogger.mockImplementation(() => ({ emit }));
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("emits a WARN log for INTL_MISSING_RESOURCE", () => {
@@ -70,6 +72,19 @@ describe("createOtelDiagnosticSink", () => {
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
+  it("allows the same diagnostic again after the five-minute dedupe window", () => {
+    vi.useFakeTimers();
+    const sink = createOtelDiagnosticSink();
+    const diagnostic = missingResource();
+
+    sink(diagnostic);
+    vi.advanceTimersByTime(5 * 60 * 1_000);
+    sink(diagnostic);
+
+    expect(emit).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("ignores codes outside the configured allow-list", () => {
     const sink = createOtelDiagnosticSink();
 
@@ -78,6 +93,27 @@ describe("createOtelDiagnosticSink", () => {
       message: "ABI mismatch",
     });
 
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("emits actionable guidance for every diagnostic in development", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const consoleError = vi
+      .spyOn(globalThis.console, "error")
+      .mockImplementation(() => undefined);
+    const sink = createOtelDiagnosticSink();
+
+    sink({
+      code: "INTL_ABI_MISMATCH",
+      message: "ABI mismatch",
+      path: "pages.home.title",
+    });
+
+    expect(consoleError).toHaveBeenCalledWith(
+      "[mirai-intl]",
+      expect.stringContaining("Regenerate the catalog"),
+      expect.objectContaining({ "i18n.code": "INTL_ABI_MISMATCH" })
+    );
     expect(emit).not.toHaveBeenCalled();
   });
 

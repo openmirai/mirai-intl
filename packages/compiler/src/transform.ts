@@ -2828,7 +2828,12 @@ function transformSource(
                   node.typeArguments,
                   [
                     factory.createIdentifier(replacement.local),
-                    ...node.arguments.slice(1),
+                    ...node.arguments
+                      .slice(1)
+                      .map(
+                        (argument) =>
+                          ts.visitNode(argument, visitor) as ts.Expression
+                      ),
                   ]
                 );
               }

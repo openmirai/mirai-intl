@@ -1,4 +1,5 @@
 import { logs, SeverityNumber } from "@opentelemetry/api-logs";
+import { formatIntlDiagnosticForDeveloper } from "@openmirai/intl-abi";
 import type { IntlDiagnostic, IntlDiagnosticCode } from "@openmirai/intl-abi";
 
 const DEFAULT_LOGGER_NAME = "openmirai.i18n";
@@ -6,7 +7,8 @@ const DEFAULT_CODES = [
   "INTL_MISSING_RESOURCE",
 ] as const satisfies ReadonlyArray<IntlDiagnosticCode>;
 const DEFAULT_NAMESPACE = "translation";
-const MAXIMUM_REPORTED_DIAGNOSTICS = 1_000;
+const DIAGNOSTIC_DEDUPE_WINDOW_MS = 5 * 60 * 1_000;
+const MAXIMUM_REPORTED_DIAGNOSTICS = 1_024;
 const MAXIMUM_KEY_CHARACTERS = 256;
 const MAXIMUM_NAMESPACE_CHARACTERS = 64;
 
@@ -35,21 +37,27 @@ const resolveNamespace = (path: string | undefined): string => {
 };
 
 const rememberDiagnostic = (
-  reported: Set<string>,
-  signature: string
+  reported: Map<string, number>,
+  signature: string,
+  now: number
 ): boolean => {
-  if (reported.has(signature)) {
+  const previous = reported.get(signature);
+  if (previous !== undefined && now - previous < DIAGNOSTIC_DEDUPE_WINDOW_MS) {
     return false;
   }
 
+  if (previous !== undefined) {
+    reported.delete(signature);
+  }
+
   if (reported.size >= MAXIMUM_REPORTED_DIAGNOSTICS) {
-    const oldestSignature = reported.values().next().value;
+    const oldestSignature = reported.keys().next().value;
     if (typeof oldestSignature === "string") {
       reported.delete(oldestSignature);
     }
   }
 
-  reported.add(signature);
+  reported.set(signature, now);
   return true;
 };
 
@@ -65,7 +73,7 @@ export function createOtelDiagnosticSink(
 ): (diagnostic: IntlDiagnostic) => void {
   const loggerName = options.loggerName ?? DEFAULT_LOGGER_NAME;
   const codes = new Set<IntlDiagnosticCode>(options.codes ?? DEFAULT_CODES);
-  const reported = new Set<string>();
+  const reported = new Map<string, number>();
   let otelLogger: ReturnType<typeof logs.getLogger> | null = null;
 
   const getLogger = (): ReturnType<typeof logs.getLogger> | null => {
@@ -83,10 +91,6 @@ export function createOtelDiagnosticSink(
   };
 
   return (diagnostic: IntlDiagnostic): void => {
-    if (!codes.has(diagnostic.code)) {
-      return;
-    }
-
     const key = (diagnostic.path ?? diagnostic.messageId ?? "unknown").slice(
       0,
       MAXIMUM_KEY_CHARACTERS
@@ -98,7 +102,7 @@ export function createOtelDiagnosticSink(
     );
     const signature = `${diagnostic.code}\0${locale}\0${namespace}\0${key}`;
 
-    if (!rememberDiagnostic(reported, signature)) {
+    if (!rememberDiagnostic(reported, signature, Date.now())) {
       return;
     }
 
@@ -117,10 +121,18 @@ export function createOtelDiagnosticSink(
 
     if (nodeProcess?.env?.NODE_ENV === "development") {
       try {
-        globalThis.console.warn("[WARN]", "Missing translation", attributes);
+        globalThis.console.error(
+          "[mirai-intl]",
+          formatIntlDiagnosticForDeveloper(diagnostic),
+          attributes
+        );
       } catch {
         // A broken console sink must not affect translation rendering.
       }
+    }
+
+    if (!codes.has(diagnostic.code)) {
+      return;
     }
 
     try {
