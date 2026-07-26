@@ -1142,63 +1142,73 @@ async function writeArtifactSetUnlocked(
     selector?.contentHash === contentHash &&
     selector.directory === relativeDirectory
   ) {
-    await assertConfinedDirectory(
+    const destinationExists = await assertConfinedDirectory(
       outputRoot,
       buildsRoot,
-      "Generated builds directory"
+      "Generated builds directory",
+      true
     );
-    if (!(await artifactSetMatches(outputRoot, destination, artifacts))) {
-      throw new Error(
-        `Current artifact set ${contentHash} does not match its destination files`
-      );
-    }
-    const facadeMatches = await stableFacadeMatches(
-      root,
+    const artifactDirectoryExists = await assertConfinedDirectory(
       outputRoot,
-      relativeDirectory,
-      facade,
-      contentHash
+      destination,
+      "Generated artifact directory",
+      true
     );
-    const current = await readCurrent(root, outputRoot);
-    const currentMatches =
-      current?.contentHash === contentHash &&
-      current.directory === relativeDirectory;
-    const pointer = `${canonicalJson({ contentHash, directory: relativeDirectory })}\n`;
-    const lockMatches = await catalogLockMatches(
-      root,
-      outputRoot,
-      contentHash,
-      relativeDirectory
-    );
-    if (!currentMatches) {
-      await replaceTextFile(root, "current.json", pointer);
-    }
-    if (!lockMatches) {
-      await replaceTextFile(
+
+    if (destinationExists && artifactDirectoryExists) {
+      if (!(await artifactSetMatches(outputRoot, destination, artifacts))) {
+        throw new Error(
+          `Current artifact set ${contentHash} does not match its destination files`
+        );
+      }
+      const facadeMatches = await stableFacadeMatches(
         root,
-        "catalog.lock.json",
-        catalogLockContent(contentHash, relativeDirectory)
-      );
-    }
-    if (!facadeMatches) {
-      await writeStableFacade(
-        root,
-        `builds/${directoryName}`,
+        outputRoot,
+        relativeDirectory,
         facade,
         contentHash
       );
+      const current = await readCurrent(root, outputRoot);
+      const currentMatches =
+        current?.contentHash === contentHash &&
+        current.directory === relativeDirectory;
+      const pointer = `${canonicalJson({ contentHash, directory: relativeDirectory })}\n`;
+      const lockMatches = await catalogLockMatches(
+        root,
+        outputRoot,
+        contentHash,
+        relativeDirectory
+      );
+      if (!currentMatches) {
+        await replaceTextFile(root, "current.json", pointer);
+      }
+      if (!lockMatches) {
+        await replaceTextFile(
+          root,
+          "catalog.lock.json",
+          catalogLockContent(contentHash, relativeDirectory)
+        );
+      }
+      if (!facadeMatches) {
+        await writeStableFacade(
+          root,
+          `builds/${directoryName}`,
+          facade,
+          contentHash
+        );
+      }
+      const pruned = await pruneGeneratedState(
+        outputRoot,
+        buildsRoot,
+        directoryName
+      );
+      await assertSingleSelectedBuild(root, directoryName);
+      return {
+        changed: !facadeMatches || !currentMatches || !lockMatches || pruned,
+        contentHash,
+        directory: destination,
+      };
     }
-    const pruned = await pruneGeneratedState(
-      outputRoot,
-      buildsRoot,
-      directoryName
-    );
-    await assertSingleSelectedBuild(root, directoryName);
-    return {
-      changed: !facadeMatches || !currentMatches || !lockMatches || pruned,
-      contentHash,
-      directory: destination,
-    };
   }
 
   if (

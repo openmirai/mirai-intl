@@ -73,6 +73,16 @@ describe("generated artifact verification", () => {
         changed: false,
       });
 
+      await rm(join(root, "builds"), { force: true, recursive: true });
+      await expect(writeArtifactSet(root, artifacts)).resolves.toEqual({
+        ...written,
+        changed: true,
+      });
+      await expect(verifyArtifactSet(root, artifacts)).resolves.toEqual({
+        ...written,
+        changed: false,
+      });
+
       const runtimePath = join(written.directory, "catalog.contract.gen.json");
       await writeFile(runtimePath, "corrupted\n", "utf8");
       await expect(verifyArtifactSet(root, artifacts)).rejects.toThrowError(
