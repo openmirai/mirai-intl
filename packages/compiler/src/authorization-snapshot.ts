@@ -440,6 +440,55 @@ function nullableText(value: unknown, context: string): string | null {
   return value === null ? null : text(value, context);
 }
 
+function parseProviderProbes(
+  value: unknown,
+  context: string,
+  normalize: boolean
+): IntlCheckProviderResolutionV2["probes"] {
+  if (!Array.isArray(value)) {
+    fail(context, "must be an array");
+  }
+  const probes = value.map((entry, index) => {
+    const probe = exact(
+      entry,
+      ["kind", "path", "present"],
+      `${context}[${index}]`
+    );
+    if (probe.kind !== "directory" && probe.kind !== "file") {
+      fail(`${context}[${index}].kind`, "is unsupported");
+    }
+    if (typeof probe.present !== "boolean") {
+      fail(`${context}[${index}].present`, "must be a boolean");
+    }
+    return {
+      kind: probe.kind as "directory" | "file",
+      path: path(probe.path, `${context}[${index}].path`, normalize),
+      present: probe.present,
+    };
+  });
+  sortedUnique(probes, (probe) => `${probe.path}\u0000${probe.kind}`, context);
+  return probes;
+}
+
+function parseProviderRealpaths(
+  value: unknown,
+  context: string,
+  normalize: boolean
+): IntlCheckProviderResolutionV2["realpaths"] {
+  if (!Array.isArray(value)) {
+    fail(context, "must be an array");
+  }
+  const realpaths = value.map((entry, index) => {
+    const realpath = exact(entry, ["path", "target"], `${context}[${index}]`);
+    return {
+      path: path(realpath.path, `${context}[${index}].path`, normalize),
+      target: path(realpath.target, `${context}[${index}].target`, normalize),
+    };
+  });
+  sortedUnique(realpaths, (entry) => entry.path, context);
+  return realpaths;
+}
+
 function parseProviderResolution(
   value: unknown,
   context: string,
@@ -447,7 +496,16 @@ function parseProviderResolution(
 ): IntlCheckProviderResolutionV2 {
   const object = exact(
     value,
-    ["controlFiles", "from", "packageName", "packageVersion", "specifier"],
+    [
+      "controlFiles",
+      "from",
+      "optionsHash",
+      "packageName",
+      "packageVersion",
+      "probes",
+      "realpaths",
+      "specifier",
+    ],
     context
   );
   const controlFiles = parseFiles(
@@ -469,8 +527,15 @@ function parseProviderResolution(
   return {
     controlFiles,
     from: path(object.from, `${context}.from`, normalize),
+    optionsHash: sha(object.optionsHash, `${context}.optionsHash`),
     packageName,
     packageVersion,
+    probes: parseProviderProbes(object.probes, `${context}.probes`, normalize),
+    realpaths: parseProviderRealpaths(
+      object.realpaths,
+      `${context}.realpaths`,
+      normalize
+    ),
     specifier: text(object.specifier, `${context}.specifier`),
   };
 }
@@ -762,6 +827,16 @@ function validateRelationships(snapshot: SourceAuthorizationSnapshot): void {
         "must have exactly one matching provider closure"
       );
     }
+    for (const resolution of closure.providers.flatMap(
+      (provider) => provider.resolutions
+    )) {
+      if (resolution.optionsHash !== project.normalizedOptionsHash) {
+        fail(
+          `Provider resolution ${JSON.stringify(resolution.specifier)}`,
+          "must bind its owning check-project resolver options"
+        );
+      }
+    }
   }
   for (const closure of snapshot.providerClosures) {
     if (!snapshot.sources.some((source) => source.file === closure.source)) {
@@ -1030,6 +1105,11 @@ function canonicalProvider(
             ),
             (entry) => entry.path
           ),
+          probes: sortBy(
+            resolution.probes,
+            (probe) => `${probe.path}\u0000${probe.kind}`
+          ),
+          realpaths: sortBy(resolution.realpaths, (entry) => entry.path),
         },
         `${context}.resolutions[${resolutionIndex}]`,
         true

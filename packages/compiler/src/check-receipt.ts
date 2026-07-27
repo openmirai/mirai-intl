@@ -21,7 +21,7 @@ import {
   computeApplicationPackageIdentity,
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
-import { reconstructProviderResolution } from "./provider-resolution-identity";
+import { verifyProviderResolutionFrontier } from "./provider-resolution-identity";
 import { reconstructProjectRootFiles } from "./source-universe-identity";
 import type {
   IntegrityManifestEntry,
@@ -311,20 +311,11 @@ export async function verifyConventionBuildReceipt(
     }
     for (const provider of closure.providers) {
       for (const resolution of provider.resolutions) {
-        const current = await reconstructProviderResolution(
+        await verifyProviderResolutionFrontier(
           workspace,
-          project.normalizedOptions,
+          project.normalizedOptionsHash,
           resolution
         );
-        if (
-          current.root !== provider.root ||
-          canonicalJson(current.controlFiles) !==
-            canonicalJson(resolution.controlFiles)
-        ) {
-          throw new Error(
-            `Mirai Intl provider resolution is stale: ${resolution.specifier}`
-          );
-        }
       }
     }
   }

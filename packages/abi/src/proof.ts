@@ -103,8 +103,22 @@ export type IntlCheckProviderKindV2 =
 export type IntlCheckProviderResolutionV2 = Readonly<{
   controlFiles: ReadonlyArray<IntlCheckFileIdentityV2>;
   from: string;
+  optionsHash: Sha256;
   packageName: string | null;
   packageVersion: string | null;
+  probes: ReadonlyArray<
+    Readonly<{
+      kind: "directory" | "file";
+      path: string;
+      present: boolean;
+    }>
+  >;
+  realpaths: ReadonlyArray<
+    Readonly<{
+      path: string;
+      target: string;
+    }>
+  >;
   specifier: string;
 }>;
 

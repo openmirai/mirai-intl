@@ -101,15 +101,39 @@ function input(): SourceAuthorizationSnapshotInput {
             {
               controlFiles: [file("types/ä.package.json")],
               from: source,
+              optionsHash: canonicalHash({
+                module: "ESNext",
+                strict: true,
+              }),
               packageName: null,
               packageVersion: null,
+              probes: [
+                {
+                  kind: "file" as const,
+                  path: "types/ä-provider.ts",
+                  present: false,
+                },
+              ],
+              realpaths: [],
               specifier: "ä-provider",
             },
             {
               controlFiles: [file("types/z.package.json")],
               from: source,
+              optionsHash: canonicalHash({
+                module: "ESNext",
+                strict: true,
+              }),
               packageName: null,
               packageVersion: null,
+              probes: [
+                {
+                  kind: "directory" as const,
+                  path: "types/z-provider",
+                  present: true,
+                },
+              ],
+              realpaths: [],
               specifier: "z-provider",
             },
           ],

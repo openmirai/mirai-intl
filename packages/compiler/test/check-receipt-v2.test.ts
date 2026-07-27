@@ -76,7 +76,11 @@ async function fixture(): Promise<string> {
   );
   await writeFile(join(root, "src/legacy.js"), "export const legacy = 1;\n");
   await writeJson(join(root, "tsconfig.a.json"), {
-    compilerOptions: { allowJs: true, resolveJsonModule: true },
+    compilerOptions: {
+      allowJs: true,
+      moduleSuffixes: [".ios", ""],
+      resolveJsonModule: true,
+    },
   });
   await writeJson(join(root, "tsconfig.base.json"), {
     compilerOptions: { strict: true },
@@ -121,6 +125,10 @@ describe("V2 build receipt verification", () => {
     expect(first.counters.semanticAuthorizationRuns).toBe(1);
     expect(first.counters.providerRoots).toBe(2);
     expect(first.projects[0]?.normalizedOptions.allowJs).toBe(true);
+    expect(first.projects[0]?.normalizedOptions.moduleSuffixes).toEqual([
+      ".ios",
+      "",
+    ]);
     expect(first.projects[0]?.normalizedOptions.resolveJsonModule).toBe(true);
     expect(first.projects[0]?.rootFiles).toEqual(
       expect.arrayContaining(["src/legacy.js", "src/page.ts"])
@@ -133,11 +141,11 @@ describe("V2 build receipt verification", () => {
         expect.objectContaining({
           resolutions: [
             expect.objectContaining({
-              controlFiles: [
+              controlFiles: expect.arrayContaining([
                 expect.objectContaining({
                   path: "node_modules/@example/provider/package.json",
                 }),
-              ],
+              ]),
               packageName: "@example/provider",
               packageVersion: "1.0.0",
               specifier: "@example/provider",
@@ -148,11 +156,11 @@ describe("V2 build receipt verification", () => {
         expect.objectContaining({
           resolutions: [
             expect.objectContaining({
-              controlFiles: [
+              controlFiles: expect.arrayContaining([
                 expect.objectContaining({
                   path: "node_modules/@example/transitive/package.json",
                 }),
-              ],
+              ]),
               from: "node_modules/@example/provider/index.d.ts",
               packageName: "@example/transitive",
               packageVersion: "1.0.0",
@@ -161,6 +169,25 @@ describe("V2 build receipt verification", () => {
           ],
           root: "node_modules/@example/transitive/index.d.ts",
         }),
+      ])
+    );
+    const providerResolution = first.providerClosures
+      .find((closure) => closure.source === "src/page.ts")
+      ?.providers.find(
+        (provider) =>
+          provider.root === "node_modules/@example/provider/index.d.ts"
+      )
+      ?.resolutions.at(0);
+    expect(providerResolution?.optionsHash).toBe(
+      first.projects[0]?.normalizedOptionsHash
+    );
+    expect(providerResolution?.probes).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "file",
+          path: "node_modules/@example/provider/index.ios.d.ts",
+          present: false,
+        },
       ])
     );
     expect(
@@ -241,7 +268,7 @@ describe("V2 build receipt verification", () => {
           'export declare const key: "greeting";\n'
         );
       },
-      /provider package identity is stale/u,
+      /provider resolution frontier is stale/u,
     ],
     [
       "implementation addition",
@@ -251,7 +278,17 @@ describe("V2 build receipt verification", () => {
           'export const key = "greeting" as const;\n'
         );
       },
-      /provider resolution is stale/u,
+      /provider resolution frontier is stale/u,
+    ],
+    [
+      "module-suffixed implementation addition",
+      async (root: string) => {
+        await writeFile(
+          join(root, "node_modules/@example/provider/index.ios.d.ts"),
+          'export declare const key: "greeting";\n'
+        );
+      },
+      /provider resolution frontier is stale/u,
     ],
     [
       "provider removal",
@@ -335,6 +372,31 @@ describe("V2 build receipt verification", () => {
       const { verifyConventionBuildReceipt } =
         await import("../src/check-receipt");
       await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(error);
+    },
+    60_000
+  );
+
+  it.each([
+    ["typeRoots", { typeRoots: ["./node_modules/@types"] }],
+    ["types", { types: ["@example/provider"] }],
+  ] as const)(
+    "fails closed when %s would bypass the traced module-resolution frontier",
+    async (option, compilerOptions) => {
+      const root = await fixture();
+      await writeJson(join(root, "tsconfig.a.json"), {
+        compilerOptions: {
+          allowJs: true,
+          moduleSuffixes: [".ios", ""],
+          resolveJsonModule: true,
+          ...compilerOptions,
+        },
+      });
+      await expect(proveConventionCatalog(root)).rejects.toThrow(
+        new RegExp(
+          `does not support TypeScript provider resolution option\\(s\\): ${option}`,
+          "u"
+        )
+      );
     },
     60_000
   );

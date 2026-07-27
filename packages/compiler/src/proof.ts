@@ -43,7 +43,7 @@ import {
 } from "./integrity-identity";
 import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
-import { captureProviderResolutions } from "./provider-resolution-identity";
+import { captureProviderResolutionFrontier } from "./provider-resolution-identity";
 
 const artifactAbi = "mirai-intl-artifact-v2";
 const proofDirectory = "build-proofs";
@@ -570,6 +570,12 @@ async function createConventionCheckReceipt(
           `Semantic provider closure has no owning check project: ${entry.source}`
         );
       }
+      if (entry.unsupportedProviderResolutionOptions.length > 0) {
+        throw new Error(
+          `Mirai Intl source authorization does not support TypeScript provider resolution option(s): ${entry.unsupportedProviderResolutionOptions.join(", ")}`
+        );
+      }
+      const optionsHash = canonicalHash(project.normalizedOptions);
       return {
         ambientTypeFileLimit: entry.ambientTypeFileLimit,
         declarations: entry.declarations,
@@ -580,11 +586,14 @@ async function createConventionCheckReceipt(
           entry.providers.map(async (provider) => ({
             declarations: provider.declarations,
             kind: provider.kind,
-            resolutions: await captureProviderResolutions(
-              universe.workspaceRoot,
-              project.normalizedOptions,
-              provider.root,
-              provider.resolutions
+            resolutions: await Promise.all(
+              provider.resolutions.map((resolution) =>
+                captureProviderResolutionFrontier(
+                  universe.workspaceRoot,
+                  optionsHash,
+                  resolution
+                )
+              )
             ),
             root: provider.root,
           }))

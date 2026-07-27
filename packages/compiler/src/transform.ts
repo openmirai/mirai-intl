@@ -33,6 +33,27 @@ export type MiraiIntlTransformResult = Readonly<{
   map: MiraiIntlSourceMap;
 }>;
 
+type SemanticProviderResolution = Readonly<{
+  controlPaths: ReadonlyArray<string>;
+  from: string;
+  packageName: string | null;
+  packageVersion: string | null;
+  probes: ReadonlyArray<
+    Readonly<{
+      kind: "directory" | "file";
+      path: string;
+      present: boolean;
+    }>
+  >;
+  realpaths: ReadonlyArray<
+    Readonly<{
+      path: string;
+      target: string;
+    }>
+  >;
+  specifier: string;
+}>;
+
 export type MiraiIntlSemanticEvidence = Readonly<{
   ambientTypeFileLimit: 16;
   declarations: ReadonlyArray<
@@ -47,18 +68,12 @@ export type MiraiIntlSemanticEvidence = Readonly<{
         Readonly<{ hash: `sha256:${string}`; path: string }>
       >;
       kind: "ambient" | "external" | "generated" | "workspace";
-      resolutions: ReadonlyArray<
-        Readonly<{
-          from: string;
-          packageName: string | null;
-          packageVersion: string | null;
-          specifier: string;
-        }>
-      >;
+      resolutions: ReadonlyArray<SemanticProviderResolution>;
       root: string;
     }>
   >;
   source: string;
+  unsupportedProviderResolutionOptions: ReadonlyArray<"typeRoots" | "types">;
 }>;
 
 /** Begin each build/HMR epoch with a freshly validated generated catalog. */
@@ -1040,6 +1055,101 @@ function finiteDependencyModules(
   return modules;
 }
 
+function resolveModuleWithFrontier(
+  moduleName: string,
+  containingFile: string,
+  options: ts.CompilerOptions
+): Readonly<{
+  frontier: SemanticProviderResolution;
+  resolvedModule: ts.ResolvedModuleFull | undefined;
+}> {
+  // TypeScript owns option semantics here. Tracing the host captures the exact
+  // finite search frontier for paths/baseUrl, rootDirs, moduleSuffixes,
+  // customConditions, package exports/imports, and arbitrary extensions.
+  // Configured typeRoots/types bypass resolveModuleName and are rejected when
+  // issuing source authority until their separate resolver is traced as well.
+  const probes = new Map<
+    string,
+    Readonly<{
+      kind: "directory" | "file";
+      path: string;
+      present: boolean;
+    }>
+  >();
+  const controlPaths = new Set<string>();
+  const realpaths = new Map<string, string>();
+  const recordProbe = (
+    path: string,
+    kind: "directory" | "file",
+    present: boolean
+  ): void => {
+    const identity = `${path}\u0000${kind}`;
+    const previous = probes.get(identity);
+    if (previous && previous.present !== present) {
+      throw new Error(
+        `Provider resolution frontier changed while resolving ${moduleName}`
+      );
+    }
+    probes.set(identity, { kind, path, present });
+  };
+  const resolutionHost: ts.ModuleResolutionHost = {
+    ...ts.sys,
+    directoryExists(path) {
+      const present = ts.sys.directoryExists?.(path) ?? false;
+      recordProbe(path, "directory", present);
+      return present;
+    },
+    fileExists(path) {
+      const present = ts.sys.fileExists(path);
+      recordProbe(path, "file", present);
+      return present;
+    },
+    readFile(path) {
+      const value = ts.sys.readFile(path);
+      if (value !== undefined) {
+        controlPaths.add(path);
+        recordProbe(path, "file", true);
+      }
+      return value;
+    },
+    realpath(path) {
+      const target = ts.sys.realpath?.(path) ?? resolve(path);
+      realpaths.set(path, target);
+      return target;
+    },
+  };
+  const result = ts.resolveModuleName(
+    moduleName,
+    containingFile,
+    options,
+    resolutionHost
+  );
+  const resolvedModule = result.resolvedModule;
+  if (resolvedModule) {
+    const target =
+      ts.sys.realpath?.(resolvedModule.resolvedFileName) ??
+      resolve(resolvedModule.resolvedFileName);
+    realpaths.set(resolvedModule.resolvedFileName, target);
+    recordProbe(
+      resolvedModule.resolvedFileName,
+      "file",
+      ts.sys.fileExists(resolvedModule.resolvedFileName)
+    );
+  }
+  return {
+    frontier: {
+      controlPaths: [...controlPaths],
+      from: containingFile,
+      packageName: resolvedModule?.packageId?.name ?? null,
+      packageVersion: resolvedModule?.packageId?.version ?? null,
+      probes: [...probes.values()],
+      realpaths: [...realpaths].map(([path, target]) => ({ path, target })),
+      specifier: moduleName,
+    },
+    resolvedModule,
+  };
+}
+
 function createProgram(
   source: string,
   id: string,
@@ -1052,18 +1162,12 @@ function createProgram(
   providerBudgetExceeded: string | undefined;
   providerRoots: ReadonlyArray<
     Readonly<{
-      resolutions: ReadonlyArray<
-        Readonly<{
-          from: string;
-          packageName: string | null;
-          packageVersion: string | null;
-          specifier: string;
-        }>
-      >;
+      resolutions: ReadonlyArray<SemanticProviderResolution>;
       root: string;
     }>
   >;
   sourceFile: ts.SourceFile;
+  unsupportedProviderResolutionOptions: ReadonlyArray<"typeRoots" | "types">;
 }> {
   const finiteModules = finiteDependencyModules(
     ts.createSourceFile(
@@ -1125,15 +1229,7 @@ function createProgram(
   const providerRootNames = new Set<string>();
   const providerResolutions = new Map<
     string,
-    Map<
-      string,
-      Readonly<{
-        from: string;
-        packageName: string | null;
-        packageVersion: string | null;
-        specifier: string;
-      }>
-    >
+    Map<string, SemanticProviderResolution>
   >();
   let providerBudgetExceeded: string | undefined;
   const isAllowedProvider = (
@@ -1162,33 +1258,23 @@ function createProgram(
     return true;
   };
   const recordProviderResolution = (
-    moduleName: string,
     resolution: ts.ResolvedModuleFull,
-    containingFile: string
+    frontier: SemanticProviderResolution
   ): void => {
     let entries = providerResolutions.get(resolution.resolvedFileName);
     if (!entries) {
       entries = new Map();
       providerResolutions.set(resolution.resolvedFileName, entries);
     }
-    entries.set(`${containingFile}\u0000${moduleName}`, {
-      from: containingFile,
-      packageName: resolution.packageId?.name ?? null,
-      packageVersion: resolution.packageId?.version ?? null,
-      specifier: moduleName,
-    });
+    entries.set(`${frontier.from}\u0000${frontier.specifier}`, frontier);
   };
   if (projectOptions) {
     for (const moduleName of finiteModules) {
       if (generatedFacadeModules.has(moduleName)) {
         continue;
       }
-      const resolution = ts.resolveModuleName(
-        moduleName,
-        id,
-        projectOptions,
-        ts.sys
-      ).resolvedModule;
+      const traced = resolveModuleWithFrontier(moduleName, id, projectOptions);
+      const resolution = traced.resolvedModule;
       if (!resolution) {
         continue;
       }
@@ -1200,7 +1286,7 @@ function createProgram(
         claimProvider(canonical, moduleName)
       ) {
         providerRootNames.add(resolution.resolvedFileName);
-        recordProviderResolution(moduleName, resolution, id);
+        recordProviderResolution(resolution, traced.frontier);
       }
     }
   }
@@ -1243,12 +1329,12 @@ function createProgram(
           resolvedFileName: generatedFacadeId,
         };
       }
-      const resolution = ts.resolveModuleName(
+      const traced = resolveModuleWithFrontier(
         moduleName,
         containingFile,
-        projectOptions,
-        ts.sys
-      ).resolvedModule;
+        projectOptions
+      );
+      const resolution = traced.resolvedModule;
       if (!resolution) {
         return undefined;
       }
@@ -1276,7 +1362,7 @@ function createProgram(
       if (!claimProvider(canonical, moduleName)) {
         return undefined;
       }
-      recordProviderResolution(moduleName, resolution, containingFile);
+      recordProviderResolution(resolution, traced.frontier);
       return resolution;
     };
     host.resolveModuleNameLiterals = (moduleLiterals, containingFile) =>
@@ -1314,6 +1400,10 @@ function createProgram(
         root: providerRoot,
       })),
     sourceFile,
+    unsupportedProviderResolutionOptions: [
+      ...(projectOptions?.typeRoots?.length ? (["typeRoots"] as const) : []),
+      ...(projectOptions?.types?.length ? (["types"] as const) : []),
+    ],
   };
 }
 
@@ -1335,21 +1425,15 @@ function semanticEvidence(
   providerBudgetExceeded: string | undefined,
   providerRoots: ReadonlyArray<
     Readonly<{
-      resolutions: ReadonlyArray<
-        Readonly<{
-          from: string;
-          packageName: string | null;
-          packageVersion: string | null;
-          specifier: string;
-        }>
-      >;
+      resolutions: ReadonlyArray<SemanticProviderResolution>;
       root: string;
     }>
   >,
   sourceFile: ts.SourceFile,
   generatedFacadeModules: ReadonlySet<string>,
   catalog: CurrentCatalog,
-  workspaceRoot: string
+  workspaceRoot: string,
+  unsupportedProviderResolutionOptions: ReadonlyArray<"typeRoots" | "types">
 ): MiraiIntlSemanticEvidence {
   const cleanId = cleanModuleId(sourceFile.fileName);
   const virtualGeneratedFacade = resolve(
@@ -1417,16 +1501,16 @@ function semanticEvidence(
       let kind: "external" | "generated" | "workspace" = "workspace";
       if (providerPath === generatedFacadePath) {
         kind = "generated";
-      } else if (providerPath.includes("/node_modules/")) {
+      } else if (
+        providerPath.startsWith("node_modules/") ||
+        providerPath.includes("/node_modules/")
+      ) {
         kind = "external";
       }
       return {
         declarations: providerDeclarations,
         kind,
-        resolutions: provider.resolutions.map((resolution) => ({
-          ...resolution,
-          from: evidencePath(workspaceRoot, cleanModuleId(resolution.from)),
-        })),
+        resolutions: provider.resolutions,
         root: providerPath,
       };
     })
@@ -1439,6 +1523,7 @@ function semanticEvidence(
     providerRootLimit: 64,
     providers,
     source: evidencePath(workspaceRoot, cleanId),
+    unsupportedProviderResolutionOptions,
   };
 }
 
@@ -1531,6 +1616,7 @@ function analyzeSource(
     providerBudgetExceeded,
     providerRoots,
     sourceFile,
+    unsupportedProviderResolutionOptions,
   } = createProgram(source, id, root, catalog, generatedImports.facadeModules);
   authorizationEvidence?.record(
     semanticEvidence(
@@ -1540,7 +1626,8 @@ function analyzeSource(
       sourceFile,
       generatedImports.facadeModules,
       catalog,
-      authorizationEvidence.workspaceRoot
+      authorizationEvidence.workspaceRoot,
+      unsupportedProviderResolutionOptions
     )
   );
   const factorySymbols = new Map<ts.Symbol, FactoryKind>();
