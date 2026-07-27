@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import ts from "typescript";
 
+import { sha256 } from "./canonical";
 import { privateMessageSliceSpecifier } from "./private-module";
 
 export type MiraiIntlTransformOptions = Readonly<{
@@ -25,6 +26,26 @@ export type MiraiIntlTransformResult = Readonly<{
   code: string;
   dependencies: ReadonlyArray<string>;
   map: MiraiIntlSourceMap;
+}>;
+
+export type MiraiIntlSemanticEvidence = Readonly<{
+  ambientTypeFileLimit: 16;
+  declarations: ReadonlyArray<
+    Readonly<{ hash: `sha256:${string}`; path: string }>
+  >;
+  libs: ReadonlyArray<Readonly<{ hash: `sha256:${string}`; path: string }>>;
+  providerBudgetExceeded: boolean;
+  providerRootLimit: 64;
+  providers: ReadonlyArray<
+    Readonly<{
+      declarations: ReadonlyArray<
+        Readonly<{ hash: `sha256:${string}`; path: string }>
+      >;
+      kind: "ambient" | "external" | "generated" | "workspace";
+      root: string;
+    }>
+  >;
+  source: string;
 }>;
 
 /** Begin each build/HMR epoch with a freshly validated generated catalog. */
@@ -165,7 +186,7 @@ function assertGeneratedFacadeSelector(
   );
   if (
     !isRecord(selector) ||
-    selector.schemaVersion !== 1 ||
+    selector.schemaVersion !== 2 ||
     selector.contentHash !== hash ||
     selector.directory !== directory
   ) {
@@ -1012,7 +1033,9 @@ function createProgram(
   generatedFacadeModules: ReadonlySet<string>
 ): Readonly<{
   checker: ts.TypeChecker;
+  program: ts.Program;
   providerBudgetExceeded: string | undefined;
+  providerRoots: ReadonlyArray<string>;
   sourceFile: ts.SourceFile;
 }> {
   const finiteModules = finiteDependencyModules(
@@ -1217,8 +1240,139 @@ function createProgram(
   );
   return {
     checker: program.getTypeChecker(),
+    program,
     providerBudgetExceeded,
+    providerRoots: [...providerRootNames].toSorted(),
     sourceFile,
+  };
+}
+
+function evidencePath(workspaceRoot: string, file: string): string {
+  const path = relative(workspaceRoot, file).split(sep).join("/");
+  if (
+    /[/\\]typescript[/\\]lib[/\\]lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u.test(file)
+  ) {
+    return `@typescript/lib/${file.split(/[\\/]/u).at(-1)}`;
+  }
+  if (!path || path.startsWith("../") || isAbsolute(path)) {
+    throw new Error(`Semantic evidence path escapes its workspace root`);
+  }
+  return path;
+}
+
+/**
+ * Exposes the exact file-scoped TypeScript universe already admitted by the
+ * finite resolver. Phase 1 records this evidence without changing resolver
+ * batching or reuse.
+ */
+export async function collectMiraiIntlSemanticEvidence(
+  source: string,
+  id: string,
+  workspaceRoot: string,
+  options: MiraiIntlTransformOptions = {}
+): Promise<MiraiIntlSemanticEvidence> {
+  const cleanId = cleanModuleId(id);
+  const catalog = await loadCurrentCatalog(options);
+  const root = resolve(options.root ?? process.cwd());
+  const generatedImports = await generatedFacadeImportNames(
+    source,
+    cleanId,
+    root,
+    catalog.generatedFacadePath
+  );
+  const { program, providerBudgetExceeded, providerRoots, sourceFile } =
+    createProgram(
+      source,
+      cleanId,
+      root,
+      catalog,
+      generatedImports.facadeModules
+    );
+  const virtualGeneratedFacade = resolve(
+    dirname(cleanId),
+    ".mirai-intl-generated-facade.d.ts"
+  );
+  const declarationEntries = (
+    await Promise.all(
+      program
+        .getSourceFiles()
+        .filter(
+          (file) =>
+            file.fileName !== sourceFile.fileName &&
+            /\.d\.[cm]?ts$/u.test(file.fileName)
+        )
+        .map(async (file) => {
+          const programPath = resolve(file.fileName);
+          const absolute =
+            programPath === virtualGeneratedFacade
+              ? catalog.generatedFacadePath
+              : programPath;
+          return {
+            absolute,
+            hash:
+              programPath === virtualGeneratedFacade
+                ? sha256(await readFile(catalog.generatedFacadePath, "utf8"))
+                : sha256(file.text),
+            path: evidencePath(workspaceRoot, absolute),
+          };
+        })
+    )
+  ).toSorted((left, right) => left.path.localeCompare(right.path));
+  const libs = declarationEntries
+    .filter(({ absolute }) =>
+      /[/\\]typescript[/\\]lib[/\\]lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u.test(
+        absolute
+      )
+    )
+    .map(({ hash, path }) => ({ hash, path }));
+  const declarations = declarationEntries
+    .filter(
+      ({ absolute }) =>
+        !/[/\\]typescript[/\\]lib[/\\]lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u.test(
+          absolute
+        )
+    )
+    .map(({ hash, path }) => ({ hash, path }));
+  const generatedFacadePath = evidencePath(
+    workspaceRoot,
+    catalog.generatedFacadePath
+  );
+  const evidenceProviderRoots = [
+    ...(generatedImports.facadeModules.size > 0
+      ? [catalog.generatedFacadePath]
+      : []),
+    ...providerRoots,
+  ];
+  const providers = evidenceProviderRoots
+    .map((providerRoot) => {
+      const providerPath = evidencePath(workspaceRoot, resolve(providerRoot));
+      const providerDirectory = dirname(providerPath).split(sep).join("/");
+      const providerDeclarations = declarations.filter(
+        (declaration) =>
+          declaration.path === providerPath ||
+          declaration.path.startsWith(`${providerDirectory}/`)
+      );
+      let kind: "external" | "generated" | "workspace" = "workspace";
+      if (providerPath === generatedFacadePath) {
+        kind = "generated";
+      } else if (providerPath.includes("/node_modules/")) {
+        kind = "external";
+      }
+      return {
+        declarations: providerDeclarations,
+        kind,
+        root: providerPath,
+      };
+    })
+    .toSorted((left, right) => left.root.localeCompare(right.root));
+  return {
+    ambientTypeFileLimit: 16,
+    declarations,
+    libs,
+    providerBudgetExceeded: providerBudgetExceeded !== undefined,
+    providerRootLimit: 64,
+    providers,
+    source: evidencePath(workspaceRoot, cleanId),
   };
 }
 

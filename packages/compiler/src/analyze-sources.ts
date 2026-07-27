@@ -5,8 +5,14 @@ import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
 import { sha256 } from "./canonical";
 import { loadConventionCatalog } from "./catalog";
 import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
-import { transformMiraiIntlSource } from "./transform";
-import type { MiraiIntlTransformOptions } from "./transform";
+import {
+  collectMiraiIntlSemanticEvidence,
+  transformMiraiIntlSource,
+} from "./transform";
+import type {
+  MiraiIntlSemanticEvidence,
+  MiraiIntlTransformOptions,
+} from "./transform";
 import ts from "typescript";
 
 const SKIP_DIRECTORY_NAMES = new Set([
@@ -35,6 +41,7 @@ type ExceptionDiagnostic = ConventionSourceDiagnostic &
 export type ConventionSourceAnalysis = Readonly<{
   candidates: number;
   diagnostics: ReadonlyArray<ConventionSourceDiagnostic>;
+  evidence: ReadonlyArray<MiraiIntlSemanticEvidence>;
   filesAnalyzed: number;
 }>;
 
@@ -185,6 +192,7 @@ export async function analyzeConventionSources(
 export async function analyzeConventionSourceFiles(
   packageRoot: string,
   sourceFiles: ReadonlyArray<string>,
+  workspaceRoot: string,
   options: AnalyzeConventionSourcesOptions = {}
 ): Promise<ConventionSourceAnalysis> {
   const loaded = await loadConventionCatalog(packageRoot);
@@ -193,7 +201,8 @@ export async function analyzeConventionSourceFiles(
     loaded,
     root,
     options.generatedDirectory ?? loaded.discovery.output,
-    sourceFiles
+    sourceFiles,
+    workspaceRoot
   );
 }
 
@@ -201,12 +210,14 @@ async function analyzeLoadedConventionSourceFiles(
   loaded: Awaited<ReturnType<typeof loadConventionCatalog>>,
   root: string,
   generatedDirectory: string,
-  sourceFiles: ReadonlyArray<string>
+  sourceFiles: ReadonlyArray<string>,
+  workspaceRoot: string = root
 ): Promise<ConventionSourceAnalysis> {
   const diagnostics: Array<ConventionSourceDiagnostic> = [];
   const exceptionDiagnostics: Array<ExceptionDiagnostic> = [];
   let candidates = 0;
   let filesAnalyzed = 0;
+  const evidence: Array<MiraiIntlSemanticEvidence> = [];
 
   for (const file of sourceFiles) {
     const source = await readFile(file, "utf8");
@@ -231,6 +242,12 @@ async function analyzeLoadedConventionSourceFiles(
         generatedDirectory,
         root,
       });
+      evidence.push(
+        await collectMiraiIntlSemanticEvidence(source, file, workspaceRoot, {
+          generatedDirectory,
+          root,
+        })
+      );
     } catch (error) {
       exceptionDiagnostics.push(parseTransformDiagnostic(error, file, source));
     }
@@ -246,6 +263,9 @@ async function analyzeLoadedConventionSourceFiles(
         loaded.checkExceptions
       ),
     ],
+    evidence: evidence.toSorted((left, right) =>
+      left.source.localeCompare(right.source)
+    ),
     filesAnalyzed,
   };
 }

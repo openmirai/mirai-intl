@@ -3,8 +3,8 @@ import { join, relative, resolve, sep } from "node:path";
 
 import { loadConventionCatalog } from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
+import { verifyConventionBuildReceipt } from "./check-receipt";
 import { ensureMiraiIntlCatalogOnce } from "./lifecycle";
-import { verifyConventionCheckReceipt } from "./proof";
 import {
   authorizePrivateMessageSliceRequest,
   loadPrivateMessageSlice,
@@ -177,7 +177,7 @@ export function miraiIntlVite(
       const root = packageRoot();
       invalidateMiraiIntlCatalogCache(opts);
       if (opts.requireProof) {
-        await verifyConventionCheckReceipt(root);
+        await verifyConventionBuildReceipt(root);
       }
       const generatedDirectory =
         opts.generatedDirectory ?? defaultGeneratedDirectory;

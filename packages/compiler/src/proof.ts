@@ -8,31 +8,37 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { RUNTIME_ABI } from "@openmirai/intl-abi";
 import type {
   IntlBuildProofTargetV1,
   IntlBuildProofV1,
-  IntlCheckReceiptV1,
+  IntlCheckPackageIdentityV2,
+  IntlCheckReceiptV2,
 } from "@openmirai/intl-abi";
-import ts from "typescript";
 
-import {
-  analyzeConventionSourceFiles,
-  collectConventionSourceFiles,
-} from "./analyze-sources";
 import { canonicalHash, canonicalJson, sha256 } from "./canonical";
 import {
   loadConventionCatalog,
   verifyLoadedConventionCatalog,
 } from "./catalog";
 import type { ConventionOptions, LoadedConventionCatalog } from "./catalog";
+import {
+  buildIntlCheckReceiptV2,
+  buildSourceAuthorizationSnapshot,
+  canonicalIntlCheckReceiptV2Bytes,
+} from "./authorization-snapshot";
+import {
+  conventionCheckReceiptPath,
+  verifyConventionBuildReceipt,
+} from "./check-receipt";
+import {
+  computeApplicationPackageIdentity,
+  getImmutableIntegrityIdentity,
+} from "./integrity-identity";
+import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
-import { resolveConventionSourceUniverse } from "./ownership";
 
-const receiptDirectory = ".mirai-intl";
-const receiptName = "check-receipt.v1.json";
 const artifactAbi = "mirai-intl-artifact-v2";
 const proofDirectory = "build-proofs";
 
@@ -92,10 +98,6 @@ export async function discoverEmittedModules(
   return modules.toSorted((left, right) => left.path.localeCompare(right.path));
 }
 
-function receiptPath(root: string): string {
-  return join(root, receiptDirectory, receiptName);
-}
-
 type BuildProofReceipts = Readonly<{
   authorityHash: `sha256:${string}`;
   deploymentReceiptHash: `sha256:${string}`;
@@ -108,7 +110,7 @@ type BuildProofReceipts = Readonly<{
  */
 async function buildProofReceipts(
   root: string,
-  receipt: IntlCheckReceiptV1
+  receipt: IntlCheckReceiptV2
 ): Promise<BuildProofReceipts> {
   const loaded = await loadConventionCatalog(root);
   const dependencies = new Map<string, string>();
@@ -129,7 +131,7 @@ async function buildProofReceipts(
       .toSorted(([left], [right]) => left.localeCompare(right))
       .map(async ([dependency, dependencyRoot]) => ({
         dependency,
-        receipt: await verifyConventionCheckReceipt(dependencyRoot),
+        receipt: (await verifyConventionBuildReceipt(dependencyRoot)).receipt,
       }))
   );
   return {
@@ -137,10 +139,10 @@ async function buildProofReceipts(
       dependencies: receipts.map(
         ({ dependency, receipt: dependencyReceipt }) => ({
           dependency,
-          receipt: dependencyReceipt.authorityHash,
+          receipt: dependencyReceipt.sourceAuthorizationHash,
         })
       ),
-      receipt: receipt.authorityHash,
+      receipt: receipt.sourceAuthorizationHash,
     }),
     deploymentReceiptHash: canonicalHash({
       dependencies: receipts.map(
@@ -161,7 +163,7 @@ function proofPath(
 ): string {
   return join(
     root,
-    receiptDirectory,
+    ".mirai-intl",
     proofDirectory,
     `${target}.${state}.v1.json`
   );
@@ -309,15 +311,11 @@ async function readProof(path: string): Promise<IntlBuildProofV1> {
   return proof;
 }
 
-async function compilerHash(): Promise<`sha256:${string}`> {
-  return sha256(await readFile(fileURLToPath(import.meta.url), "utf8"));
-}
-
 async function writeReceipt(
   path: string,
-  receipt: IntlCheckReceiptV1
+  receipt: IntlCheckReceiptV2
 ): Promise<void> {
-  const content = `${canonicalJson(receipt)}\n`;
+  const content = canonicalIntlCheckReceiptV2Bytes(receipt);
   const existing = await readFile(path, "utf8").catch(() => undefined);
   // A matching proof is a verified no-op: downstream cache keys can retain
   // inode/mtime stability while callers still receive fresh input validation.
@@ -334,82 +332,15 @@ async function writeReceipt(
   }
 }
 
-type ConventionReceiptInputs = Readonly<{
-  receipt: IntlCheckReceiptV1;
-  root: string;
-  sourceFiles: ReadonlyArray<string>;
-  snapshot: ReadonlyArray<readonly [string, `sha256:${string}`]>;
-  verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
-}>;
-
-/**
- * Reconstruct the immutable inputs represented by a receipt without running
- * TypeScript semantic analysis. This is deliberately the build-time path:
- * builds may reject stale authority, but only `prove` is allowed to issue
- * authority by running the full source checker.
- */
-async function conventionReceiptInputs(
-  packageRoot: string,
-  loadedSnapshot?: LoadedConventionCatalog,
-  options: ConventionOptions = { collectEnvironment: false }
-): Promise<ConventionReceiptInputs> {
-  const loaded = loadedSnapshot ?? (await loadConventionCatalog(packageRoot));
-  const root = resolve(loaded.repositoryRoot);
-  const verification = await verifyLoadedConventionCatalog(loaded, options);
-  const discoveredFiles = await collectConventionSourceFiles(
-    root,
-    loaded.discovery.output
-  );
-  const sourceUniverse = await resolveConventionSourceUniverse(
-    root,
-    loaded.checkProjects,
-    loaded.discovery.output,
-    discoveredFiles
-  );
-  const sourceFiles = sourceUniverse.files.map(({ absolute }) => absolute);
-  const snapshot = await Promise.all(
-    sourceFiles.map(
-      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
-    )
-  );
-  const sourceHashes = new Map(snapshot);
-  const sources = sourceUniverse.files.map((entry) => {
-    const hash = sourceHashes.get(entry.absolute);
-    if (!hash) {
-      throw new Error(`Missing source snapshot for ${entry.file}`);
-    }
-    return {
-      file: entry.file,
-      hash,
-      owner: entry.owner,
-      verdict: "accepted" as const,
-    };
-  });
-  const exceptions = loaded.checkExceptions;
-  const implementationHash = await compilerHash();
-  const receipt = {
-    artifactAbi,
-    authorityHash: canonicalHash({
-      artifactAbi,
-      catalogHash: verification.write.contentHash,
-      compilerHash: implementationHash,
-      exceptions,
-      projects: loaded.checkProjects,
-      runtimeAbi: RUNTIME_ABI,
-      sources,
-      typescriptHash: sha256(ts.version),
-    }),
-    catalogHash: verification.write.contentHash,
-    compilerHash: implementationHash,
-    exceptions,
-    exceptionsHash: canonicalHash(exceptions),
-    projects: loaded.checkProjects,
-    runtimeAbi: RUNTIME_ABI,
-    schemaVersion: 1 as const,
-    sources,
-    typescriptHash: sha256(ts.version),
-  } satisfies IntlCheckReceiptV1;
-  return { receipt, root, snapshot, sourceFiles, verification };
+function packageIdentity(
+  identity: ResolvedPackageIdentity
+): IntlCheckPackageIdentityV2 {
+  return {
+    name: identity.name,
+    packageHash: identity.hash,
+    packageManifestHash: identity.packageJsonHash,
+    version: identity.version,
+  };
 }
 
 async function createConventionCheckReceipt(
@@ -418,40 +349,219 @@ async function createConventionCheckReceipt(
   finalVerificationOptions: ConventionOptions
 ): Promise<
   Readonly<{
-    receipt: IntlCheckReceiptV1;
+    receipt: IntlCheckReceiptV2;
     verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
   }>
 > {
-  const before = await conventionReceiptInputs(packageRoot, loaded);
+  const { analyzeConventionSourceFiles, collectConventionSourceFiles } =
+    await import("./analyze-sources");
+  const { resolveConventionSourceUniverse } = await import("./ownership");
+  const root = resolve(loaded.repositoryRoot);
+  const verificationBefore = await verifyLoadedConventionCatalog(loaded, {
+    collectEnvironment: false,
+  });
+  const discoveredFiles = await collectConventionSourceFiles(
+    root,
+    loaded.discovery.output
+  );
+  const universe = await resolveConventionSourceUniverse(
+    root,
+    loaded.checkProjects,
+    loaded.discovery.output,
+    discoveredFiles
+  );
+  const sourceFiles = universe.files.map(({ absolute }) => absolute);
+  const beforeSources = await Promise.all(
+    sourceFiles.map(
+      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
+    )
+  );
+  const generationReceiptPath = join(
+    root,
+    loaded.discovery.output,
+    "catalog-generation-receipt.v1.json"
+  );
+  const generationReceiptBefore = sha256(
+    await readFile(generationReceiptPath, "utf8")
+  );
+  const applicationBefore = await computeApplicationPackageIdentity(root);
   const analysis = await analyzeConventionSourceFiles(
-    before.root,
-    before.sourceFiles
+    root,
+    sourceFiles,
+    universe.workspaceRoot
   );
   if (analysis.diagnostics.length > 0) {
     throw new Error(
-      `Mirai Intl source analysis failed with ${analysis.diagnostics.length} diagnostic(s)`
+      `Mirai Intl source analysis failed with ${analysis.diagnostics.length} diagnostic(s): ${analysis.diagnostics.map(({ file, message }) => `${file}: ${message}`).join("; ")}`
     );
   }
   // Reload after semantic analysis so catalog/source mutations cannot inherit
   // authority from the pre-analysis snapshot. Workspace authorization keeps
   // the default environment-aware report; receipt-only prove skips that
   // evidence exactly as it did before this combined API existed.
-  const after = await conventionReceiptInputs(
-    packageRoot,
-    undefined,
+  if (analysis.evidence.some((entry) => entry.providerBudgetExceeded)) {
+    throw new Error("Mirai Intl finite semantic provider budget was exceeded");
+  }
+  const afterLoaded = await loadConventionCatalog(packageRoot);
+  const verification = await verifyLoadedConventionCatalog(
+    afterLoaded,
     finalVerificationOptions
   );
-  if (canonicalJson(before.snapshot) !== canonicalJson(after.snapshot)) {
+  const afterSources = await Promise.all(
+    sourceFiles.map(
+      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
+    )
+  );
+  if (canonicalJson(beforeSources) !== canonicalJson(afterSources)) {
     throw new Error(
       "Mirai Intl source inputs changed while source analysis ran"
     );
   }
-  if (canonicalJson(before.receipt) !== canonicalJson(after.receipt)) {
-    throw new Error("Mirai Intl inputs changed before receipt authorization");
+  const projectManifestAfter = await Promise.all(
+    universe.projects.flatMap((project) =>
+      project.configManifest.map(async (entry) => ({
+        hash: sha256(
+          await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
+        ),
+        path: entry.path,
+      }))
+    )
+  );
+  const projectManifestBefore = universe.projects.flatMap((project) =>
+    project.configManifest.map(({ hash, path }) => ({ hash, path }))
+  );
+  if (
+    canonicalJson(projectManifestAfter) !== canonicalJson(projectManifestBefore)
+  ) {
+    throw new Error(
+      "Mirai Intl TypeScript project configuration changed while source analysis ran"
+    );
   }
+  for (const entry of analysis.evidence.flatMap((evidence) => [
+    ...evidence.declarations,
+    ...evidence.libs,
+  ])) {
+    if (entry.path.startsWith("@typescript/lib/")) {
+      continue;
+    }
+    if (
+      sha256(
+        await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
+      ) !== entry.hash
+    ) {
+      throw new Error(
+        "Mirai Intl semantic provider inputs changed while source analysis ran"
+      );
+    }
+  }
+  const generationReceiptHash = sha256(
+    await readFile(generationReceiptPath, "utf8")
+  );
+  if (
+    generationReceiptHash !== generationReceiptBefore ||
+    verification.write.contentHash !== verificationBefore.write.contentHash
+  ) {
+    throw new Error(
+      "Mirai Intl generated catalog changed while source analysis ran"
+    );
+  }
+  const application = await computeApplicationPackageIdentity(root);
+  if (canonicalJson(application) !== canonicalJson(applicationBefore)) {
+    throw new Error(
+      "Mirai Intl application package inputs changed while source analysis ran"
+    );
+  }
+  const immutable = await getImmutableIntegrityIdentity();
+  const workspacePackagePath = relative(
+    universe.workspaceRoot,
+    join(root, "package.json")
+  )
+    .split(sep)
+    .join("/");
+  const applicationIdentity = {
+    packageManifest: {
+      hash: application.packageJsonHash,
+      path: workspacePackagePath,
+    },
+    workspaceLockfile: application.lock
+      ? {
+          hash: application.lock.hash,
+          path: application.lock.name,
+        }
+      : {
+          hash: application.packageJsonHash,
+          path: workspacePackagePath,
+        },
+  };
+  const sourceHashes = new Map(afterSources);
+  const packagePrefix = relative(universe.workspaceRoot, root)
+    .split(sep)
+    .join("/");
+  const exceptions = afterLoaded.checkExceptions.map((exception) => ({
+    ...exception,
+    file:
+      packagePrefix === ""
+        ? exception.file
+        : `${packagePrefix}/${exception.file}`,
+  }));
+  const exceptionFiles = new Set(exceptions.map((exception) => exception.file));
+  const sources = universe.files.map((entry) => ({
+    file: entry.file,
+    hash:
+      sourceHashes.get(entry.absolute) ??
+      (() => {
+        throw new Error(`Missing source snapshot for ${entry.file}`);
+      })(),
+    owner: entry.owner,
+    verdict: exceptionFiles.has(entry.file)
+      ? ("exception" as const)
+      : ("accepted" as const),
+  }));
+  const providerClosures = analysis.evidence.map((entry) => ({
+    ambientTypeFileLimit: entry.ambientTypeFileLimit,
+    declarations: entry.declarations,
+    libs: entry.libs,
+    providerBudgetExceeded: false as const,
+    providerRootLimit: entry.providerRootLimit,
+    providers: entry.providers.map((provider) => ({
+      declarations: provider.declarations,
+      kind: provider.kind,
+      root: provider.root,
+    })),
+    source: entry.source,
+  }));
+  const loadedLibs = new Map(
+    analysis.evidence.flatMap((entry) =>
+      entry.libs.map((file) => [file.path, file] as const)
+    )
+  );
+  const snapshot = buildSourceAuthorizationSnapshot({
+    application: applicationIdentity,
+    artifactAbi,
+    compilerManifest: immutable.compiler.modules.entries.map(
+      ({ hash, path }) => ({ hash, path })
+    ),
+    exceptions,
+    generationReceiptHash,
+    icu: packageIdentity(immutable.icuParser),
+    observedCounters: {
+      semanticAuthorizationRuns: 1,
+      semanticFilesAnalyzed: analysis.filesAnalyzed,
+    },
+    projects: universe.projects,
+    providerClosures,
+    runtimeAbi: RUNTIME_ABI,
+    sources,
+    typescript: {
+      libs: [...loadedLibs.values()].toSorted((left, right) =>
+        left.path.localeCompare(right.path)
+      ),
+      package: packageIdentity(immutable.typescript),
+    },
+  });
   return {
-    receipt: after.receipt,
-    verification: after.verification,
+    receipt: buildIntlCheckReceiptV2(snapshot),
+    verification,
   };
 }
 
@@ -466,12 +576,12 @@ export async function authorizeConventionCatalog(
   finalVerificationOptions: ConventionOptions = {}
 ): Promise<
   Readonly<{
-    receipt: IntlCheckReceiptV1;
+    receipt: IntlCheckReceiptV2;
     verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
   }>
 > {
   const root = resolve(packageRoot);
-  const destination = receiptPath(root);
+  const destination = conventionCheckReceiptPath(root);
   try {
     // Proof is the production authority entrypoint. It must be able to
     // materialize the immutable content-addressed payload after a clean clone,
@@ -483,6 +593,9 @@ export async function authorizeConventionCatalog(
       finalVerificationOptions
     );
     await writeReceipt(destination, authorization.receipt);
+    await rm(join(root, ".mirai-intl", "check-receipt.v1.json"), {
+      force: true,
+    });
     return authorization;
   } catch (error) {
     await rm(destination, { force: true });
@@ -493,7 +606,7 @@ export async function authorizeConventionCatalog(
 /** Materialize, verify and atomically persist deterministic source authority. */
 export async function proveConventionCatalog(
   packageRoot: string
-): Promise<IntlCheckReceiptV1> {
+): Promise<IntlCheckReceiptV2> {
   return (
     await authorizeConventionCatalog(packageRoot, {
       collectEnvironment: false,
@@ -504,30 +617,8 @@ export async function proveConventionCatalog(
 /** Reject a missing, stale, malformed, or non-canonical source receipt. */
 export async function verifyConventionCheckReceipt(
   packageRoot: string
-): Promise<IntlCheckReceiptV1> {
-  const root = resolve(packageRoot);
-  const path = receiptPath(root);
-  const source = await readFile(path, "utf8").catch(() => {
-    throw new Error(
-      "Mirai Intl production build requires an intl:prove receipt"
-    );
-  });
-  let receipt: IntlCheckReceiptV1;
-  try {
-    receipt = JSON.parse(source) as IntlCheckReceiptV1;
-  } catch {
-    throw new Error("Mirai Intl check receipt must contain valid JSON");
-  }
-  if (`${canonicalJson(receipt)}\n` !== source) {
-    throw new Error("Mirai Intl check receipt must use canonical JSON");
-  }
-  const expected = await conventionReceiptInputs(root);
-  if (canonicalJson(receipt) !== canonicalJson(expected.receipt)) {
-    throw new Error(
-      "Mirai Intl production build rejected a stale check receipt"
-    );
-  }
-  return receipt;
+): Promise<IntlCheckReceiptV2> {
+  return (await verifyConventionBuildReceipt(packageRoot)).receipt;
 }
 
 /** Records the bytes produced before a postbuild artifact audit. */
@@ -681,6 +772,4 @@ export async function verifyFinalizedBuildProof(
   return proof;
 }
 
-export function conventionCheckReceiptPath(packageRoot: string): string {
-  return receiptPath(resolve(packageRoot));
-}
+export { conventionCheckReceiptPath } from "./check-receipt";
