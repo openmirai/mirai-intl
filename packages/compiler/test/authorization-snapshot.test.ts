@@ -9,7 +9,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildIntlCheckReceiptV2,
   buildSourceAuthorizationSnapshot,
+  canonicalIntlCheckReceiptV2Bytes,
   parseCanonicalIntlCheckReceiptV2,
+  parseIntlBuildVerificationCountersV2,
   parseIntlCheckReceiptV2,
   parseSourceAuthorizationSnapshot,
 } from "../src/authorization-snapshot";
@@ -51,6 +53,10 @@ function input(): SourceAuthorizationSnapshotInput {
     ],
     generationReceiptHash: hash("generation-receipt"),
     icu: packageIdentity("@formatjs/icu-messageformat-parser"),
+    observedCounters: {
+      semanticAuthorizationRuns: 1,
+      semanticFilesAnalyzed: 2,
+    },
     projects: [
       {
         configManifest: [
@@ -220,6 +226,58 @@ describe("source authorization snapshots", () => {
     expect(parseSourceAuthorizationSnapshot(snapshot)).toEqual(snapshot);
   });
 
+  it("requires observed semantic counters to match actual work", () => {
+    const wrongRuns = {
+      ...input(),
+      observedCounters: {
+        semanticAuthorizationRuns: 0,
+        semanticFilesAnalyzed: 2,
+      },
+    };
+    expect(() => buildSourceAuthorizationSnapshot(wrongRuns)).toThrow(
+      "Observed source authorization counters.semanticAuthorizationRuns must equal 1"
+    );
+
+    const wrongFiles = {
+      ...input(),
+      observedCounters: {
+        semanticAuthorizationRuns: 1,
+        semanticFilesAnalyzed: 1,
+      },
+    };
+    expect(() => buildSourceAuthorizationSnapshot(wrongFiles)).toThrow(
+      "Observed source authorization counters.semanticFilesAnalyzed must equal source ledger length 2"
+    );
+  });
+
+  it("validates non-semantic build verification counters", () => {
+    expect(
+      parseIntlBuildVerificationCountersV2({
+        buildReceiptVerifications: 1,
+        buildSemanticAnalysisRuns: 0,
+      })
+    ).toEqual({
+      buildReceiptVerifications: 1,
+      buildSemanticAnalysisRuns: 0,
+    });
+    expect(() =>
+      parseIntlBuildVerificationCountersV2({
+        buildReceiptVerifications: 0,
+        buildSemanticAnalysisRuns: 0,
+      })
+    ).toThrow(
+      "Intl build verification counters.buildReceiptVerifications must be at least 1"
+    );
+    expect(() =>
+      parseIntlBuildVerificationCountersV2({
+        buildReceiptVerifications: 1,
+        buildSemanticAnalysisRuns: 1,
+      })
+    ).toThrow(
+      "Intl build verification counters.buildSemanticAnalysisRuns must equal 0"
+    );
+  });
+
   it("binds every receipt field except the hash itself", () => {
     const value = receipt();
     const { sourceAuthorizationHash, ...base } = value;
@@ -365,14 +423,22 @@ describe("source authorization snapshots", () => {
       sources: [],
       typescriptHash: hash("typescript"),
     };
-    expect(() => parseIntlCheckReceiptV2(v1)).toThrow(/./u);
+    expect(() => parseIntlCheckReceiptV2(v1)).toThrow(
+      "Intl check receipt schemaVersion 1 is unsupported; run fresh authorization to create a V2 receipt"
+    );
+    expect(() => parseIntlCheckReceiptV2({ schemaVersion: 3 })).toThrow(
+      "Intl check receipt schemaVersion 3 is unsupported; expected 2 and run fresh authorization"
+    );
 
     const value = receipt();
-    expect(parseCanonicalIntlCheckReceiptV2(canonicalJson(value))).toEqual(
-      value
-    );
+    const bytes = canonicalIntlCheckReceiptV2Bytes(value);
+    expect(bytes).toBe(`${canonicalJson(value)}\n`);
+    expect(parseCanonicalIntlCheckReceiptV2(bytes)).toEqual(value);
     expect(() =>
-      parseCanonicalIntlCheckReceiptV2(JSON.stringify(value))
+      parseCanonicalIntlCheckReceiptV2(canonicalJson(value))
+    ).toThrow("canonical JSON bytes");
+    expect(() =>
+      parseCanonicalIntlCheckReceiptV2(`${canonicalJson(value)}\n\n`)
     ).toThrow("canonical JSON bytes");
   });
 });

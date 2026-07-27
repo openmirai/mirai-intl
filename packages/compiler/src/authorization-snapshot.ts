@@ -1,5 +1,6 @@
 import type {
   IntlCheckApplicationIdentityV2,
+  IntlBuildVerificationCountersV2,
   IntlCheckCanonicalJsonV2,
   IntlCheckExceptionV1,
   IntlCheckFileIdentityV2,
@@ -13,6 +14,7 @@ import type {
   IntlCheckTsconfigFileV2,
   IntlCheckTypeScriptIdentityV2,
   IntlSourceLedgerEntryV2,
+  IntlSemanticAuthorizationObservationV2,
   RuntimeAbi,
   Sha256,
 } from "@openmirai/intl-abi";
@@ -69,6 +71,7 @@ export type SourceAuthorizationSnapshotInput = Readonly<{
   exceptions: ReadonlyArray<IntlCheckExceptionV1>;
   generationReceiptHash: Sha256;
   icu: IntlCheckPackageIdentityV2;
+  observedCounters: IntlSemanticAuthorizationObservationV2;
   projects: ReadonlyArray<ProjectInput>;
   providerClosures: ReadonlyArray<ProviderClosureInput>;
   runtimeAbi: RuntimeAbi;
@@ -1058,18 +1061,35 @@ export function buildSourceAuthorizationSnapshot(
       )
     ),
   };
+  if (input.observedCounters.semanticAuthorizationRuns !== 1) {
+    fail(
+      "Observed source authorization counters.semanticAuthorizationRuns",
+      "must equal 1"
+    );
+  }
+  if (input.observedCounters.semanticFilesAnalyzed !== sources.length) {
+    fail(
+      "Observed source authorization counters.semanticFilesAnalyzed",
+      `must equal source ledger length ${sources.length}`
+    );
+  }
   const snapshot: SourceAuthorizationSnapshot = {
     application: parseApplication(input.application, "Application identity"),
     artifactAbi: text(input.artifactAbi, "Artifact ABI"),
     compilerManifest,
     compilerManifestHash: canonicalHash(compilerManifest),
-    counters: expectedCounters(
-      projects,
-      providerClosures,
-      sources,
-      exceptions,
-      typescript
-    ),
+    counters: {
+      ...expectedCounters(
+        projects,
+        providerClosures,
+        sources,
+        exceptions,
+        typescript
+      ),
+      semanticAuthorizationRuns:
+        input.observedCounters.semanticAuthorizationRuns,
+      semanticFilesAnalyzed: input.observedCounters.semanticFilesAnalyzed,
+    },
     exceptions,
     exceptionsHash: canonicalHash(exceptions),
     generationReceiptHash: sha(
@@ -1113,6 +1133,20 @@ export function buildIntlCheckReceiptV2(
 }
 
 export function parseIntlCheckReceiptV2(value: unknown): IntlCheckReceiptV2 {
+  const candidate = record(value, "Intl check receipt");
+  const schemaVersion = Reflect.get(candidate, "schemaVersion");
+  if (schemaVersion === 1) {
+    fail(
+      "Intl check receipt schemaVersion 1",
+      "is unsupported; run fresh authorization to create a V2 receipt"
+    );
+  }
+  if (schemaVersion !== 2) {
+    fail(
+      "Intl check receipt schemaVersion",
+      `${JSON.stringify(schemaVersion)} is unsupported; expected 2 and run fresh authorization`
+    );
+  }
   const snapshot = parseSnapshotFields(value, 2, true);
   const object = record(value, "Intl check receipt V2");
   const sourceAuthorizationHash = sha(
@@ -1127,6 +1161,39 @@ export function parseIntlCheckReceiptV2(value: unknown): IntlCheckReceiptV2 {
     );
   }
   return { ...base, sourceAuthorizationHash };
+}
+
+export function parseIntlBuildVerificationCountersV2(
+  value: unknown
+): IntlBuildVerificationCountersV2 {
+  const object = exact(
+    value,
+    ["buildReceiptVerifications", "buildSemanticAnalysisRuns"],
+    "Intl build verification counters"
+  );
+  const buildReceiptVerifications = count(
+    object.buildReceiptVerifications,
+    "Intl build verification counters.buildReceiptVerifications"
+  );
+  if (buildReceiptVerifications < 1) {
+    fail(
+      "Intl build verification counters.buildReceiptVerifications",
+      "must be at least 1"
+    );
+  }
+  if (object.buildSemanticAnalysisRuns !== 0) {
+    fail(
+      "Intl build verification counters.buildSemanticAnalysisRuns",
+      "must equal 0"
+    );
+  }
+  return { buildReceiptVerifications, buildSemanticAnalysisRuns: 0 };
+}
+
+export function canonicalIntlCheckReceiptV2Bytes(
+  value: IntlCheckReceiptV2
+): string {
+  return `${canonicalJson(parseIntlCheckReceiptV2(value))}\n`;
 }
 
 export function parseCanonicalSourceAuthorizationSnapshot(
@@ -1145,7 +1212,7 @@ export function parseCanonicalIntlCheckReceiptV2(
   source: string
 ): IntlCheckReceiptV2 {
   const parsed = parseIntlCheckReceiptV2(JSON.parse(source) as unknown);
-  if (source !== canonicalJson(parsed)) {
+  if (source !== canonicalIntlCheckReceiptV2Bytes(parsed)) {
     fail("Intl check receipt V2", "must use canonical JSON bytes");
   }
   return parsed;

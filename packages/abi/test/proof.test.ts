@@ -1,4 +1,9 @@
-import type { IntlCheckReceiptV1, IntlCheckReceiptV2 } from "../src/index";
+import type {
+  IntlBuildVerificationCountersV2,
+  IntlCheckReceiptV1,
+  IntlCheckReceiptV2,
+  IntlSemanticAuthorizationObservationV2,
+} from "../src/index";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 const hash = "sha256:0123456789abcdef" as const;
@@ -169,5 +174,23 @@ describe("IntlCheckReceiptV2", () => {
     expectTypeOf<IntlCheckReceiptV1>().not.toEqualTypeOf<IntlCheckReceiptV2>();
     expectTypeOf(receipt.schemaVersion).toEqualTypeOf<2>();
     expectTypeOf(assertMigrationTypes).toBeFunction();
+  });
+
+  it("exposes semantic authorization and build verification observations", () => {
+    const authorization = {
+      semanticAuthorizationRuns: 1,
+      semanticFilesAnalyzed: 1,
+    } satisfies IntlSemanticAuthorizationObservationV2;
+    const build = {
+      buildReceiptVerifications: 1,
+      buildSemanticAnalysisRuns: 0,
+    } satisfies IntlBuildVerificationCountersV2;
+
+    expect(authorization.semanticAuthorizationRuns).toBe(1);
+    expect(build).toEqual({
+      buildReceiptVerifications: 1,
+      buildSemanticAnalysisRuns: 0,
+    });
+    expectTypeOf(build.buildSemanticAnalysisRuns).toEqualTypeOf<0>();
   });
 });

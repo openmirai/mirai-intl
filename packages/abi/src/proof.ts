@@ -156,6 +156,23 @@ export type IntlCheckReceiptCountersV2 = Readonly<{
   typescriptLibFiles: number;
 }>;
 
+/** Runtime-observed semantic work required to authorize a source ledger. */
+export type IntlSemanticAuthorizationObservationV2 = Readonly<{
+  semanticAuthorizationRuns: number;
+  semanticFilesAnalyzed: number;
+}>;
+
+/**
+ * Runtime-observed build verification work.
+ *
+ * Canonical validators require `buildReceiptVerifications >= 1` and
+ * `buildSemanticAnalysisRuns === 0`.
+ */
+export type IntlBuildVerificationCountersV2 = Readonly<{
+  buildReceiptVerifications: number;
+  buildSemanticAnalysisRuns: 0;
+}>;
+
 /**
  * Complete, non-interchangeable source authorization receipt.
  *
