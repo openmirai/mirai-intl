@@ -11,7 +11,6 @@ import {
   emitArtifacts,
   hashIntlFragmentContent,
   mount,
-  writeArtifactSet,
 } from "@openmirai/intl-compiler/internal";
 import type {
   CatalogSource,
@@ -23,6 +22,7 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 const stablePaths = [
   "certificate.verification",

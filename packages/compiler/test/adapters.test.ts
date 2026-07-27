@@ -21,11 +21,11 @@ import {
   compileCatalog,
   defineIntlConfig,
   emitArtifacts,
-  writeArtifactSet,
 } from "../src/internal";
 import type { CatalogSource } from "../src/internal";
 import { withMiraiIntl } from "../src/next";
 import { miraiIntlVite } from "../src/vite";
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });

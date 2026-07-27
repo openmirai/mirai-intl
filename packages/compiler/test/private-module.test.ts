@@ -9,7 +9,6 @@ import {
   compileCatalog,
   defineIntlConfig,
   emitArtifacts,
-  writeArtifactSet,
 } from "../src/internal";
 import type { CatalogSource } from "../src/internal";
 import {
@@ -22,6 +21,7 @@ import {
   privateMessageSliceSpecifier,
   slicePrivateMessagesModule,
 } from "../src/private-module";
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 const moduleSource = [
   'import { defineMessageDescriptor } from "@openmirai/intl-abi";',

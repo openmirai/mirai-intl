@@ -16,7 +16,6 @@ import {
   compileCatalog,
   defineIntlConfig,
   emitArtifacts,
-  writeArtifactSet,
 } from "../src/internal";
 import type { CatalogSource, MessageSource } from "../src/internal";
 import {
@@ -24,6 +23,7 @@ import {
   transformMiraiIntlSource,
 } from "../src/transform";
 import type { MiraiIntlTransformResult } from "../src/transform";
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
