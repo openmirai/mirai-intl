@@ -6,6 +6,7 @@ import {
   createElement,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
@@ -255,6 +256,7 @@ export function createMiraiI18next<
     assertLocale(initialLocale);
     const instance = createInstance();
     let disposed = false;
+    let terminalError: AggregateError | undefined;
     let lifecycleGeneration = 0;
     let activeLocale: Locale | undefined;
     let transitionTail: Promise<void> = Promise.resolve();
@@ -282,6 +284,9 @@ export function createMiraiI18next<
     })();
 
     const assertActive = (): void => {
+      if (terminalError) {
+        throw terminalError;
+      }
       if (disposed) {
         throw new Error("The Mirai Intl controller has been disposed");
       }
@@ -289,7 +294,28 @@ export function createMiraiI18next<
 
     const assertGeneration = (generation: number): void => {
       if (disposed || generation !== lifecycleGeneration) {
-        throw new Error("The Mirai Intl controller has been disposed");
+        assertActive();
+        throw new Error("The Mirai Intl controller lifecycle has changed");
+      }
+    };
+
+    const rollbackLanguage = async (
+      previousLocale: Locale,
+      primaryError: unknown
+    ): Promise<void> => {
+      if (instance.language === previousLocale) {
+        return;
+      }
+      try {
+        await instance.changeLanguage(previousLocale);
+      } catch (rollbackError) {
+        terminalError = new AggregateError(
+          [primaryError, rollbackError],
+          "Mirai Intl locale activation failed and rollback could not restore the prior language"
+        );
+        lifecycleGeneration += 1;
+        pendingLoads.clear();
+        throw terminalError;
       }
     };
 
@@ -338,21 +364,16 @@ export function createMiraiI18next<
           try {
             await instance.changeLanguage(locale);
           } catch (error) {
-            if (instance.language !== previousLocale) {
-              await instance
-                .changeLanguage(previousLocale)
-                .catch(() => undefined);
-            }
+            await rollbackLanguage(previousLocale, error);
             assertGeneration(generation);
             throw error;
           }
           if (disposed || generation !== lifecycleGeneration) {
-            if (instance.language !== previousLocale) {
-              await instance
-                .changeLanguage(previousLocale)
-                .catch(() => undefined);
-            }
-            assertGeneration(generation);
+            const lifecycleError = new Error(
+              "The Mirai Intl controller has been disposed"
+            );
+            await rollbackLanguage(previousLocale, lifecycleError);
+            throw lifecycleError;
           }
           activeLocale = locale;
           translationRuntime?.setLocale(locale);
@@ -406,7 +427,12 @@ export function createMiraiI18next<
         pendingLoads.clear();
         instance.off("languageChanged");
       },
-      getActiveLocale: () => activeLocale,
+      getActiveLocale: () => {
+        if (terminalError) {
+          throw terminalError;
+        }
+        return activeLocale;
+      },
       getTranslations,
       instance,
       loadLocale,
@@ -471,6 +497,14 @@ export function createMiraiI18next<
     const selectedController =
       controller ?? getBrowserController(selectedLocale);
     const [activationError, setActivationError] = useState<unknown>();
+    const pendingSelection = useRef<
+      | Readonly<{
+          controller: MiraiI18nextController<Locale, Contract>;
+          locale: Locale;
+          promise: Promise<void>;
+        }>
+      | undefined
+    >(undefined);
     const [readySelection, setReadySelection] = useState<
       | Readonly<{
           controller: MiraiI18nextController<Locale, Contract>;
@@ -495,8 +529,23 @@ export function createMiraiI18next<
         };
       }
       setReadySelection(undefined);
-      void selectedController.activateLocale(selectedLocale).then(
+      const existing = pendingSelection.current;
+      const activation =
+        existing?.controller === selectedController &&
+        existing.locale === selectedLocale
+          ? existing.promise
+          : selectedController.activateLocale(selectedLocale);
+      const selection = {
+        controller: selectedController,
+        locale: selectedLocale,
+        promise: activation,
+      } as const;
+      pendingSelection.current = selection;
+      void activation.then(
         () => {
+          if (pendingSelection.current === selection) {
+            pendingSelection.current = undefined;
+          }
           if (active) {
             setReadySelection({
               controller: selectedController,
@@ -505,6 +554,9 @@ export function createMiraiI18next<
           }
         },
         (error: unknown) => {
+          if (pendingSelection.current === selection) {
+            pendingSelection.current = undefined;
+          }
           if (active) {
             setActivationError(error);
           }

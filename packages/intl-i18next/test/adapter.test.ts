@@ -3,7 +3,7 @@ import type { TextDescriptor } from "@openmirai/intl-abi";
 import { compileCatalog } from "@openmirai/intl-compiler/internal";
 import type { TypedCatalogManifest } from "@openmirai/intl-runtime";
 import { createPrecompiledDescriptor } from "@openmirai/intl-runtime";
-import { createElement } from "react";
+import { createElement, StrictMode } from "react";
 import { renderToString } from "react-dom/server";
 import { act, create } from "react-test-renderer";
 import type { ReactTestRenderer } from "react-test-renderer";
@@ -373,6 +373,53 @@ describe("createMiraiI18next", () => {
     expect(controller.instance.language).toBe("en");
   });
 
+  it("becomes terminal and preserves both causes when rollback fails", async () => {
+    const changeGate = Promise.withResolvers<void>();
+    const rollbackError = new Error("rollback failed");
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: (locale) => resources[locale],
+    });
+    const controller = adapter.createRequestController("en");
+    await controller.activateLocale("en");
+    const changeLanguage = vi.spyOn(controller.instance, "changeLanguage");
+    changeLanguage.mockImplementation(async (locale) => {
+      if (locale === "th") {
+        await changeGate.promise;
+        Reflect.set(controller.instance, "language", "th");
+        return controller.instance.t;
+      }
+      throw rollbackError;
+    });
+
+    const activation = controller.activateLocale("th");
+    await vi.waitFor(() => {
+      expect(changeLanguage).toHaveBeenCalledWith("th");
+    });
+    controller.dispose();
+    changeGate.resolve();
+    const failure: unknown = await activation.catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      expect.objectContaining({
+        message: "The Mirai Intl controller has been disposed",
+      }),
+      rollbackError,
+    ]);
+    expect(controller.instance.language).toBe("th");
+    expect(() => controller.getActiveLocale()).toThrow(
+      "Mirai Intl locale activation failed and rollback could not restore the prior language"
+    );
+    expect(() => controller.loadLocale("en")).toThrow(
+      "Mirai Intl locale activation failed and rollback could not restore the prior language"
+    );
+    expect(() => controller.activateLocale("en")).toThrow(
+      "Mirai Intl locale activation failed and rollback could not restore the prior language"
+    );
+  });
+
   it("activates an inactive request controller's requested locale in Provider", async () => {
     const gate = Promise.withResolvers<void>();
     const adapter = createMiraiI18next({
@@ -419,7 +466,7 @@ describe("createMiraiI18next", () => {
     }
   });
 
-  it("activates each Provider controller and locale selection exactly once", async () => {
+  it("activates each StrictMode Provider selection exactly once", async () => {
     const gate = Promise.withResolvers<void>();
     const adapter = createMiraiI18next({
       catalogManifest,
@@ -437,9 +484,13 @@ describe("createMiraiI18next", () => {
     });
     let renderer: ReactTestRenderer | undefined;
     const tree = createElement(
-      adapter.Provider,
-      { controller: instrumentedController },
-      createElement("span", null, "ready")
+      StrictMode,
+      null,
+      createElement(
+        adapter.Provider,
+        { controller: instrumentedController },
+        createElement("span", null, "ready")
+      )
     );
     Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
       configurable: true,
@@ -467,9 +518,13 @@ describe("createMiraiI18next", () => {
       act(() =>
         renderer?.update(
           createElement(
-            adapter.Provider,
-            { controller: instrumentedController },
-            createElement("span", null, "ready")
+            StrictMode,
+            null,
+            createElement(
+              adapter.Provider,
+              { controller: instrumentedController },
+              createElement("span", null, "ready")
+            )
           )
         )
       );
