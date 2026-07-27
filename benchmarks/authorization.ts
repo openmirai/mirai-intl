@@ -510,21 +510,38 @@ const engineIdentityFields = new Set([
   "compilerHash",
   "compilerManifest",
   "compilerManifestHash",
+  "discoveryPolicyHash",
   "environment",
+  "exceptionsHash",
   "generationInputHash",
   "generationReceiptHash",
   "sourceAuthorizationHash",
 ]);
 
-function normalizeEngineIdentity(value: unknown): unknown {
+function normalizeEngineIdentity(
+  value: unknown,
+  withinContracts = false
+): unknown {
   if (Array.isArray(value)) {
-    return value.map(normalizeEngineIdentity);
+    return value.map((entry) =>
+      normalizeEngineIdentity(entry, withinContracts)
+    );
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => !engineIdentityFields.has(key))
-        .map(([key, entry]) => [key, normalizeEngineIdentity(entry)])
+        .filter(
+          ([key]) =>
+            !engineIdentityFields.has(key) &&
+            !(withinContracts && key === "hash")
+        )
+        .map(([key, entry]) => [
+          key,
+          normalizeEngineIdentity(
+            entry,
+            withinContracts || key === "contracts"
+          ),
+        ])
     );
   }
   return value;
@@ -666,15 +683,31 @@ async function invoke(
   ...args: ReadonlyArray<string>
 ): Promise<CliInvocation> {
   const invocation = runCli(cli, cwd, reportPath, instrumented, ...args);
-  const report = asObject(
+  const rawReport = asObject(
     JSON.parse(await readFile(reportPath, "utf8")),
     "CLI report"
   );
+  const report = {
+    command: rawReport.command,
+    diagnostics: rawReport.diagnostics,
+    schemaVersion: rawReport.schemaVersion,
+    success: rawReport.success,
+  };
   if (
-    canonicalJson(normalizeRoot(report.result, cwd)) !==
-    canonicalJson(normalizeRoot(invocation.result, cwd))
+    report.command !== args[0] ||
+    report.schemaVersion !== 1 ||
+    report.success !== true ||
+    !Array.isArray(report.diagnostics) ||
+    report.diagnostics.length !== 0
   ) {
-    throw new Error("CLI stdout and --report-file result differ");
+    throw new Error("CLI --report-file success contract is invalid");
+  }
+  if (
+    cli === candidateCli &&
+    canonicalJson(Object.keys(rawReport).toSorted()) !==
+      canonicalJson(["command", "diagnostics", "schemaVersion", "success"])
+  ) {
+    throw new Error("Candidate CLI report exposed non-diagnostic payload data");
   }
   return { ...invocation, report };
 }
