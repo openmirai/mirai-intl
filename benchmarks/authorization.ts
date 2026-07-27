@@ -23,10 +23,10 @@ const profiler = resolve(
   repositoryRoot,
   "benchmarks/authorization-profiler.mjs"
 );
-const referenceCommit = "6def3be";
-const referenceTree = "52b31ff34f37fb814d6def88766867d062f75267";
+const referenceCommit = "89e362b";
+const referenceTree = "1e58d4cc11439a4ef4f383954d60f8845b003c76";
 const referenceDistHash =
-  "sha256:7c1286210c4b582121c0de78b26e358b6a6c871fc911c1c4ef34086e1386b196";
+  "sha256:648606df1507421aab9ca7114fec5123c6028571866ac971136cf80392781751";
 const minimumAcceptanceSamples = 30;
 const acceptanceWarmups = 5;
 const acceptanceBatchSize = 6;
@@ -1284,26 +1284,13 @@ async function verifySemanticIntegrityMatrix(
   );
   const mutationParity =
     new Set(mutationEvidence.map((value) => value.outputHash)).size === 1;
-  const providerLimitParity = [
-    "artifactHash",
-    "authorizedSourceCount",
-    "diagnosticsHash",
-    "providerBudgetExceededCount",
-    "providerRootLimits",
-  ].every(
-    (field) =>
-      new Set(
-        providerLimitEvidence.map((value) =>
-          canonicalJson(value[field as keyof ParityEvidence])
-        )
-      ).size === 1
+  const providerLimitParity =
+    new Set(providerLimitEvidence.map((value) => value.receiptHash)).size === 1;
+  const providerLimitExact = providerLimitEvidence.every(
+    (value) =>
+      value.providerRootsObserved === 64 &&
+      value.providerBudgetExceededCount === 0
   );
-  const providerLimitExact =
-    providerLimitEvidence[0]?.providerRootsObserved === 1 &&
-    providerLimitEvidence[1]?.providerRootsObserved === 64 &&
-    providerLimitEvidence.every(
-      (value) => value.providerBudgetExceededCount === 0
-    );
   const providerOverflowParity =
     new Set(providerOverflowEvidence.map((value) => value.outputHash)).size ===
     1;
@@ -1533,8 +1520,21 @@ function pairedStatistics(
     bootstrapIterations: 10_000,
     bootstrapSeed: seed,
     medianPairedDeltaPercent: rounded(median(deltas)),
+    rawPairs: reference.map((referenceValue, index) => ({
+      candidate: candidate[index],
+      reference: referenceValue,
+    })),
     rawPairedDeltasPercent: deltas.map(rounded),
   };
+}
+
+function favorableBootstrapConfidence(paired: JsonObject): boolean {
+  const interval = paired.bootstrap95ConfidenceIntervalPercent;
+  return (
+    Array.isArray(interval) &&
+    typeof interval[1] === "number" &&
+    interval[1] < 0
+  );
 }
 
 function strictParity(
@@ -1597,23 +1597,49 @@ function git(cwd: string, ...args: ReadonlyArray<string>): string {
     encoding: "utf8",
     shell: false,
   });
-  if (result.error || result.status !== 0) {
+  if (
+    result.error ||
+    result.status !== 0 ||
+    typeof result.stdout !== "string"
+  ) {
     throw new Error(
-      `Unable to capture benchmark Git metadata: ${result.stderr || result.error?.message}`
+      `Unable to capture benchmark Git metadata: ${
+        typeof result.stderr === "string"
+          ? result.stderr
+          : (result.error?.message ?? "stdout unavailable")
+      }`
     );
   }
   return result.stdout.trim();
 }
 
-function physicalCpuCount(): number | null {
-  const result = spawnSync("sysctl", ["-n", "hw.physicalcpu"], {
+function optionalCommandStdout(
+  command: string,
+  args: ReadonlyArray<string>,
+  cwd?: string
+): string | null {
+  const result = spawnSync(command, args, {
+    ...(cwd ? { cwd } : {}),
     encoding: "utf8",
     shell: false,
   });
-  const parsed = Number(result.stdout.trim());
-  return result.status === 0 && Number.isSafeInteger(parsed) && parsed > 0
-    ? parsed
-    : null;
+  if (
+    result.error ||
+    result.status !== 0 ||
+    typeof result.stdout !== "string"
+  ) {
+    return null;
+  }
+  return result.stdout.trim() || null;
+}
+
+function physicalCpuCount(): number | null {
+  const stdout = optionalCommandStdout("sysctl", ["-n", "hw.physicalcpu"]);
+  if (stdout === null) {
+    return null;
+  }
+  const parsed = Number(stdout);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 async function assertReferenceCli(path: string | undefined): Promise<string> {
@@ -1655,10 +1681,32 @@ async function assertReferenceCli(path: string | undefined): Promise<string> {
   return canonical;
 }
 
-async function packageVersion(path: string): Promise<string> {
-  return String(
-    asObject(JSON.parse(await readFile(path, "utf8")), path).version
+async function compilerTypescriptIdentity(cli: string): Promise<JsonObject> {
+  const implementation = await realpath(
+    resolve(dirname(cli), "../node_modules/typescript/lib/typescript.js")
   );
+  const packageRoot = resolve(dirname(implementation), "..");
+  const manifestPath = join(packageRoot, "package.json");
+  const manifestBytes = await readFile(manifestPath);
+  const manifest = asObject(
+    JSON.parse(manifestBytes.toString("utf8")),
+    manifestPath
+  );
+  if (manifest.name !== "typescript" || typeof manifest.version !== "string") {
+    throw new Error(
+      `Compiler TypeScript package identity is invalid: ${manifestPath}`
+    );
+  }
+  return {
+    implementation: relative(packageRoot, implementation).split("\\").join("/"),
+    implementationHash: sha256(await readFile(implementation)),
+    name: manifest.name,
+    packageHash: sha256(
+      canonicalJson(await treeEntries(packageRoot, packageRoot))
+    ),
+    packageManifestHash: sha256(manifestBytes),
+    version: manifest.version,
+  };
 }
 
 async function main(args: ReadonlyArray<string>): Promise<void> {
@@ -1679,6 +1727,17 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
   const referenceCli = await assertReferenceCli(configured.referenceCli);
   if (!(await pathExists(candidateCli)) || !(await pathExists(profiler))) {
     throw new Error("Built candidate CLI or benchmark profiler is missing");
+  }
+  const candidateTypescript = await compilerTypescriptIdentity(candidateCli);
+  const referenceTypescript = await compilerTypescriptIdentity(referenceCli);
+  if (
+    candidateTypescript.packageHash !== referenceTypescript.packageHash ||
+    candidateTypescript.implementationHash !==
+      referenceTypescript.implementationHash
+  ) {
+    throw new Error(
+      "Reference and candidate compiler TypeScript implementations differ"
+    );
   }
 
   await rm(fixtureRoot, { force: true, recursive: true });
@@ -1810,9 +1869,9 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
       const pairs = unchangedPairs.filter(
         ({ scenario }) => scenario === definition.name
       );
-      const paired = pairedStatistics(
-        referenceBatches,
-        candidateBatches,
+      const pairedRawCells = pairedStatistics(
+        referenceGateRaw,
+        candidateGateRaw,
         configured.seed + scenarioIndex
       );
       const candidateComplete = statistics(candidateRaw);
@@ -1829,6 +1888,15 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
           ({ referenceRawMilliseconds }) => referenceRawMilliseconds
         )
       );
+      const unchangedPairedCells = pairedStatistics(
+        pairs.map(({ referenceMilliseconds }) => referenceMilliseconds),
+        pairs.map(({ candidateMilliseconds }) => candidateMilliseconds),
+        configured.seed + 100 + scenarioIndex
+      );
+      const completeConfidencePass =
+        favorableBootstrapConfidence(pairedRawCells);
+      const unchangedConfidencePass =
+        favorableBootstrapConfidence(unchangedPairedCells);
       let medianLimit = 10_000;
       let p95Limit = 20_000;
       let relativeLimit = 0.5;
@@ -1845,14 +1913,16 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
         Number(candidateGatingLatency.medianMilliseconds) <=
           Number(referenceGatingLatency.medianMilliseconds) * relativeLimit &&
         Number(candidateGatingLatency.p95Milliseconds) <=
-          Number(referenceGatingLatency.p95Milliseconds) * relativeLimit;
+          Number(referenceGatingLatency.p95Milliseconds) * relativeLimit &&
+        completeConfidencePass;
       const unchangedGatePass =
         Number(candidateUnchanged.medianMilliseconds) <= 400 &&
         Number(candidateUnchanged.p95Milliseconds) <= 600 &&
         Number(candidateUnchanged.medianMilliseconds) <=
           Number(referenceUnchanged.medianMilliseconds) * 0.3 &&
         Number(candidateUnchanged.p95Milliseconds) <=
-          Number(referenceUnchanged.p95Milliseconds) * 0.3;
+          Number(referenceUnchanged.p95Milliseconds) * 0.3 &&
+        unchangedConfidencePass;
       const rawStabilityPass =
         Number(candidateGatingLatency.coefficientOfVariation) <= 0.1 &&
         Number(referenceGatingLatency.coefficientOfVariation) <= 0.1 &&
@@ -1864,7 +1934,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
           completeGate: {
             candidateBatchMeans: statistics(candidateBatches),
             candidateRaw: candidateComplete,
-            paired,
+            pairedRawCells,
             referenceBatchMeans: statistics(referenceBatches),
             referenceRaw: referenceComplete,
           },
@@ -1932,6 +2002,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
               medianLimitMilliseconds: medianLimit,
               p95LimitMilliseconds: p95Limit,
               pass: completeGatePass,
+              pairedBootstrapConfidencePass: completeConfidencePass,
               relativeLimit,
             },
             rawStability: { cvLimit: 0.1, pass: rawStabilityPass },
@@ -1939,6 +2010,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
               medianLimitMilliseconds: 400,
               p95LimitMilliseconds: 600,
               pass: unchangedGatePass,
+              pairedBootstrapConfidencePass: unchangedConfidencePass,
               relativeLimit: 0.3,
             },
           },
@@ -1987,11 +2059,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
           },
           unchangedEnsure: {
             candidate: candidateUnchanged,
-            paired: pairedStatistics(
-              pairs.map(({ referenceMilliseconds }) => referenceMilliseconds),
-              pairs.map(({ candidateMilliseconds }) => candidateMilliseconds),
-              configured.seed + 100 + scenarioIndex
-            ),
+            pairedRawCells: unchangedPairedCells,
             rawP95AcrossAllFreshOwnerPairs: {
               candidateMilliseconds: rounded(
                 percentile(
@@ -2025,13 +2093,12 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     asObject(value, "scenario report")
   );
   const confidencePass = scenarioValues.every((scenario) => {
-    const complete = asObject(scenario.completeGate, "complete gate");
-    const paired = asObject(complete.paired, "paired statistics");
-    const interval = paired.bootstrap95ConfidenceIntervalPercent;
+    const gates = asObject(scenario.gates, "scenario gates");
     return (
-      Array.isArray(interval) &&
-      typeof interval[1] === "number" &&
-      interval[1] < 0
+      asObject(gates.completeGate, "complete gate")
+        .pairedBootstrapConfidencePass === true &&
+      asObject(gates.unchangedEnsure, "unchanged ensure gate")
+        .pairedBootstrapConfidencePass === true
     );
   });
   const stabilityPass = scenarioValues.every((scenario) => {
@@ -2077,9 +2144,17 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
   const unchangedCandidate = unchangedPairs.map(
     ({ candidateMilliseconds }) => candidateMilliseconds
   );
-  const unchangedPass =
+  const unchangedAbsolutePass =
     median(unchangedCandidate) <= 400 &&
     percentile(unchangedCandidate, 0.95) <= 600;
+  const unchangedRelativeConfidencePass = scenarioValues.every((scenario) => {
+    const gates = asObject(scenario.gates, "scenario gates");
+    return (
+      asObject(gates.unchangedEnsure, "unchanged ensure gate").pass === true
+    );
+  });
+  const unchangedPass =
+    unchangedAbsolutePass && unchangedRelativeConfidencePass;
   const pass =
     acceptanceEligible &&
     confidencePass &&
@@ -2120,9 +2195,11 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     stabilityCvGate: { limit: 0.1, pass: stabilityPass },
     scenarioPerformanceGatesPass: scenarioPerformancePass,
     unchangedEnsureGate: {
+      absolutePass: unchangedAbsolutePass,
       medianLimitMilliseconds: 400,
       p95LimitMilliseconds: 600,
       pass: unchangedPass,
+      relativeAndConfidencePass: unchangedRelativeConfidencePass,
     },
   };
 
@@ -2143,10 +2220,11 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
       node: process.version,
       physicalCpuCount: physicalCpuCount(),
       platform: process.platform,
-      pnpm: spawnSync("corepack", ["pnpm", "--version"], {
-        cwd: repositoryRoot,
-        encoding: "utf8",
-      }).stdout.trim(),
+      pnpm: optionalCommandStdout(
+        "corepack",
+        ["pnpm", "--version"],
+        repositoryRoot
+      ),
       referenceCommit: git(
         resolve(dirname(referenceCli), "../../.."),
         "rev-parse",
@@ -2155,9 +2233,10 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
       runnerImage: process.env.ImageOS ?? process.env.RUNNER_OS ?? "local",
       runnerName: process.env.RUNNER_NAME ?? "local",
       totalMemoryBytes: totalmem(),
-      typescript: await packageVersion(
-        join(repositoryRoot, "node_modules/typescript/package.json")
-      ),
+      typescript: {
+        candidate: candidateTypescript,
+        reference: referenceTypescript,
+      },
       workerCount: 1,
       workerEnvironment: Object.fromEntries(
         [
@@ -2176,6 +2255,8 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
         "process-cold/dependency-hot: every measured full workflow uses a new Node process and copied input tree with fresh generated/report/cache directories; installed dependencies and the OS page cache remain hot",
       comparison:
         "paired interleaved ABBA reference/candidate ordering; even outer samples use ABBA and odd samples use BAAB",
+      confidenceAuthority:
+        "bootstrap confidence gates use every explicitly paired raw ABBA/BAAB cell for full workflows and every fresh-root ABBA/BAAB median cell for unchanged ensure; batch means are reporting context only",
       completeGate:
         "parent wall clock around missing-output ensure followed by a fresh complete authorization check",
       fullWorkflowAggregation:
@@ -2186,6 +2267,8 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
       processCold:
         "new CLI process per phase and fresh Mirai temporary/cache/output directories",
       rawLatencyGatesUntouched: true,
+      referenceBaseline:
+        "reconciled strict per-file engine at 89e362b with provider-frontier authority, immediately before owner batching",
       samples: configured.samples,
       scenario: configured.scenario,
       seed: configured.seed,
