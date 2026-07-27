@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -138,4 +145,46 @@ describe("V2 build receipt verification", () => {
       /V1 is unsupported/u
     );
   }, 60_000);
+
+  it.each([
+    [
+      "addition",
+      async (root: string) => {
+        await writeFile(
+          join(root, "src/added.ts"),
+          "export const added = 1;\n"
+        );
+      },
+      /source universe is stale/u,
+    ],
+    [
+      "deletion",
+      async (root: string) => {
+        await rm(join(root, "src/page.ts"));
+      },
+      /receipt input must be a regular file/u,
+    ],
+    [
+      "rename",
+      async (root: string) => {
+        await rename(join(root, "src/page.ts"), join(root, "src/renamed.ts"));
+      },
+      /receipt input must be a regular file/u,
+    ],
+  ] as const)(
+    "rejects post-authorization source %s without semantic verification",
+    async (_label, mutate, error) => {
+      const root = await fixture();
+      await proveConventionCatalog(root);
+      await mutate(root);
+      vi.resetModules();
+      vi.doMock("typescript", () => {
+        throw new Error("build verification imported TypeScript");
+      });
+      const { verifyConventionBuildReceipt } =
+        await import("../src/check-receipt");
+      await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(error);
+    },
+    60_000
+  );
 });

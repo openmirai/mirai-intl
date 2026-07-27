@@ -408,9 +408,33 @@ async function createConventionCheckReceipt(
     afterLoaded,
     finalVerificationOptions
   );
+  const afterDiscoveredFiles = await collectConventionSourceFiles(
+    root,
+    afterLoaded.discovery.output
+  );
+  const afterUniverse = await resolveConventionSourceUniverse(
+    root,
+    afterLoaded.checkProjects,
+    afterLoaded.discovery.output,
+    afterDiscoveredFiles
+  );
+  const universeIdentity = (value: typeof universe): unknown => ({
+    files: value.files.map(({ file, owner }) => ({ file, owner })),
+    projects: value.projects,
+    workspaceRoot: value.workspaceRoot,
+  });
+  if (
+    canonicalJson(universeIdentity(universe)) !==
+    canonicalJson(universeIdentity(afterUniverse))
+  ) {
+    throw new Error(
+      "Mirai Intl source universe changed while source analysis ran"
+    );
+  }
   const afterSources = await Promise.all(
-    sourceFiles.map(
-      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
+    afterUniverse.files.map(
+      async ({ absolute }) =>
+        [absolute, sha256(await readFile(absolute, "utf8"))] as const
     )
   );
   if (canonicalJson(beforeSources) !== canonicalJson(afterSources)) {

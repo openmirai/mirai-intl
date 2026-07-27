@@ -1,5 +1,12 @@
 import type NodeFsPromises from "node:fs/promises";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +14,7 @@ import type * as AnalyzeSources from "../src/analyze-sources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mutation = vi.hoisted(() => ({
+  afterAnalysis: undefined as undefined | (() => Promise<void>),
   enabled: false,
   matchedReads: 0,
   pattern: undefined as RegExp | undefined,
@@ -41,6 +49,7 @@ vi.mock("../src/analyze-sources", async (importOriginal) => {
       ...arguments_: Parameters<typeof actual.analyzeConventionSourceFiles>
     ) {
       const result = await actual.analyzeConventionSourceFiles(...arguments_);
+      await mutation.afterAnalysis?.();
       mutation.enabled = true;
       return result;
     },
@@ -82,6 +91,7 @@ async function fixture(): Promise<string> {
 }
 
 beforeEach(() => {
+  mutation.afterAnalysis = undefined;
   mutation.enabled = false;
   mutation.matchedReads = 0;
   mutation.pattern = undefined;
@@ -116,6 +126,50 @@ describe("complete authorization integrity mutation barrier", () => {
         ).rejects.toMatchObject({ code: "ENOENT" });
       } finally {
         mutation.enabled = false;
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
+  it.each([
+    [
+      "addition",
+      async (root: string) => {
+        await writeFile(
+          join(root, "src/added.ts"),
+          "export const added = 1;\n"
+        );
+      },
+    ],
+    [
+      "deletion",
+      async (root: string) => {
+        await rm(join(root, "src/page.ts"));
+      },
+    ],
+    [
+      "rename",
+      async (root: string) => {
+        await rename(join(root, "src/page.ts"), join(root, "src/renamed.ts"));
+      },
+    ],
+  ] as const)(
+    "rejects a mid-analysis source %s",
+    async (_label, mutate) => {
+      const root = await fixture();
+      mutation.afterAnalysis = () => mutate(root);
+      try {
+        await expect(
+          authorizeConventionCatalog(root, { collectEnvironment: false })
+        ).rejects.toThrow(
+          "Mirai Intl source universe changed while source analysis ran"
+        );
+        await expect(
+          readFile(conventionCheckReceiptPath(root), "utf8")
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        mutation.afterAnalysis = undefined;
         await rm(root, { force: true, recursive: true });
       }
     },

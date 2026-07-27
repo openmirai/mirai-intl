@@ -21,6 +21,7 @@ import {
   computeApplicationPackageIdentity,
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
+import { reconstructProjectRootFiles } from "./source-universe-identity";
 import type {
   IntegrityManifestEntry,
   ResolvedPackageIdentity,
@@ -35,6 +36,7 @@ const receiptDirectory = ".mirai-intl";
 const receiptName = "check-receipt.v2.json";
 const legacyReceiptName = "check-receipt.v1.json";
 const generationReceiptName = "catalog-generation-receipt.v1.json";
+const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/u;
 
 export type IntlBuildReceiptVerification = IntlBuildVerificationCountersV2 &
   Readonly<{
@@ -268,6 +270,52 @@ export async function verifyConventionBuildReceipt(
       "Mirai Intl loaded TypeScript lib"
     ),
   ]);
+  const reconstructedProjects = await Promise.all(
+    receipt.projects.map(async (project) => ({
+      project,
+      rootFiles: await reconstructProjectRootFiles(workspace, project),
+    }))
+  );
+  for (const { project, rootFiles } of reconstructedProjects) {
+    if (canonicalJson(rootFiles) !== canonicalJson(project.rootFiles)) {
+      throw new Error(
+        `Mirai Intl check-project source universe is stale: ${project.path}`
+      );
+    }
+  }
+  const generatedPrefix = relative(
+    workspace,
+    resolve(root, loaded.discovery.output)
+  )
+    .split(sep)
+    .join("/");
+  const reconstructedOwners = reconstructedProjects
+    .filter(({ project }) => project.role === "owner")
+    .flatMap(({ project, rootFiles }) =>
+      rootFiles
+        .filter(
+          (file) =>
+            SOURCE_EXTENSION.test(file) &&
+            file !== generatedPrefix &&
+            !file.startsWith(`${generatedPrefix}/`)
+        )
+        .map((file) => ({ file, owner: project.path }))
+    )
+    .toSorted((left, right) =>
+      `${left.file}\u0000${left.owner}`.localeCompare(
+        `${right.file}\u0000${right.owner}`
+      )
+    );
+  const receiptOwners = receipt.sources
+    .map(({ file, owner }) => ({ file, owner }))
+    .toSorted((left, right) =>
+      `${left.file}\u0000${left.owner}`.localeCompare(
+        `${right.file}\u0000${right.owner}`
+      )
+    );
+  if (canonicalJson(reconstructedOwners) !== canonicalJson(receiptOwners)) {
+    throw new Error("Mirai Intl authorized source universe is stale");
+  }
   const immutable = await getImmutableIntegrityIdentity();
   if (
     canonicalJson(receipt.compilerManifest) !==
