@@ -187,6 +187,12 @@ describe("private named-key lowering", () => {
     ).toBe(true);
     expect(
       isMiraiIntlTransformCandidate(
+        'import { createInstance } from "i18next"; const i18n = createInstance(); i18n.t("title");',
+        join("/repo", "src", "unsafe-i18next.ts")
+      )
+    ).toBe(true);
+    expect(
+      isMiraiIntlTransformCandidate(
         'import { getServerTranslations } from "x";',
         `${join("/repo", "src", "server.ts")}?loader=query`
       )
@@ -215,6 +221,66 @@ describe("private named-key lowering", () => {
         join("/repo", "src", "plain.ts")
       )
     ).toBe(true);
+  });
+
+  it("rejects direct i18next.t calls before an application build", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/unsafe-i18next.ts");
+    await mkdir(join(fixture.root, "node_modules/i18next"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(fixture.root, "node_modules/i18next/index.d.ts"),
+      [
+        "export interface i18n {",
+        "  changeLanguage(locale: string): Promise<void>;",
+        "  exists(key: string): boolean;",
+        "  getResource(locale: string, namespace: string, key: string): unknown;",
+        "  init(): Promise<void>;",
+        "  t(key: string): string;",
+        "}",
+        "export function createInstance(): i18n;",
+        "",
+      ].join("\n")
+    );
+    const source = [
+      'import { createInstance } from "i18next";',
+      "const i18n = createInstance();",
+      'i18n.t("pages.home.title");',
+      "",
+    ].join("\n");
+
+    try {
+      await expect(
+        transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      ).rejects.toThrowError(/Direct i18next\.t\(\.\.\.\) is not type-safe/u);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects controller instance translation bypasses", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/unsafe-controller.ts");
+    const source = [
+      "declare const controller: { getActiveInstance(): { t(key: string): string } };",
+      'controller.getActiveInstance().t("pages.home.title");',
+      "",
+    ].join("\n");
+
+    try {
+      await expect(
+        transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      ).rejects.toThrowError(/Direct i18next\.t\(\.\.\.\) is not type-safe/u);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
   });
 
   it("lowers aliases plus text, rich, value, root, and direct-result calls", async () => {

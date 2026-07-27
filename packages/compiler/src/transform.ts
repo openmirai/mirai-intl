@@ -518,10 +518,11 @@ function scriptKindFor(id: string): ts.ScriptKind {
 /**
  * Avoid opening and validating a catalog for source that cannot possibly be
  * translation-bearing. This is intentionally an AST preflight rather than an
- * authority decision: imported operations and translator type references are
- * both sent through the full TypeScript analysis below. A bare identifier `t`
- * is not authority (it is used throughout ordinary application code); typed
- * translator props are covered by their Translator/TranslationFunction type.
+ * authority decision: imported operations, i18next member calls, and
+ * translator type references are all sent through the full TypeScript analysis
+ * below. A bare identifier `t` is not authority (it is used throughout
+ * ordinary application code); typed translator props are covered by their
+ * Translator/TranslationFunction type.
  * False positives only cost work; false negatives would be a safety failure.
  */
 function requiresMiraiIntlAnalysis(source: string, id: string): boolean {
@@ -533,6 +534,9 @@ function requiresMiraiIntlAnalysis(source: string, id: string): boolean {
     scriptKindFor(id)
   );
   let required = false;
+  let importsI18next = false;
+  let usesMemberTranslation = false;
+  let usesControllerTranslation = false;
   const visit = (node: ts.Node): void => {
     if (required) {
       return;
@@ -545,6 +549,28 @@ function requiresMiraiIntlAnalysis(source: string, id: string): boolean {
       }
     }
     if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      (node.moduleSpecifier.text === "i18next" ||
+        node.moduleSpecifier.text === "react-i18next")
+    ) {
+      importsI18next = true;
+    }
+    if (ts.isPropertyAccessExpression(node) && node.name.text === "t") {
+      usesMemberTranslation = true;
+      const receiver = unwrapExpression(node.expression);
+      const receiverCallee = ts.isCallExpression(receiver)
+        ? unwrapExpression(receiver.expression)
+        : undefined;
+      if (
+        receiverCallee &&
+        ts.isPropertyAccessExpression(receiverCallee) &&
+        receiverCallee.name.text === "getActiveInstance"
+      ) {
+        usesControllerTranslation = true;
+      }
+    }
+    if (
       ts.isIdentifier(node) &&
       (node.text === "Translator" || node.text === "TranslationFunction")
     ) {
@@ -554,7 +580,11 @@ function requiresMiraiIntlAnalysis(source: string, id: string): boolean {
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  return required;
+  return (
+    required ||
+    usesControllerTranslation ||
+    (importsI18next && usesMemberTranslation)
+  );
 }
 
 function moduleResolutionOptions(root: string): ts.CompilerOptions {
@@ -1289,6 +1319,8 @@ function analyzeSource(
   const formSchemaFactorySymbols = new Set<ts.Symbol>();
   const translationKeySymbols = new Map<ts.Symbol, string>();
   const translatorSymbols = new Map<ts.Symbol, string>();
+  const i18nextFactoryNames = new Set<string>();
+  const i18nextInstanceNames = new Set<string>();
   const allowedTranslationKeyFactoryReferences = new Set<string>();
   const allowedTranslationKeyParserReferences = new Set<string>();
   const allowedFormErrorTranslatorFactoryReferences = new Set<string>();
@@ -1384,6 +1416,68 @@ function analyzeSource(
     ts.forEachChild(node, collectFiniteSelectors);
   };
   collectFiniteSelectors(sourceFile);
+
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== "i18next" ||
+      !statement.importClause
+    ) {
+      continue;
+    }
+    const clause = statement.importClause;
+    if (clause.name) {
+      i18nextInstanceNames.add(clause.name.text);
+    }
+    if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+      i18nextInstanceNames.add(clause.namedBindings.name.text);
+      continue;
+    }
+    if (!clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) {
+      continue;
+    }
+    for (const specifier of clause.namedBindings.elements) {
+      if (
+        (specifier.propertyName ?? specifier.name).text === "createInstance"
+      ) {
+        i18nextFactoryNames.add(specifier.name.text);
+      }
+    }
+  }
+
+  const collectI18nextInstances = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
+      const initializer = unwrapExpression(node.initializer);
+      const callee = ts.isCallExpression(initializer)
+        ? unwrapExpression(initializer.expression)
+        : undefined;
+      if (
+        ts.isCallExpression(initializer) &&
+        callee &&
+        ts.isIdentifier(callee) &&
+        i18nextFactoryNames.has(callee.text)
+      ) {
+        i18nextInstanceNames.add(node.name.text);
+      }
+      if (/\bi18n\b/u.test(node.type?.getText(sourceFile) ?? "")) {
+        i18nextInstanceNames.add(node.name.text);
+      }
+    }
+    if (
+      ts.isParameter(node) &&
+      ts.isIdentifier(node.name) &&
+      /\bi18n\b/u.test(node.type?.getText(sourceFile) ?? "")
+    ) {
+      i18nextInstanceNames.add(node.name.text);
+    }
+    ts.forEachChild(node, collectI18nextInstances);
+  };
+  collectI18nextInstances(sourceFile);
 
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) || !statement.importClause) {
@@ -1881,6 +1975,55 @@ function analyzeSource(
       return undefined;
     }
     return isTranslatorPropIdentifier(object) ? object : undefined;
+  };
+
+  const isI18nextInstance = (expression: ts.Expression): boolean => {
+    const unwrapped = unwrapExpression(expression);
+    if (
+      ts.isIdentifier(unwrapped) &&
+      i18nextInstanceNames.has(unwrapped.text)
+    ) {
+      return true;
+    }
+    const type = checker.getTypeAtLocation(expression);
+    const symbol = type.aliasSymbol ?? type.getSymbol();
+    if (symbol?.getName() === "i18n") {
+      return true;
+    }
+    const properties = new Set(
+      type.getProperties().map((property) => property.getName())
+    );
+    return (
+      properties.has("changeLanguage") &&
+      properties.has("exists") &&
+      properties.has("getResource") &&
+      properties.has("init") &&
+      properties.has("t")
+    );
+  };
+
+  const directI18nextCallee = (
+    expression: ts.Expression
+  ): ts.PropertyAccessExpression | undefined => {
+    const value = unwrapExpression(expression);
+    if (!ts.isPropertyAccessExpression(value) || value.name.text !== "t") {
+      return undefined;
+    }
+    const receiver = unwrapExpression(value.expression);
+    const receiverCallee = ts.isCallExpression(receiver)
+      ? unwrapExpression(receiver.expression)
+      : undefined;
+    if (
+      receiverCallee &&
+      ts.isPropertyAccessExpression(receiverCallee) &&
+      receiverCallee.name.text === "getActiveInstance"
+    ) {
+      return value;
+    }
+    if (!isI18nextInstance(value.expression)) {
+      return undefined;
+    }
+    return value;
   };
 
   const translationKeyNamespace = (
@@ -2488,6 +2631,13 @@ function analyzeSource(
           local: uniqueAlias(message),
         });
       } else {
+        const directI18next = directI18nextCallee(node.expression);
+        if (directI18next) {
+          diagnostic(
+            directI18next,
+            "Direct i18next.t(...) is not type-safe; use a generated useTranslations()/getServerTranslations() binding"
+          );
+        }
         const unbound = unboundTranslationCallee(node.expression);
         if (unbound) {
           diagnostic(
