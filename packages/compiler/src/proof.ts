@@ -34,7 +34,7 @@ import {
 } from "./check-receipt";
 import {
   computeApplicationPackageIdentity,
-  getImmutableIntegrityIdentity,
+  computeImmutableIntegrityIdentity,
 } from "./integrity-identity";
 import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
@@ -385,6 +385,7 @@ async function createConventionCheckReceipt(
     await readFile(generationReceiptPath, "utf8")
   );
   const applicationBefore = await computeApplicationPackageIdentity(root);
+  const immutableBefore = await computeImmutableIntegrityIdentity();
   const analysis = await analyzeConventionSourceFiles(
     root,
     sourceFiles,
@@ -471,7 +472,12 @@ async function createConventionCheckReceipt(
       "Mirai Intl application package inputs changed while source analysis ran"
     );
   }
-  const immutable = await getImmutableIntegrityIdentity();
+  const immutable = await computeImmutableIntegrityIdentity();
+  if (canonicalJson(immutable) !== canonicalJson(immutableBefore)) {
+    throw new Error(
+      "Mirai Intl compiler dependency inputs changed while source analysis ran"
+    );
+  }
   const workspacePackagePath = relative(
     universe.workspaceRoot,
     join(root, "package.json")

@@ -468,7 +468,11 @@ export async function computeApplicationPackageIdentity(
   return { ...inputs, hash: canonicalHash(inputs) };
 }
 
-async function computeDefaultImmutableIntegrityIdentity(): Promise<ImmutableIntegrityIdentity> {
+/**
+ * Reconstruct every compiler/dependency byte identity without memoization.
+ * Authorization mutation barriers must call this before and after semantics.
+ */
+export async function computeImmutableIntegrityIdentity(): Promise<ImmutableIntegrityIdentity> {
   const moduleRoot = dirname(fileURLToPath(import.meta.url));
   const resolveFrom = join(moduleRoot, "..");
   const [compiler, icuParser, typescript] = await Promise.all([
@@ -492,6 +496,6 @@ async function computeDefaultImmutableIntegrityIdentity(): Promise<ImmutableInte
 }
 
 export function getImmutableIntegrityIdentity(): Promise<ImmutableIntegrityIdentity> {
-  immutableIdentity ??= computeDefaultImmutableIntegrityIdentity();
+  immutableIdentity ??= computeImmutableIntegrityIdentity();
   return immutableIdentity;
 }
