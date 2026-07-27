@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cp,
+  lstat,
   mkdir,
   readFile,
   readdir,
@@ -12,54 +13,56 @@ import {
 import { cpus, totalmem } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
-import { analyzeConventionSources } from "../packages/compiler/src/analyze-sources";
-import {
-  generateConventionCatalog,
-  verifyConventionCatalog,
-} from "../packages/compiler/src/catalog";
-import { proveConventionCatalog } from "../packages/compiler/src/proof";
-
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const benchmarkRoot = resolve(repositoryRoot, ".tmp", "benchmarks");
-const fixtureRoot = resolve(benchmarkRoot, "authorization-fixtures");
-const defaultReportPath = resolve(
-  benchmarkRoot,
-  "authorization-benchmarks.json"
-);
-const childOutputLimit = 4 * 1024 * 1024;
-const scenarioFileCounts = [18, 613] as const;
-const schemaVersion = 1;
+const fixtureRoot = resolve(benchmarkRoot, "performance-fixtures");
+const defaultReportPath = resolve(benchmarkRoot, "performance.json");
+const compilerCli = resolve(repositoryRoot, "packages/compiler/dist/cli.js");
+const childOutputLimit = 16 * 1024 * 1024;
+const minimumAcceptanceSamples = 30;
+const defaultWarmups = 5;
+const schemaVersion = 2;
+const ownerDefinitions = [
+  { fileCount: 9, name: "owner-admin" },
+  { fileCount: 9, name: "owner-learner" },
+] as const;
 
-type Action = "check" | "ensure" | "oracle" | "seed";
-type ScenarioName = `check-${number}` | `ensure-${number}`;
+type JsonObject = Readonly<Record<string, unknown>>;
 
-type ChildEvidence = Readonly<{
-  action: Action;
+type CliInvocation = Readonly<{
+  milliseconds: number;
+  report: JsonObject;
+  result: JsonObject;
+  stderr: string;
+}>;
+
+type ParityEvidence = Readonly<{
+  artifactFileCount: number;
   artifactHash: string;
-  candidates: number;
+  authorizedSourceCount: number;
+  catalogCount: number;
+  diagnosticsCount: number;
   diagnosticsHash: string;
-  filesAnalyzed: number;
-  peakRssBytes: number;
-  programCount: number;
-  receiptHash: string | null;
+  outputReportParityHash: string;
+  receiptCount: number;
+  receiptFileReportParityHash: string;
+  receiptHash: string;
   reportHash: string;
-  timings: Readonly<{
-    catalogMilliseconds: number;
-    proofMilliseconds: number;
-    semanticMilliseconds: number;
-    totalMilliseconds: number;
-  }>;
 }>;
 
 type Sample = Readonly<{
-  peakRssBytes: number;
-  programCount: number;
-  totalMilliseconds: number;
+  completeGateMilliseconds: number;
+  coldEnsureMilliseconds: number;
+  index: number;
+  parity: ParityEvidence;
+  unchangedEnsureMilliseconds: number;
+  workspaceAuthorizationMilliseconds: number;
 }>;
 
 type Options = Readonly<{
   jsonPath: string;
   samples: number;
+  scenario: "turbo-workspace";
   seed: number;
   warmups: number;
 }>;
@@ -86,141 +89,15 @@ function sha256(value: string | Buffer): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
-function git(...args: ReadonlyArray<string>): string {
-  const result = spawnSync("git", [...args], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    shell: false,
-  });
-  if (result.error || result.status !== 0) {
-    throw new Error(
-      `Unable to capture benchmark Git metadata: ${result.stderr || result.error?.message}`
-    );
-  }
-  return result.stdout.trim();
-}
-
 function rounded(value: number): number {
   return Math.round(value * 1_000) / 1_000;
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-async function hashTree(directory: string): Promise<string> {
-  const entries: Array<readonly [string, string]> = [];
-  const visit = async (current: string): Promise<void> => {
-    for (const entry of (
-      await readdir(current, { withFileTypes: true })
-    ).toSorted((left, right) => left.name.localeCompare(right.name))) {
-      const path = join(current, entry.name);
-      if (entry.isDirectory()) {
-        await visit(path);
-      } else if (entry.isFile()) {
-        entries.push([
-          relative(directory, path).split("\\").join("/"),
-          sha256(await readFile(path)),
-        ]);
-      }
-    }
-  };
-  await visit(directory);
-  return sha256(canonicalJson(entries));
-}
-
-function normalizeRoot(value: unknown, root: string): unknown {
-  if (typeof value === "string") {
-    return value.split(root).join("<fixture>");
+function asObject(value: unknown, context: string): JsonObject {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${context} must be a JSON object`);
   }
-  if (Array.isArray(value)) {
-    return value.map((entry) => normalizeRoot(entry, root));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        key,
-        normalizeRoot(entry, root),
-      ])
-    );
-  }
-  return value;
-}
-
-async function childAction(action: Action, root: string): Promise<void> {
-  const started = performance.now();
-  let catalogMilliseconds = 0;
-  let semanticMilliseconds = 0;
-  let proofMilliseconds = 0;
-  let candidates = 0;
-  let filesAnalyzed = 0;
-  let diagnostics: unknown = [];
-  let report: unknown = {};
-  let receiptHash: string | null = null;
-
-  if (action === "seed" || action === "ensure") {
-    const phaseStarted = performance.now();
-    const generated = await generateConventionCatalog(root, {
-      collectEnvironment: false,
-    });
-    catalogMilliseconds = performance.now() - phaseStarted;
-    report = {
-      changed: generated.write.changed,
-      contentHash: generated.write.contentHash,
-      directory: relative(root, generated.write.directory)
-        .split("\\")
-        .join("/"),
-    };
-  } else {
-    const catalogStarted = performance.now();
-    const verification = await verifyConventionCatalog(root, {
-      collectEnvironment: false,
-    });
-    catalogMilliseconds = performance.now() - catalogStarted;
-
-    const semanticStarted = performance.now();
-    const analysis = await analyzeConventionSources(root);
-    semanticMilliseconds = performance.now() - semanticStarted;
-    candidates = analysis.candidates;
-    filesAnalyzed = analysis.filesAnalyzed;
-    diagnostics = analysis.diagnostics;
-    report = {
-      catalogContentHash: verification.write.contentHash,
-      sourceAnalysis: analysis,
-      valid: analysis.diagnostics.length === 0,
-    };
-
-    if (action === "oracle") {
-      const proofStarted = performance.now();
-      const receipt = await proveConventionCatalog(root);
-      proofMilliseconds = performance.now() - proofStarted;
-      receiptHash = sha256(canonicalJson(normalizeRoot(receipt, root)));
-    }
-  }
-
-  const generatedDirectory = join(root, "src/i18n/generated");
-  const evidence: ChildEvidence = {
-    action,
-    artifactHash: await hashTree(generatedDirectory),
-    candidates,
-    diagnosticsHash: sha256(canonicalJson(normalizeRoot(diagnostics, root))),
-    filesAnalyzed,
-    peakRssBytes: process.resourceUsage().maxRSS * 1024,
-    // Every generated benchmark source deliberately imports and calls
-    // useTranslations, so the reference transform constructs one Program per
-    // analyzed file. This benchmark-only invariant is checked by the oracle.
-    programCount: action === "check" || action === "oracle" ? filesAnalyzed : 0,
-    receiptHash,
-    reportHash: sha256(canonicalJson(normalizeRoot(report, root))),
-    timings: {
-      catalogMilliseconds: rounded(catalogMilliseconds),
-      proofMilliseconds: rounded(proofMilliseconds),
-      semanticMilliseconds: rounded(semanticMilliseconds),
-      totalMilliseconds: rounded(performance.now() - started),
-    },
-  };
-  process.stdout.write(`${canonicalJson(evidence)}\n`);
+  return value as JsonObject;
 }
 
 function integerOption(
@@ -256,43 +133,54 @@ function stringOption(
 }
 
 function options(args: ReadonlyArray<string>): Options {
+  const scenario = stringOption(args, "--scenario", "");
+  if (scenario !== "turbo-workspace") {
+    throw new Error(
+      "Use --scenario turbo-workspace; it is the release-gating performance scenario"
+    );
+  }
   return {
     jsonPath: resolve(
       repositoryRoot,
       stringOption(args, "--json", defaultReportPath)
     ),
-    samples: integerOption(args, "--samples", 30),
+    samples: integerOption(args, "--samples", minimumAcceptanceSamples),
+    scenario,
     seed: integerOption(args, "--seed", 2_026_072_7),
-    warmups: integerOption(args, "--warmups", 5),
+    warmups: integerOption(args, "--warmups", defaultWarmups),
   };
 }
 
-async function createFixture(
-  directory: string,
-  fileCount: number
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return (await lstat(path).catch(() => undefined)) !== undefined;
+}
+
+async function createOwner(
+  workspaceRoot: string,
+  definition: (typeof ownerDefinitions)[number]
 ): Promise<void> {
-  await rm(directory, { force: true, recursive: true });
-  await mkdir(directory, { recursive: true });
+  const root = join(workspaceRoot, "packages", definition.name);
+  await mkdir(root, { recursive: true });
   await Promise.all([
-    writeJson(join(directory, "package.json"), {
+    writeJson(join(root, "package.json"), {
       dependencies: { vite: "7.3.6" },
-      name: `@openmirai/authorization-benchmark-${fileCount}`,
+      name: `@mirai/${definition.name}`,
       private: true,
       version: "1.0.0",
     }),
-    writeFile(
-      join(directory, "pnpm-lock.yaml"),
-      "lockfileVersion: '9.0'\n",
-      "utf8"
-    ),
-    writeFile(join(directory, "pnpm-workspace.yaml"), "packages: []\n", "utf8"),
-    writeJson(join(directory, "src/locales/global/en.json"), {
+    writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8"),
+    writeJson(join(root, "src/locales/global/en.json"), {
       greeting: "Hello",
     }),
-    writeJson(join(directory, "mirai-intl.config.json"), {
+    writeJson(join(root, "mirai-intl.config.json"), {
       checkProjects: [{ path: "tsconfig.json", role: "owner" }],
     }),
-    writeJson(join(directory, "tsconfig.json"), {
+    writeJson(join(root, "tsconfig.json"), {
       compilerOptions: {
         module: "ESNext",
         moduleResolution: "Bundler",
@@ -302,16 +190,16 @@ async function createFixture(
       include: ["src/**/*.ts"],
     }),
   ]);
+  await mkdir(join(root, "src/pages"), { recursive: true });
   await Promise.all(
-    Array.from({ length: fileCount }, async (_, index) => {
+    Array.from({ length: definition.fileCount }, (_, index) => {
       const suffix = String(index).padStart(4, "0");
-      await mkdir(join(directory, "src/pages"), { recursive: true });
-      await writeFile(
-        join(directory, `src/pages/page-${suffix}.ts`),
+      return writeFile(
+        join(root, `src/pages/page-${suffix}.ts`),
         [
           'import { useTranslations } from "x";',
           "const { t } = useTranslations();",
-          `export const message${index} = t("greeting");`,
+          `export const ${definition.name.replace("-", "_")}_${suffix} = t("greeting");`,
           "",
         ].join("\n"),
         "utf8"
@@ -320,26 +208,123 @@ async function createFixture(
   );
 }
 
-function runChild(action: Action, root: string): ChildEvidence {
-  const tsx = resolve(repositoryRoot, "node_modules/tsx/dist/cli.mjs");
+async function createWorkspaceFixture(directory: string): Promise<void> {
+  await rm(directory, { force: true, recursive: true });
+  await Promise.all([
+    writeJson(join(directory, "package.json"), {
+      name: "@mirai/authorization-benchmark-workspace",
+      private: true,
+      version: "1.0.0",
+    }),
+    writeFile(
+      join(directory, "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n",
+      "utf8"
+    ),
+    writeFile(
+      join(directory, "pnpm-workspace.yaml"),
+      "packages:\n  - packages/*\n",
+      "utf8"
+    ),
+    ...ownerDefinitions.map((definition) => createOwner(directory, definition)),
+  ]);
+}
+
+async function copyFixture(source: string, destination: string): Promise<void> {
+  await rm(destination, { force: true, recursive: true });
+  await cp(source, destination, { recursive: true });
+}
+
+function normalizeRoot(value: unknown, root: string): unknown {
+  if (typeof value === "string") {
+    return value.split(root).join("<workspace>");
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeRoot(entry, root));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        normalizeRoot(entry, root),
+      ])
+    );
+  }
+  return value;
+}
+
+async function treeEntries(
+  root: string,
+  directory: string
+): Promise<Array<readonly [string, string]>> {
+  const entries: Array<readonly [string, string]> = [];
+  const visit = async (current: string): Promise<void> => {
+    for (const entry of (
+      await readdir(current, { withFileTypes: true })
+    ).toSorted((left, right) => left.name.localeCompare(right.name))) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile()) {
+        entries.push([
+          relative(root, path).split("\\").join("/"),
+          sha256(await readFile(path)),
+        ]);
+      }
+    }
+  };
+  await visit(directory);
+  return entries;
+}
+
+async function actualOutputEvidence(
+  workspaceRoot: string,
+  relativePaths: ReadonlyArray<string>
+): Promise<Readonly<{ fileCount: number; hash: string }>> {
+  const entries: Array<readonly [string, string]> = [];
+  for (const relativePath of relativePaths) {
+    const path = join(workspaceRoot, relativePath);
+    if (!(await pathExists(path))) {
+      throw new Error(`Expected benchmark output is missing: ${relativePath}`);
+    }
+    entries.push(...(await treeEntries(workspaceRoot, path)));
+  }
+  return {
+    fileCount: entries.length,
+    hash: sha256(canonicalJson(entries)),
+  };
+}
+
+function runCli(
+  cwd: string,
+  reportPath: string,
+  ...args: ReadonlyArray<string>
+): CliInvocation {
+  const started = performance.now();
   const result = spawnSync(
     process.execPath,
-    [tsx, import.meta.filename, "--child", action, root],
+    [compilerCli, ...args, "--format=json", `--report-file=${reportPath}`],
     {
-      cwd: repositoryRoot,
+      cwd,
       encoding: "utf8",
-      env: { ...process.env, CI: "1", NODE_ENV: "production" },
+      env: {
+        ...process.env,
+        CI: "1",
+        FORCE_COLOR: "0",
+        NODE_ENV: "production",
+      },
       killSignal: "SIGKILL",
       maxBuffer: childOutputLimit,
       shell: false,
       timeout: 180_000,
     }
   );
+  const milliseconds = performance.now() - started;
   if (result.error || result.status !== 0 || result.signal) {
     throw new Error(
       [
-        `Authorization benchmark child failed for ${action}`,
-        `root=${root}`,
+        `Mirai Intl CLI benchmark invocation failed: ${args.join(" ")}`,
+        `cwd=${cwd}`,
         `status=${String(result.status)}`,
         `signal=${String(result.signal)}`,
         `error=${result.error?.message ?? "(none)"}`,
@@ -348,40 +333,215 @@ function runChild(action: Action, root: string): ChildEvidence {
       ].join("\n")
     );
   }
-  return JSON.parse(result.stdout) as ChildEvidence;
-}
-
-function random(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state ^= state << 13;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    return (state >>> 0) / 0x1_0000_0000;
+  const output = asObject(JSON.parse(result.stdout), "CLI stdout");
+  return {
+    milliseconds: rounded(milliseconds),
+    report: { reportPath },
+    result: output,
+    stderr: result.stderr,
   };
 }
 
-function shuffled<T>(values: ReadonlyArray<T>, seed: number): Array<T> {
-  const output = [...values];
-  const next = random(seed);
-  for (let index = output.length - 1; index > 0; index -= 1) {
-    const replacement = Math.floor(next() * (index + 1));
-    [output[index], output[replacement]] = [
-      output[replacement] as T,
-      output[index] as T,
-    ];
+async function readInvocationReport(
+  invocation: CliInvocation,
+  workspaceRoot: string
+): Promise<CliInvocation> {
+  const reportPath = String(invocation.report.reportPath);
+  const report = asObject(
+    JSON.parse(await readFile(reportPath, "utf8")),
+    "CLI report"
+  );
+  if (
+    canonicalJson(normalizeRoot(report.result, workspaceRoot)) !==
+    canonicalJson(normalizeRoot(invocation.result, workspaceRoot))
+  ) {
+    throw new Error("CLI stdout and --report-file result differ");
   }
-  return output;
+  return { ...invocation, report };
+}
+
+async function invoke(
+  cwd: string,
+  reportPath: string,
+  ...args: ReadonlyArray<string>
+): Promise<CliInvocation> {
+  return readInvocationReport(runCli(cwd, reportPath, ...args), cwd);
+}
+
+async function receiptFileValues(
+  workspaceRoot: string
+): Promise<Array<unknown>> {
+  return Promise.all(
+    ownerDefinitions.map(async ({ name }) =>
+      JSON.parse(
+        await readFile(
+          join(
+            workspaceRoot,
+            "packages",
+            name,
+            ".mirai-intl/check-receipt.v1.json"
+          ),
+          "utf8"
+        )
+      )
+    )
+  );
+}
+
+function workspaceCatalogs(invocation: CliInvocation): Array<JsonObject> {
+  const catalogs = invocation.result.catalogs;
+  if (!Array.isArray(catalogs)) {
+    throw new Error("Workspace check output must contain catalogs");
+  }
+  return catalogs.map((catalog, index) =>
+    asObject(catalog, `workspace catalog ${index}`)
+  );
+}
+
+async function runSample(
+  seedFixture: string,
+  sampleRoot: string,
+  index: number
+): Promise<Sample> {
+  await copyFixture(seedFixture, sampleRoot);
+  const generatedPaths = ownerDefinitions.map(
+    ({ name }) => `packages/${name}/src/i18n/generated`
+  );
+  for (const path of generatedPaths) {
+    if (await pathExists(join(sampleRoot, path))) {
+      throw new Error(`Cold ensure fixture unexpectedly contains ${path}`);
+    }
+  }
+
+  const completeStarted = performance.now();
+  const coldEnsures: Array<CliInvocation> = [];
+  for (const { name } of ownerDefinitions) {
+    coldEnsures.push(
+      await invoke(
+        join(sampleRoot, "packages", name),
+        join(sampleRoot, `.benchmark/cold-${name}.json`),
+        "ensure"
+      )
+    );
+  }
+  const coldEnsureMilliseconds = coldEnsures.reduce(
+    (total, invocation) => total + invocation.milliseconds,
+    0
+  );
+  if (!coldEnsures.every(({ result }) => result.changed === true)) {
+    throw new Error("Missing-output cold ensure must report changed=true");
+  }
+
+  const workspaceCheck = await invoke(
+    sampleRoot,
+    join(sampleRoot, ".benchmark/workspace-check.json"),
+    "check",
+    "--workspace"
+  );
+  const completeGateMilliseconds = rounded(performance.now() - completeStarted);
+  const catalogs = workspaceCatalogs(workspaceCheck);
+  if (
+    workspaceCheck.result.valid !== true ||
+    catalogs.length !== ownerDefinitions.length ||
+    catalogs.some((catalog) => catalog.receipt === undefined)
+  ) {
+    throw new Error(
+      "Workspace authorization must prove and check every owner catalog"
+    );
+  }
+
+  const unchangedEnsures: Array<CliInvocation> = [];
+  for (const { name } of ownerDefinitions) {
+    unchangedEnsures.push(
+      await invoke(
+        join(sampleRoot, "packages", name),
+        join(sampleRoot, `.benchmark/unchanged-${name}.json`),
+        "ensure"
+      )
+    );
+  }
+  if (!unchangedEnsures.every(({ result }) => result.changed === false)) {
+    throw new Error("Unchanged ensure must report changed=false");
+  }
+
+  const receiptFiles = await receiptFileValues(sampleRoot);
+  const reportReceipts = catalogs.map(({ receipt }) => receipt);
+  const normalizedReceiptFiles = normalizeRoot(receiptFiles, sampleRoot);
+  const normalizedReportReceipts = normalizeRoot(reportReceipts, sampleRoot);
+  if (
+    canonicalJson(normalizedReceiptFiles) !==
+    canonicalJson(normalizedReportReceipts)
+  ) {
+    throw new Error(
+      "Workspace report receipts differ from persisted receipt outputs"
+    );
+  }
+
+  const normalizedReport = normalizeRoot(workspaceCheck.report, sampleRoot);
+  const diagnostics = workspaceCheck.report.diagnostics;
+  if (!Array.isArray(diagnostics) || diagnostics.length !== 0) {
+    throw new Error(
+      "Successful workspace authorization must emit no diagnostics"
+    );
+  }
+  const artifact = await actualOutputEvidence(sampleRoot, generatedPaths);
+  const authorizedSourceCount = receiptFiles.reduce<number>(
+    (total, receipt, receiptIndex) => {
+      const sources = asObject(receipt, `receipt ${receiptIndex}`).sources;
+      if (!Array.isArray(sources)) {
+        throw new Error(
+          `receipt ${receiptIndex} must contain authorized sources`
+        );
+      }
+      return total + sources.length;
+    },
+    0
+  );
+  const outputReportParity = {
+    reportResult: normalizeRoot(workspaceCheck.report.result, sampleRoot),
+    stdoutResult: normalizeRoot(workspaceCheck.result, sampleRoot),
+  };
+  const parity: ParityEvidence = {
+    artifactFileCount: artifact.fileCount,
+    artifactHash: artifact.hash,
+    authorizedSourceCount,
+    catalogCount: catalogs.length,
+    diagnosticsCount: diagnostics.length,
+    diagnosticsHash: sha256(canonicalJson(diagnostics)),
+    outputReportParityHash: sha256(canonicalJson(outputReportParity)),
+    receiptCount: receiptFiles.length,
+    receiptFileReportParityHash: sha256(
+      canonicalJson({
+        files: normalizedReceiptFiles,
+        report: normalizedReportReceipts,
+      })
+    ),
+    receiptHash: sha256(canonicalJson(normalizedReceiptFiles)),
+    reportHash: sha256(canonicalJson(normalizedReport)),
+  };
+  return {
+    completeGateMilliseconds,
+    coldEnsureMilliseconds: rounded(coldEnsureMilliseconds),
+    index,
+    parity,
+    unchangedEnsureMilliseconds: rounded(
+      unchangedEnsures.reduce(
+        (total, invocation) => total + invocation.milliseconds,
+        0
+      )
+    ),
+    workspaceAuthorizationMilliseconds: workspaceCheck.milliseconds,
+  };
 }
 
 function median(values: ReadonlyArray<number>): number {
   const sorted = [...values].toSorted((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
-  const left = sorted[middle - 1];
   const right = sorted[middle];
   if (right === undefined) {
     throw new Error("At least one sample is required");
   }
+  const left = sorted[middle - 1];
   return sorted.length % 2 === 0 && left !== undefined
     ? (left + right) / 2
     : right;
@@ -400,307 +560,230 @@ function percentile(values: ReadonlyArray<number>, fraction: number): number {
   return value;
 }
 
-function statistics(samples: ReadonlyArray<Sample>, seed: number) {
-  const durations = samples.map(({ totalMilliseconds }) => totalMilliseconds);
-  const center = median(durations);
-  const deviations = durations.map((value) => Math.abs(value - center));
+function statistics(values: ReadonlyArray<number>): JsonObject {
+  const center = median(values);
   const mean =
-    durations.reduce((total, value) => total + value, 0) / durations.length;
+    values.reduce((total, value) => total + value, 0) / values.length;
   const standardDeviation = Math.sqrt(
-    durations.reduce((total, value) => total + (value - mean) ** 2, 0) /
-      durations.length
-  );
-  const next = random(seed);
-  const bootstrap = Array.from({ length: 10_000 }, () =>
-    median(
-      Array.from(
-        { length: durations.length },
-        () => durations[Math.floor(next() * durations.length)] as number
-      )
-    )
+    values.reduce((total, value) => total + (value - mean) ** 2, 0) /
+      values.length
   );
   return {
-    bootstrapMedian95Percent: {
-      highMilliseconds: rounded(percentile(bootstrap, 0.975)),
-      lowMilliseconds: rounded(percentile(bootstrap, 0.025)),
-      resamples: 10_000,
-      seed,
-    },
     coefficientOfVariation: rounded(mean === 0 ? 0 : standardDeviation / mean),
-    madMilliseconds: rounded(median(deviations)),
+    madMilliseconds: rounded(
+      median(values.map((value) => Math.abs(value - center)))
+    ),
     medianMilliseconds: rounded(center),
-    p95Milliseconds: rounded(percentile(durations, 0.95)),
-    peakRssBytes: Math.max(...samples.map(({ peakRssBytes }) => peakRssBytes)),
+    p95Milliseconds: rounded(percentile(values, 0.95)),
   };
 }
 
-async function copyFixture(source: string, destination: string): Promise<void> {
-  await rm(destination, { force: true, recursive: true });
-  await cp(source, destination, { recursive: true });
-}
-
-async function parityOracle(seedRoot: string): Promise<unknown> {
-  const roots = [
-    resolve(fixtureRoot, "oracle-a"),
-    resolve(fixtureRoot, "oracle-b"),
-  ] as const;
-  await Promise.all(roots.map((root) => copyFixture(seedRoot, root)));
-  const left = runChild("oracle", roots[0]);
-  const right = runChild("oracle", roots[1]);
+function assertDeterministic(samples: ReadonlyArray<Sample>): JsonObject {
   const fields = [
+    "artifactFileCount",
     "artifactHash",
+    "authorizedSourceCount",
+    "catalogCount",
+    "diagnosticsCount",
     "diagnosticsHash",
-    "filesAnalyzed",
-    "programCount",
+    "outputReportParityHash",
+    "receiptCount",
+    "receiptFileReportParityHash",
     "receiptHash",
     "reportHash",
   ] as const;
   const parity = Object.fromEntries(
-    fields.map((field) => [field, left[field] === right[field]])
+    fields.map((field) => [
+      field,
+      new Set(samples.map((sample) => sample.parity[field])).size === 1,
+    ])
   );
   if (!Object.values(parity).every(Boolean)) {
     throw new Error(
-      `Authorization parity oracle failed: ${canonicalJson(parity)}`
+      `Turbo workspace benchmark emitted non-deterministic outputs: ${canonicalJson(parity)}`
     );
   }
   return {
-    expectedProgramCount: 18,
+    evidence: samples[0]?.parity,
     fields,
-    hashes: {
-      artifact: left.artifactHash,
-      diagnostics: left.diagnosticsHash,
-      receipt: left.receiptHash,
-      report: left.reportHash,
-    },
     parity,
   };
+}
+
+function git(...args: ReadonlyArray<string>): string {
+  const result = spawnSync("git", [...args], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    shell: false,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `Unable to capture benchmark Git metadata: ${result.stderr || result.error?.message}`
+    );
+  }
+  return result.stdout.trim();
 }
 
 async function main(args: ReadonlyArray<string>): Promise<void> {
   if (process.versions.node !== "24.18.0") {
     throw new Error(
-      `Authorization benchmarks require Node 24.18.0; received ${process.version}`
+      `Performance benchmarks require Node 24.18.0; received ${process.version}`
     );
   }
   const configured = options(args);
   if (configured.samples < 1) {
     throw new Error("--samples must be at least 1");
   }
+  const mode =
+    configured.samples >= minimumAcceptanceSamples ? "acceptance" : "smoke";
+  if (mode === "acceptance" && configured.warmups < defaultWarmups) {
+    throw new Error(
+      `Acceptance mode requires at least ${defaultWarmups} warmups`
+    );
+  }
+  if (!(await pathExists(compilerCli))) {
+    throw new Error(
+      `Built compiler CLI is missing at ${relative(repositoryRoot, compilerCli)}`
+    );
+  }
+
   await rm(fixtureRoot, { force: true, recursive: true });
   await mkdir(fixtureRoot, { recursive: true });
-
-  const seeds = new Map<number, string>();
-  for (const fileCount of scenarioFileCounts) {
-    const root = resolve(fixtureRoot, `seed-${fileCount}`);
-    await createFixture(root, fileCount);
-    runChild("seed", root);
-    seeds.set(fileCount, root);
-  }
-  const oracle = await parityOracle(seeds.get(18) as string);
-  const scenarios = scenarioFileCounts.flatMap((fileCount) => [
-    {
-      action: "ensure" as const,
-      fileCount,
-      name: `ensure-${fileCount}` as const,
-    },
-    {
-      action: "check" as const,
-      fileCount,
-      name: `check-${fileCount}` as const,
-    },
-  ]);
-
-  const recorded = new Map<ScenarioName, Array<ChildEvidence>>(
-    scenarios.map(({ name }) => [name, []])
-  );
-  const discardedRuns: Array<
-    Readonly<{ attempt: number; reason: string; scenario: ScenarioName }>
-  > = [];
-  let runIndex = 0;
-  const execute = async (
-    scenario: (typeof scenarios)[number],
-    record: boolean
-  ): Promise<void> => {
-    const currentRun = runIndex;
-    runIndex += 1;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const destination = resolve(
-        fixtureRoot,
-        `run-${String(currentRun).padStart(5, "0")}-${scenario.name}-${attempt}`
-      );
-      await copyFixture(seeds.get(scenario.fileCount) as string, destination);
-      try {
-        const evidence = runChild(scenario.action, destination);
-        if (scenario.action === "check") {
-          if (
-            evidence.filesAnalyzed !== scenario.fileCount ||
-            evidence.programCount !== scenario.fileCount
-          ) {
-            throw new Error(
-              `${scenario.name} expected ${scenario.fileCount} files/programs; received ${evidence.filesAnalyzed}/${evidence.programCount}`
-            );
-          }
-        }
-        if (record) {
-          recorded.get(scenario.name)?.push(evidence);
-        }
-        await rm(destination, { force: true, recursive: true });
-        return;
-      } catch (error) {
-        await rm(destination, { force: true, recursive: true });
-        const message = error instanceof Error ? error.message : String(error);
-        if (attempt === 1 || !message.includes("ENOENT")) {
-          throw error;
-        }
-        discardedRuns.push({
-          attempt,
-          reason: "fixture disappeared during child execution (ENOENT)",
-          scenario: scenario.name,
-        });
-      }
-    }
-  };
+  const seedFixture = join(fixtureRoot, "seed-turbo-workspace");
+  await createWorkspaceFixture(seedFixture);
 
   for (let warmup = 0; warmup < configured.warmups; warmup += 1) {
-    for (const scenario of shuffled(scenarios, configured.seed + warmup)) {
-      await execute(scenario, false);
-    }
+    await runSample(
+      seedFixture,
+      join(fixtureRoot, `warmup-${String(warmup).padStart(3, "0")}`),
+      warmup
+    );
   }
+  const samples: Array<Sample> = [];
   for (let sample = 0; sample < configured.samples; sample += 1) {
-    for (const scenario of shuffled(
-      scenarios,
-      configured.seed + configured.warmups + sample
-    )) {
-      await execute(scenario, true);
-    }
+    samples.push(
+      await runSample(
+        seedFixture,
+        join(fixtureRoot, `sample-${String(sample).padStart(3, "0")}`),
+        sample
+      )
+    );
   }
 
-  const scenarioReports = Object.fromEntries(
-    scenarios
-      .toSorted((left, right) => left.name.localeCompare(right.name))
-      .map((scenario, index) => {
-        const evidence = recorded.get(scenario.name) as Array<ChildEvidence>;
-        const samples = evidence.map((entry) => ({
-          peakRssBytes: entry.peakRssBytes,
-          programCount: entry.programCount,
-          totalMilliseconds: entry.timings.totalMilliseconds,
-        }));
-        const parityFields = [
-          "artifactHash",
-          "diagnosticsHash",
-          "reportHash",
-        ] as const;
-        const deterministic = Object.fromEntries(
-          parityFields.map((field) => [
-            field,
-            new Set(evidence.map((entry) => entry[field])).size === 1,
-          ])
-        );
-        if (!Object.values(deterministic).every(Boolean)) {
-          throw new Error(
-            `${scenario.name} emitted non-deterministic parity evidence`
-          );
-        }
-        return [
-          scenario.name,
-          {
-            action: scenario.action,
-            cacheState: "process-cold/dependency-hot",
-            deterministic,
-            fileCount: scenario.fileCount,
-            ownerCount: 1,
-            rawSamples: evidence.map((entry, sampleIndex) => ({
-              index: sampleIndex,
-              peakRssBytes: entry.peakRssBytes,
-              programCount: entry.programCount,
-              timings: entry.timings,
-            })),
-            statistics: statistics(samples, configured.seed + index),
-          },
-        ];
-      })
+  const completeStatistics = statistics(
+    samples.map(({ completeGateMilliseconds }) => completeGateMilliseconds)
   );
-  const varianceAssessment = Object.fromEntries(
-    Object.entries(scenarioReports)
-      .filter(
-        ([, scenario]) => scenario.statistics.coefficientOfVariation > 0.1
-      )
-      .map(([name, scenario]) => [
-        name,
-        {
-          cause:
-            "Sub-50 ms process-cold measurements are sensitive to process startup and scheduler jitter; raw samples are retained and no latency improvement is claimed.",
-          coefficientOfVariation: scenario.statistics.coefficientOfVariation,
-          sampleCount: scenario.rawSamples.length,
-          status: "documented-non-gating-variance",
-        },
-      ])
-  );
-  const lockfileHash = sha256(
-    await readFile(resolve(repositoryRoot, "pnpm-lock.yaml"))
-  );
+  const medianMilliseconds = Number(completeStatistics.medianMilliseconds);
+  const p95Milliseconds = Number(completeStatistics.p95Milliseconds);
+  const latencyGate = {
+    median: {
+      actualMilliseconds: medianMilliseconds,
+      limitMilliseconds: 10_000,
+      pass: medianMilliseconds <= 10_000,
+    },
+    p95: {
+      actualMilliseconds: p95Milliseconds,
+      limitMilliseconds: 20_000,
+      pass: p95Milliseconds <= 20_000,
+    },
+  };
+  const latencyPass = latencyGate.median.pass && latencyGate.p95.pass;
+  let acceptanceReason: string;
+  if (mode !== "acceptance") {
+    acceptanceReason = `smoke only: ${configured.samples} samples cannot count as acceptance`;
+  } else if (latencyPass) {
+    acceptanceReason = "acceptance thresholds passed";
+  } else {
+    acceptanceReason = "acceptance latency thresholds failed";
+  }
+  const acceptance = {
+    eligible: mode === "acceptance",
+    latencyGate,
+    minimumSamples: minimumAcceptanceSamples,
+    pass: mode === "acceptance" && latencyPass,
+    reason: acceptanceReason,
+  };
+
   const dirtyPatch = git("diff", "--binary", "HEAD");
   const report = {
+    acceptance,
     environment: {
       architecture: process.arch,
       commit: git("rev-parse", "HEAD"),
       cpuModel: cpus()[0]?.model ?? "unknown",
       dirtyPatchHash: dirtyPatch ? sha256(dirtyPatch) : null,
       icu: process.versions.icu,
-      lockfileHash,
+      lockfileHash: sha256(
+        await readFile(resolve(repositoryRoot, "pnpm-lock.yaml"))
+      ),
       logicalCpuCount: cpus().length,
       node: process.version,
       platform: process.platform,
-      pnpm: "11.11.0",
       totalMemoryBytes: totalmem(),
-      typescript: "6.0.3",
-      workerCount: 1,
+    },
+    fixture: {
+      ownerCount: ownerDefinitions.length,
+      owners: ownerDefinitions,
+      totalFiles: ownerDefinitions.reduce(
+        (total, owner) => total + owner.fileCount,
+        0
+      ),
     },
     generatedAt: new Date().toISOString(),
     methodology: {
-      bootstrapResamples: 10_000,
       cacheState: "process-cold/dependency-hot",
-      discardedRuns,
-      interleaving: "deterministic randomized scenario order",
+      completeGate:
+        "parent wall clock around missing-output owner ensures followed by one fresh workspace check that proves and verifies every owner",
+      mode,
       samples: configured.samples,
+      scenario: configured.scenario,
       seed: configured.seed,
+      unchangedEnsure:
+        "separate post-authorization CLI invocations over byte-identical generated outputs",
       warmups: configured.warmups,
     },
-    oracle,
-    scenarios: scenarioReports,
+    parity: assertDeterministic(samples),
+    rawSamples: samples,
+    scenario: {
+      completeGate: completeStatistics,
+      coldEnsure: statistics(
+        samples.map(({ coldEnsureMilliseconds }) => coldEnsureMilliseconds)
+      ),
+      unchangedEnsure: statistics(
+        samples.map(
+          ({ unchangedEnsureMilliseconds }) => unchangedEnsureMilliseconds
+        )
+      ),
+      workspaceAuthorization: statistics(
+        samples.map(
+          ({ workspaceAuthorizationMilliseconds }) =>
+            workspaceAuthorizationMilliseconds
+        )
+      ),
+    },
     schemaVersion,
-    varianceAssessment,
   };
   await mkdir(dirname(configured.jsonPath), { recursive: true });
   const temporary = `${configured.jsonPath}.tmp`;
   await writeFile(temporary, `${canonicalJson(report)}\n`, "utf8");
   await rename(temporary, configured.jsonPath);
+
   process.stdout.write(
     `${JSON.stringify(
       {
+        acceptance,
         output: relative(repositoryRoot, configured.jsonPath),
         samples: configured.samples,
-        scenarios: Object.keys(scenarioReports),
+        scenario: configured.scenario,
         warmups: configured.warmups,
       },
       null,
       2
     )}\n`
   );
+  if (mode === "acceptance" && !latencyPass) {
+    process.exitCode = 1;
+  }
 }
 
-const args = process.argv.slice(2);
-if (args[0] === "--child") {
-  const action = args[1] as Action | undefined;
-  const root = args[2];
-  if (
-    !action ||
-    !root ||
-    !["check", "ensure", "oracle", "seed"].includes(action)
-  ) {
-    throw new Error("Invalid authorization benchmark child invocation");
-  }
-  await childAction(action, resolve(root));
-} else {
-  await main(args);
-}
+await main(process.argv.slice(2));
