@@ -36,8 +36,17 @@ describe("generated artifact verification", () => {
       );
       const written = await writeArtifactSet(root, artifacts);
       const relativeDirectory = written.directory.replace(`${root}/`, "");
+      const pointerSource = await readFile(join(root, "current.json"), "utf8");
+      const pointer = JSON.parse(pointerSource) as {
+        generationReceiptHash: string;
+      };
       const expectedFacade = [
-        `// @mirai-intl-selector ${JSON.stringify({ contentHash: written.contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
+        `// @mirai-intl-selector ${JSON.stringify({
+          contentHash: written.contentHash,
+          directory: relativeDirectory,
+          generationReceiptHash: pointer.generationReceiptHash,
+          schemaVersion: 2,
+        })}`,
         generatedSourceHeader,
         'import { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl/runtime";',
         'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl/types";',
@@ -117,35 +126,26 @@ describe("generated artifact verification", () => {
       await expect(verifyArtifactSet(root, artifacts)).rejects.toThrowError(
         /stable facade/u
       );
+      await writeFile(join(root, "index.ts"), expectedFacade, "utf8");
+      await rm(join(root, "index.mjs"));
 
-      await writeFile(
-        join(root, "current.json"),
-        `${JSON.stringify({
-          contentHash: written.contentHash,
-          directory: "builds/tampered",
-        })}\n`,
-        "utf8"
+      const tamperedPointer = `${JSON.stringify({
+        contentHash: written.contentHash,
+        directory: "builds/tampered",
+        generationReceiptHash: pointer.generationReceiptHash,
+        schemaVersion: 2,
+      })}\n`;
+      await writeFile(join(root, "current.json"), tamperedPointer, "utf8");
+      await expect(writeArtifactSet(root, artifacts)).rejects.toThrowError(
+        /pointer|disagree/u
       );
-      const repaired = await writeArtifactSet(root, artifacts);
-      expect(repaired.changed).toBe(true);
-      await expect(
-        readFile(join(root, "index.mjs"), "utf8")
-      ).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(join(root, "current.json"), "utf8")).resolves.toBe(
-        `${JSON.stringify({
-          contentHash: written.contentHash,
-          directory: relativeDirectory,
-        })}\n`
+        tamperedPointer
       );
-      await expect(
-        readFile(join(root, "catalog.lock.json"), "utf8")
-      ).resolves.toBe(
-        `${JSON.stringify({
-          contentHash: written.contentHash,
-          directory: relativeDirectory,
-          schemaVersion: 1,
-        })}\n`
-      );
+      await writeFile(join(root, "current.json"), pointerSource, "utf8");
+      await expect(verifyArtifactSet(root, artifacts)).resolves.toMatchObject({
+        changed: false,
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

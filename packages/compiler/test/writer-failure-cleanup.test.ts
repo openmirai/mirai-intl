@@ -27,8 +27,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
       const normalizedPath = String(path).replaceAll("\\", "/");
       if (
         injectedFailure.nextStagingWrite &&
-        normalizedPath.includes("/builds/.") &&
-        normalizedPath.includes(".tmp/")
+        normalizedPath.includes("/.catalog-publication/stage-") &&
+        normalizedPath.includes("/payload/")
       ) {
         injectedFailure.nextStagingWrite = false;
         throw Object.assign(new Error("Injected staging write failure"), {
