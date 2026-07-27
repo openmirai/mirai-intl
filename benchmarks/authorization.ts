@@ -43,6 +43,8 @@ type ParityEvidence = Readonly<{
   catalogCount: number;
   diagnosticsCount: number;
   diagnosticsHash: string;
+  generationReceiptCount: number;
+  generationReceiptHash: string;
   outputReportParityHash: string;
   receiptCount: number;
   receiptFileReportParityHash: string;
@@ -379,7 +381,27 @@ async function receiptFileValues(
             workspaceRoot,
             "packages",
             name,
-            ".mirai-intl/check-receipt.v1.json"
+            ".mirai-intl/check-receipt.v2.json"
+          ),
+          "utf8"
+        )
+      )
+    )
+  );
+}
+
+async function generationReceiptFileValues(
+  workspaceRoot: string
+): Promise<Array<unknown>> {
+  return Promise.all(
+    ownerDefinitions.map(async ({ name }) =>
+      JSON.parse(
+        await readFile(
+          join(
+            workspaceRoot,
+            "packages",
+            name,
+            "src/i18n/generated/catalog-generation-receipt.v1.json"
           ),
           "utf8"
         )
@@ -465,6 +487,7 @@ async function runSample(
   }
 
   const receiptFiles = await receiptFileValues(sampleRoot);
+  const generationReceiptFiles = await generationReceiptFileValues(sampleRoot);
   const reportReceipts = catalogs.map(({ receipt }) => receipt);
   const normalizedReceiptFiles = normalizeRoot(receiptFiles, sampleRoot);
   const normalizedReportReceipts = normalizeRoot(reportReceipts, sampleRoot);
@@ -475,6 +498,34 @@ async function runSample(
     throw new Error(
       "Workspace report receipts differ from persisted receipt outputs"
     );
+  }
+  for (const [receiptIndex, receiptValue] of receiptFiles.entries()) {
+    const receipt = asObject(receiptValue, `receipt ${receiptIndex}`);
+    const generation = asObject(
+      generationReceiptFiles[receiptIndex],
+      `generation receipt ${receiptIndex}`
+    );
+    const payload = asObject(
+      generation.payload,
+      `generation receipt ${receiptIndex}.payload`
+    );
+    const manifest = asObject(
+      payload.manifest,
+      `generation receipt ${receiptIndex}.payload.manifest`
+    );
+    if (
+      receipt.schemaVersion !== 2 ||
+      generation.schemaVersion !== 1 ||
+      typeof receipt.generationReceiptHash !== "string" ||
+      receipt.generationReceiptHash !==
+        sha256(`${canonicalJson(generation)}\n`) ||
+      !Array.isArray(manifest.entries) ||
+      manifest.entries.length === 0
+    ) {
+      throw new Error(
+        `Authorization receipt ${receiptIndex} does not bind a complete canonical generation receipt`
+      );
+    }
   }
 
   const normalizedReport = normalizeRoot(workspaceCheck.report, sampleRoot);
@@ -508,6 +559,10 @@ async function runSample(
     catalogCount: catalogs.length,
     diagnosticsCount: diagnostics.length,
     diagnosticsHash: sha256(canonicalJson(diagnostics)),
+    generationReceiptCount: generationReceiptFiles.length,
+    generationReceiptHash: sha256(
+      canonicalJson(normalizeRoot(generationReceiptFiles, sampleRoot))
+    ),
     outputReportParityHash: sha256(canonicalJson(outputReportParity)),
     receiptCount: receiptFiles.length,
     receiptFileReportParityHash: sha256(
@@ -586,6 +641,8 @@ function assertDeterministic(samples: ReadonlyArray<Sample>): JsonObject {
     "catalogCount",
     "diagnosticsCount",
     "diagnosticsHash",
+    "generationReceiptCount",
+    "generationReceiptHash",
     "outputReportParityHash",
     "receiptCount",
     "receiptFileReportParityHash",
@@ -688,10 +745,29 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     },
   };
   const latencyPass = latencyGate.median.pass && latencyGate.p95.pass;
+  const unchangedEnsureStatistics = statistics(
+    samples.map(
+      ({ unchangedEnsureMilliseconds }) => unchangedEnsureMilliseconds
+    )
+  );
+  const unchangedEnsureGate = {
+    median: {
+      actualMilliseconds: Number(unchangedEnsureStatistics.medianMilliseconds),
+      limitMilliseconds: 400,
+      pass: Number(unchangedEnsureStatistics.medianMilliseconds) <= 400,
+    },
+    p95: {
+      actualMilliseconds: Number(unchangedEnsureStatistics.p95Milliseconds),
+      limitMilliseconds: 600,
+      pass: Number(unchangedEnsureStatistics.p95Milliseconds) <= 600,
+    },
+  };
+  const unchangedEnsurePass =
+    unchangedEnsureGate.median.pass && unchangedEnsureGate.p95.pass;
   let acceptanceReason: string;
   if (mode !== "acceptance") {
     acceptanceReason = `smoke only: ${configured.samples} samples cannot count as acceptance`;
-  } else if (latencyPass) {
+  } else if (latencyPass && unchangedEnsurePass) {
     acceptanceReason = "acceptance thresholds passed";
   } else {
     acceptanceReason = "acceptance latency thresholds failed";
@@ -700,8 +776,9 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     eligible: mode === "acceptance",
     latencyGate,
     minimumSamples: minimumAcceptanceSamples,
-    pass: mode === "acceptance" && latencyPass,
+    pass: mode === "acceptance" && latencyPass && unchangedEnsurePass,
     reason: acceptanceReason,
+    unchangedEnsureGate,
   };
 
   const dirtyPatch = git("diff", "--binary", "HEAD");
@@ -749,11 +826,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
       coldEnsure: statistics(
         samples.map(({ coldEnsureMilliseconds }) => coldEnsureMilliseconds)
       ),
-      unchangedEnsure: statistics(
-        samples.map(
-          ({ unchangedEnsureMilliseconds }) => unchangedEnsureMilliseconds
-        )
-      ),
+      unchangedEnsure: unchangedEnsureStatistics,
       workspaceAuthorization: statistics(
         samples.map(
           ({ workspaceAuthorizationMilliseconds }) =>
@@ -781,7 +854,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
       2
     )}\n`
   );
-  if (mode === "acceptance" && !latencyPass) {
+  if (mode === "acceptance" && (!latencyPass || !unchangedEnsurePass)) {
     process.exitCode = 1;
   }
 }

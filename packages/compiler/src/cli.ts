@@ -32,7 +32,11 @@ import type {
   CliReport,
   ReporterOptions,
 } from "./reporter";
-import type { IntlBuildProofTargetV1 } from "@openmirai/intl-abi";
+import type {
+  IntlBuildVerificationCountersV2,
+  IntlBuildProofTargetV1,
+  IntlSemanticAuthorizationObservationV2,
+} from "@openmirai/intl-abi";
 
 type Command =
   | "catalog-check"
@@ -107,6 +111,39 @@ function messageSummary(count: number | undefined): string {
   return count === undefined
     ? ""
     : ` · ${count} message${count === 1 ? "" : "s"}`;
+}
+
+function authorizationSummary(
+  counters: IntlSemanticAuthorizationObservationV2
+): string {
+  return ` · ${counters.semanticAuthorizationRuns} authorization · ${counters.semanticFilesAnalyzed} files`;
+}
+
+function workspaceAuthorizationCounters(
+  receipts: ReadonlyArray<
+    Readonly<{ counters: IntlSemanticAuthorizationObservationV2 }>
+  >
+): IntlSemanticAuthorizationObservationV2 {
+  return {
+    semanticAuthorizationRuns: 1,
+    semanticFilesAnalyzed: receipts.reduce(
+      (total, receipt) => total + receipt.counters.semanticFilesAnalyzed,
+      0
+    ),
+  };
+}
+
+function buildVerificationCounters(): IntlBuildVerificationCountersV2 {
+  return {
+    buildReceiptVerifications: 1,
+    buildSemanticAnalysisRuns: 0,
+  };
+}
+
+function buildVerificationSummary(
+  counters: IntlBuildVerificationCountersV2
+): string {
+  return ` · ${counters.buildReceiptVerifications} receipt verification · ${counters.buildSemanticAnalysisRuns} semantic builds`;
 }
 
 function option(name: string): string | undefined {
@@ -427,6 +464,21 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
   }
 
   const result = {
+    authorization: workspaceAuthorizationCounters(
+      catalogs.flatMap(({ receipt }) =>
+        receipt &&
+        typeof receipt === "object" &&
+        "counters" in receipt &&
+        receipt.counters &&
+        typeof receipt.counters === "object"
+          ? [
+              receipt as Readonly<{
+                counters: IntlSemanticAuthorizationObservationV2;
+              }>,
+            ]
+          : []
+      )
+    ),
     catalogs,
     valid: diagnostics.length === 0,
   };
@@ -434,7 +486,9 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
     "check",
     result,
     output,
-    `${catalogs.length} catalogs${messageSummary(messageCount)}`,
+    `${catalogs.length} catalogs${messageSummary(messageCount)}${authorizationSummary(
+      result.authorization
+    )}`,
     diagnostics
   );
   if (diagnostics.length > 0) {
@@ -548,11 +602,16 @@ async function main(): Promise<void> {
   if (command === "check") {
     const result = await verifyConventionCatalog(process.cwd());
     const sourceAnalysis = await analyzeConventionSources(process.cwd());
+    const authorization: IntlSemanticAuthorizationObservationV2 = {
+      semanticAuthorizationRuns: 1,
+      semanticFilesAnalyzed: sourceAnalysis.filesAnalyzed,
+    };
     if (sourceAnalysis.diagnostics.length > 0) {
       await report(
         command,
         {
           ...result,
+          authorization,
           sourceAnalysis,
           valid: false,
         },
@@ -565,6 +624,7 @@ async function main(): Promise<void> {
     }
     const payload = {
       ...result,
+      authorization,
       sourceAnalysis,
     };
     const summary = catalogSummary(payload);
@@ -574,7 +634,7 @@ async function main(): Promise<void> {
       reporter,
       `${summary.catalogId} · ${summary.locales}${messageSummary(
         summary.messageCount
-      )}`
+      )}${authorizationSummary(authorization)}`
     );
     return;
   }
@@ -595,9 +655,14 @@ async function main(): Promise<void> {
     const result = await proveConventionCatalog(process.cwd());
     await report(
       command,
-      result,
+      {
+        authorization: result.counters,
+        receipt: result,
+      },
       reporter,
-      `${result.sources.length} source${result.sources.length === 1 ? "" : "s"} authorized`
+      `${result.sources.length} source${result.sources.length === 1 ? "" : "s"} authorized${authorizationSummary(
+        result.counters
+      )}`
     );
     return;
   }
@@ -635,11 +700,14 @@ async function main(): Promise<void> {
         (total, proof) => total + proof.emitted.length,
         0
       );
+      const build = buildVerificationCounters();
       await report(
         command,
-        result,
+        { build, proofs: result },
         reporter,
-        `${result.length} targets · ${modules} module${modules === 1 ? "" : "s"} finalized`
+        `${result.length} targets · ${modules} module${modules === 1 ? "" : "s"} finalized${buildVerificationSummary(
+          build
+        )}`
       );
       return;
     }
@@ -660,11 +728,14 @@ async function main(): Promise<void> {
       modules,
       mapRoot
     );
+    const build = buildVerificationCounters();
     await report(
       command,
-      result,
+      { build, proof: result },
       reporter,
-      `${validatedTarget} · ${modules.length} module${modules.length === 1 ? "" : "s"} finalized`
+      `${validatedTarget} · ${modules.length} module${modules.length === 1 ? "" : "s"} finalized${buildVerificationSummary(
+        build
+      )}`
     );
     return;
   }
@@ -688,11 +759,14 @@ async function main(): Promise<void> {
       modules,
       mapRoot
     );
+    const build = buildVerificationCounters();
     await report(
       command,
-      result,
+      { build, proof: result },
       reporter,
-      `${target} · ${modules.length} module${modules.length === 1 ? "" : "s"} proven`
+      `${target} · ${modules.length} module${modules.length === 1 ? "" : "s"} proven${buildVerificationSummary(
+        build
+      )}`
     );
     return;
   }

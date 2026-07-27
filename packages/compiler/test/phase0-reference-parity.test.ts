@@ -235,7 +235,7 @@ describe("Phase 0 reference-engine parity", () => {
           proveReport: await readFile(proveReportPath, "utf8"),
           proveStdout: proved.stdout,
           receipt: await readFile(
-            join(root, ".mirai-intl/check-receipt.v1.json"),
+            join(root, ".mirai-intl/check-receipt.v2.json"),
             "utf8"
           ),
         });

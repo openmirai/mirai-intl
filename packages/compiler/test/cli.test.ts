@@ -110,7 +110,7 @@ describe("convention-only CLI", () => {
       expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
       expect(checked.stderr).toBe("");
       expect(checked.stdout).toMatch(
-        /^mirai-intl check ✓ @example\/cli-app · en\+th · 1 message\n$/u
+        /^mirai-intl check ✓ @example\/cli-app · en\+th · 1 message · 1 authorization · 0 files\n$/u
       );
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -176,9 +176,13 @@ describe("convention-only CLI", () => {
         catalogs: Array<{ report: { report: { environment: unknown } } }>;
       };
       expect(result).toMatchObject({
+        authorization: {
+          semanticAuthorizationRuns: 1,
+          semanticFilesAnalyzed: 2,
+        },
         catalogs: [
-          { receipt: { schemaVersion: 1 }, root: "apps/auth" },
-          { receipt: { schemaVersion: 1 }, root: "packages/i18n" },
+          { receipt: { schemaVersion: 2 }, root: "apps/auth" },
+          { receipt: { schemaVersion: 2 }, root: "packages/i18n" },
         ],
         valid: true,
       });
@@ -189,11 +193,11 @@ describe("convention-only CLI", () => {
       ).toBe(true);
       expect(checked.stdout).not.toMatch(/"(?:compiled|loaded)":/u);
       await expect(
-        readFile(join(app, ".mirai-intl/check-receipt.v1.json"), "utf8")
-      ).resolves.toContain('"schemaVersion":1');
+        readFile(join(app, ".mirai-intl/check-receipt.v2.json"), "utf8")
+      ).resolves.toContain('"schemaVersion":2');
       await expect(
-        readFile(join(shared, ".mirai-intl/check-receipt.v1.json"), "utf8")
-      ).resolves.toContain('"schemaVersion":1');
+        readFile(join(shared, ".mirai-intl/check-receipt.v2.json"), "utf8")
+      ).resolves.toContain('"schemaVersion":2');
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -239,10 +243,16 @@ describe("convention-only CLI", () => {
       );
       expect(finalized.status).toBe(0);
       expect(finalized.stderr).toBe("");
-      expect(JSON.parse(finalized.stdout)).toMatchObject([
-        { state: "finalized", target: "client" },
-        { state: "finalized", target: "worker" },
-      ]);
+      expect(JSON.parse(finalized.stdout)).toMatchObject({
+        build: {
+          buildReceiptVerifications: 1,
+          buildSemanticAnalysisRuns: 0,
+        },
+        proofs: [
+          { state: "finalized", target: "client" },
+          { state: "finalized", target: "worker" },
+        ],
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -826,21 +836,27 @@ describe("convention-only CLI", () => {
       expect(second.status).toBe(0);
       expect(second.stdout).toBe(first.stdout);
       expect(JSON.parse(first.stdout)).toMatchObject({
-        projects: [{ path: "tsconfig.json", role: "owner" }],
-        schemaVersion: 1,
-        sources: [
-          expect.objectContaining({
-            file: "src/page.ts",
-            owner: "tsconfig.json",
-          }),
-        ],
+        authorization: {
+          semanticAuthorizationRuns: 1,
+          semanticFilesAnalyzed: 1,
+        },
+        receipt: {
+          projects: [{ path: "tsconfig.json", role: "owner" }],
+          schemaVersion: 2,
+          sources: [
+            expect.objectContaining({
+              file: "src/page.ts",
+              owner: "tsconfig.json",
+            }),
+          ],
+        },
       });
       await expect(verifyConventionCheckReceipt(root)).resolves.toMatchObject({
-        schemaVersion: 1,
+        schemaVersion: 2,
       });
       await writeFile(join(root, "src", "page.ts"), "export const page = 2;\n");
       await expect(verifyConventionCheckReceipt(root)).rejects.toThrow(
-        /stale check receipt/u
+        /source is stale or corrupt/u
       );
     } finally {
       await rm(root, { force: true, recursive: true });

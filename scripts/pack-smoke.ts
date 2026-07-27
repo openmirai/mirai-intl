@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
@@ -17,6 +25,9 @@ const packsRoot = join(temporaryRoot, "packs");
 const catalogPackageRoot = join(temporaryRoot, "catalog-package");
 const catalogDistRoot = join(catalogPackageRoot, "dist");
 const installRoot = join(temporaryRoot, "isolated-install");
+const receiptAppRoot = await mkdtemp(
+  join(tmpdir(), "mirai-intl-pack-receipt-")
+);
 const catalogPackageName = "@openmirai/intl-catalog-smoke";
 const commandOutputLimit = 64 * 1024;
 
@@ -350,7 +361,7 @@ await writeFile(
     'import { getServerTranslations } from "./translations.mjs";',
     'if (RUNTIME_ABI !== "1.0.0") throw new Error("Unexpected ABI");',
     `if (COMPILER_VERSION !== ${JSON.stringify(compilerPackage.version)}) throw new Error("Unexpected compiler");`,
-    'if (JSON.stringify(Object.keys(compilerPackage).sort()) !== JSON.stringify(["COMPILER_VERSION", "analyzeConventionSources", "finalizeBuildProof", "finalizeBuildProofTargets", "generateConventionCatalog", "loadConventionCatalog", "proveConventionCatalog", "verifyConventionCatalog", "verifyConventionCheckReceipt", "verifyFinalizedBuildProof", "writeProvisionalBuildProof"])) throw new Error("Unexpected compiler public API");',
+    'if (JSON.stringify(Object.keys(compilerPackage).sort()) !== JSON.stringify(["COMPILER_VERSION", "analyzeConventionSources", "finalizeBuildProof", "finalizeBuildProofTargets", "generateConventionCatalog", "loadConventionCatalog", "proveConventionCatalog", "verifyConventionBuildReceipt", "verifyConventionCatalog", "verifyConventionCheckReceipt", "verifyFinalizedBuildProof", "writeProvisionalBuildProof"])) throw new Error("Unexpected compiler public API");',
     'const { t } = await getServerTranslations({ locale: "en", namespace: "greeting" });',
     'const renderedTranslation = t("morning", { name: "Mali" });',
     'if (renderedTranslation !== "Good morning, Mali") throw new Error("Unexpected translation");',
@@ -397,13 +408,120 @@ await writeFile(
 );
 await writeArtifactSet(
   join(installRoot, "src", "i18n", "generated"),
-  catalogArtifacts
+  catalogArtifacts,
+  undefined,
+  { authority: "non-authoritative-test-only" }
 );
 runPnpm(
   ["install", "--ignore-scripts", "--frozen-lockfile=false"],
   installRoot,
   120_000
 );
+await mkdir(join(receiptAppRoot, "src/locales/global"), { recursive: true });
+await Promise.all([
+  writeFile(
+    join(receiptAppRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        dependencies: { vite: "7.3.6" },
+        name: "@openmirai/intl-receipt-smoke",
+        private: true,
+        version: "0.0.0",
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "mirai-intl.config.json"),
+    `${JSON.stringify(
+      {
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "pnpm-lock.yaml"),
+    "lockfileVersion: '9.0'\n",
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "tsconfig.json"),
+    `${JSON.stringify({ include: ["src/**/*.ts"] }, null, 2)}\n`,
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "src/locales/global/en.json"),
+    '{"greeting":"Hello"}\n',
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "src/page.ts"),
+    "export const page = 1;\n",
+    "utf8"
+  ),
+]);
+const installedCompilerCli = join(
+  installRoot,
+  "node_modules/@openmirai/intl-compiler/dist/cli.js"
+);
+run(
+  process.execPath,
+  [installedCompilerCli, "generate"],
+  receiptAppRoot,
+  60_000
+);
+const authorizationOutput = JSON.parse(
+  run(
+    process.execPath,
+    [installedCompilerCli, "prove", "--format=json"],
+    receiptAppRoot,
+    60_000
+  )
+) as {
+  authorization: {
+    semanticAuthorizationRuns: number;
+    semanticFilesAnalyzed: number;
+  };
+  receipt: { schemaVersion: number };
+};
+if (
+  authorizationOutput.receipt.schemaVersion !== 2 ||
+  authorizationOutput.authorization.semanticAuthorizationRuns !== 1 ||
+  authorizationOutput.authorization.semanticFilesAnalyzed !== 1
+) {
+  throw new Error("Packed CLI did not produce one complete V2 authorization");
+}
+await writeFile(
+  join(installRoot, "verify-receipt.mjs"),
+  [
+    'import { verifyConventionBuildReceipt } from "@openmirai/intl-compiler";',
+    `const verification = await verifyConventionBuildReceipt(${JSON.stringify(
+      receiptAppRoot
+    )});`,
+    "process.stdout.write(JSON.stringify(verification));",
+    "",
+  ].join("\n"),
+  "utf8"
+);
+const buildVerification = JSON.parse(
+  run(process.execPath, ["verify-receipt.mjs"], installRoot, 60_000)
+) as {
+  buildReceiptVerifications: number;
+  buildSemanticAnalysisRuns: number;
+  receipt: { schemaVersion: number };
+};
+if (
+  buildVerification.receipt.schemaVersion !== 2 ||
+  buildVerification.buildReceiptVerifications < 1 ||
+  buildVerification.buildSemanticAnalysisRuns !== 0
+) {
+  throw new Error("Packed build verifier did not consume V2 without semantics");
+}
 runPnpm(
   ["exec", "tsc", "--project", "tsconfig.json", "--pretty", "false"],
   installRoot,
@@ -452,6 +570,15 @@ await writeFile(
       },
       checksums,
       compilerPublicApi: true,
+      receiptV2: {
+        authorization: authorizationOutput.authorization,
+        build: {
+          buildReceiptVerifications:
+            buildVerification.buildReceiptVerifications,
+          buildSemanticAnalysisRuns:
+            buildVerification.buildSemanticAnalysisRuns,
+        },
+      },
       installed: true,
       privateDescriptorLowering: true,
       nodeNextTypecheck: true,
@@ -464,6 +591,7 @@ await writeFile(
   )}\n`,
   "utf8"
 );
+await rm(receiptAppRoot, { force: true, recursive: true });
 process.stdout.write(
   `${JSON.stringify({
     apiSurface: "getServerTranslations(namespace).t(named-key)",
@@ -479,6 +607,13 @@ process.stdout.write(
     installed: true,
     nodeNextTypecheck: true,
     privateDescriptorLowering: true,
+    receiptV2: {
+      authorization: authorizationOutput.authorization,
+      build: {
+        buildReceiptVerifications: buildVerification.buildReceiptVerifications,
+        buildSemanticAnalysisRuns: buildVerification.buildSemanticAnalysisRuns,
+      },
+    },
     renderedTranslation: runtimeEvidence.renderedTranslation,
   })}\n`
 );
