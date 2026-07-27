@@ -279,6 +279,11 @@ export async function verifyConventionBuildReceipt(
       "Mirai Intl loaded TypeScript lib"
     ),
   ]);
+  await verifyGeneration(
+    resolve(root, loaded.discovery.output),
+    receipt.generationReceiptHash,
+    receipt
+  );
   await verifyLoadedConventionCatalog(loaded, { collectEnvironment: false });
   const reconstructedProjects = await Promise.all(
     receipt.projects.map(async (project) => ({
@@ -399,11 +404,6 @@ export async function verifyConventionBuildReceipt(
   ) {
     throw new Error("Mirai Intl application package or lock identity is stale");
   }
-  await verifyGeneration(
-    resolve(root, loaded.discovery.output),
-    receipt.generationReceiptHash,
-    receipt
-  );
   return {
     ...parseIntlBuildVerificationCountersV2({
       buildReceiptVerifications: 1,
