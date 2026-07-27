@@ -1095,16 +1095,38 @@ function resolveModuleWithFrontier(
   >();
   const controlPaths = new Set<string>();
   const realpaths = new Map<string, string>();
-  const canonicalWorkspaceRoot =
-    ts.sys.realpath?.(workspaceRoot) ?? resolve(workspaceRoot);
+  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+  const canonicalizeWithExistingAncestor = (path: string): string => {
+    const absolute = resolve(path);
+    let ancestor = absolute;
+    while (
+      !ts.sys.fileExists(ancestor) &&
+      !(ts.sys.directoryExists?.(ancestor) ?? false)
+    ) {
+      const parent = dirname(ancestor);
+      if (parent === ancestor) {
+        break;
+      }
+      ancestor = parent;
+    }
+    const canonicalAncestor = ts.sys.realpath?.(ancestor) ?? ancestor;
+    return resolve(canonicalAncestor, relative(ancestor, absolute));
+  };
+  const canonicalWorkspaceRoot = canonicalizeWithExistingAncestor(
+    resolvedWorkspaceRoot
+  );
   const confinedPath = (
     path: string,
     relevant: boolean,
     kind: "control" | "probe" | "realpath"
   ): string | undefined => {
     const absolute = resolve(path);
-    if (isWithin(canonicalWorkspaceRoot, absolute)) {
-      return absolute;
+    const canonical = canonicalizeWithExistingAncestor(absolute);
+    if (isWithin(canonicalWorkspaceRoot, canonical)) {
+      return resolve(
+        resolvedWorkspaceRoot,
+        relative(canonicalWorkspaceRoot, canonical)
+      );
     }
     if (relevant) {
       throw new Error(
@@ -1123,7 +1145,10 @@ function resolveModuleWithFrontier(
     kind: "directory" | "file",
     present: boolean
   ): void => {
-    const confined = confinedPath(path, present, "probe");
+    // TypeScript walks existing ancestor directories while looking for package
+    // scopes. An ancestor outside the workspace is not provider evidence by
+    // itself; any usable package control or provider file remains fail-closed.
+    const confined = confinedPath(path, present && kind === "file", "probe");
     if (!confined) {
       return;
     }
