@@ -116,8 +116,17 @@ async function ensureInstrumentation(
       "}",
       "export async function load(url, context, nextLoad) {",
       "  const loaded = await nextLoad(url, context);",
-      '  if (!url.includes("/packages/compiler/dist/catalog-") || loaded.format !== "module") return loaded;',
+      '  if (loaded.format !== "module") return loaded;',
       '  let source = Buffer.isBuffer(loaded.source) ? loaded.source.toString("utf8") : String(loaded.source);',
+      '  if (url.includes("/packages/compiler/dist/analyze-sources-")) {',
+      '    source += "\\nglobalThis.__miraiEnsureAnalyzeSourcesLoaded = true;\\n";',
+      "    return { ...loaded, source };",
+      "  }",
+      '  if (url.includes("/packages/compiler/dist/transform-")) {',
+      '    source += "\\nglobalThis.__miraiEnsureTransformLoaded = true;\\n";',
+      "    return { ...loaded, source };",
+      "  }",
+      '  if (!url.includes("/packages/compiler/dist/catalog-")) return loaded;',
       '  source = source.replace("function compileCatalog(source) {", "function compileCatalog(source) {\\n globalThis.__miraiEnsureCompileCalls += 1;");',
       '  source = source.replace("function emitArtifacts(output, representation, options = {}) {", "function emitArtifacts(output, representation, options = {}) {\\n globalThis.__miraiEnsureEmitCalls += 1;");',
       '  source += "\\nglobalThis.__miraiEnsureCompilerBundleInstrumented = true;\\n";',
@@ -136,14 +145,18 @@ async function ensureInstrumentation(
       "globalThis.__miraiEnsureCompileCalls = 0;",
       "globalThis.__miraiEnsureEmitCalls = 0;",
       "globalThis.__miraiEnsurePrograms = 0;",
+      "globalThis.__miraiEnsureAnalyzeSourcesLoaded = false;",
       "globalThis.__miraiEnsureTypeScriptLoaded = false;",
+      "globalThis.__miraiEnsureTransformLoaded = false;",
       "globalThis.__miraiEnsureCompilerBundleInstrumented = false;",
       `const report = ${JSON.stringify(report)};`,
       'process.on("exit", () => writeFileSync(report, JSON.stringify({',
+      "  analyzeSourcesLoaded: globalThis.__miraiEnsureAnalyzeSourcesLoaded,",
       "  compileCalls: globalThis.__miraiEnsureCompileCalls,",
       "  compilerBundleInstrumented: globalThis.__miraiEnsureCompilerBundleInstrumented,",
       "  emitCalls: globalThis.__miraiEnsureEmitCalls,",
       "  programs: globalThis.__miraiEnsurePrograms,",
+      "  transformLoaded: globalThis.__miraiEnsureTransformLoaded,",
       "  typescriptLoaded: globalThis.__miraiEnsureTypeScriptLoaded,",
       "})));",
       'register(new URL("./ensure-loader.mjs", import.meta.url), import.meta.url);',
@@ -882,6 +895,9 @@ describe("convention-only CLI", () => {
       expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
         0
       );
+      expect(await readFile(builtCli, "utf8")).not.toMatch(
+        /^import .*["']\.\/analyze-sources-/mu
+      );
       const instrumentation = await ensureInstrumentation(instrumentationRoot);
       const ensured = spawnSync(
         process.execPath,
@@ -899,11 +915,13 @@ describe("convention-only CLI", () => {
       expect(
         JSON.parse(await readFile(instrumentation.report, "utf8"))
       ).toEqual({
+        analyzeSourcesLoaded: false,
         compileCalls: 0,
         compilerBundleInstrumented: true,
         emitCalls: 0,
         programs: 0,
-        typescriptLoaded: true,
+        transformLoaded: false,
+        typescriptLoaded: false,
       });
     } finally {
       await Promise.all([

@@ -3,7 +3,6 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { analyzeConventionSources } from "./analyze-sources";
 import { compileCatalog } from "./compile";
 import {
   CatalogValidationError,
@@ -438,6 +437,7 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
       });
     } catch (error) {
       try {
+        const { analyzeConventionSources } = await import("./analyze-sources");
         const analysis = await analyzeConventionSources(root);
         const sourceFindings = sourceDiagnostics(analysis.diagnostics).map(
           (diagnostic) => {
@@ -604,6 +604,7 @@ async function main(): Promise<void> {
   }
   if (command === "check") {
     const result = await verifyConventionCatalog(process.cwd());
+    const { analyzeConventionSources } = await import("./analyze-sources");
     const sourceAnalysis = await analyzeConventionSources(process.cwd());
     const authorization: IntlSemanticAuthorizationObservationV2 = {
       semanticAuthorizationRuns: 1,
