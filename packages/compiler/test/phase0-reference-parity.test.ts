@@ -121,7 +121,7 @@ async function snapshotFiles(directory: string): Promise<FileSnapshot> {
 }
 
 describe("Phase 0 reference-engine parity", () => {
-  it("records one TypeScript Program per eligible source and stable diagnostics", async () => {
+  it("records exact Program construction separately from eligible source coverage", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
     const root = join(container, "app");
     try {
@@ -144,7 +144,10 @@ describe("Phase 0 reference-engine parity", () => {
         ...analysis,
         diagnostics: analysis.diagnostics.map((diagnostic) => ({
           ...diagnostic,
-          file: relative(root, diagnostic.file).split("\\").join("/"),
+          file: diagnostic.file
+            .split("\\")
+            .join("/")
+            .replace(/^.*\/src\//u, "src/"),
         })),
       });
 
@@ -154,14 +157,16 @@ describe("Phase 0 reference-engine parity", () => {
         diagnostics: [
           {
             file: "src/source-000.ts",
-            message: expect.stringContaining("Unknown translation key missing"),
+            message: expect.stringContaining(
+              "Unknown translation path missing"
+            ),
           },
         ],
         filesAnalyzed: 18,
       });
       expect(measurement).toMatchObject({
         filesAnalyzed: 18,
-        programCount: 36,
+        programCount: 2,
       });
       expect(measurement.elapsedMilliseconds).toBeGreaterThan(0);
       expect(measurement.maxRssKilobytes).toBeGreaterThan(0);
