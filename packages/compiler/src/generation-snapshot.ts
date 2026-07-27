@@ -19,7 +19,19 @@ import type {
 
 const SHA256_PATTERN = /^sha256:[\da-f]{64}$/u;
 const WINDOWS_ROOT_PATTERN = /^[A-Za-z]:\//u;
-const RECEIPT_PATH = "catalog-generation-receipt.v1.json";
+const RESERVED_PAYLOAD_PATHS = new Set([
+  ".catalog-publication",
+  ".catalog-publication/journal.v1.json",
+  ".publish.lock",
+  ".publish.lock.recovering",
+  "catalog-generation-receipt.v1.json",
+  "catalog.lock.json",
+  "current.json",
+  "index.ts",
+]);
+
+export const NON_AUTHORITATIVE_ARTIFACT_ABI =
+  "artifact-only-non-authoritative-test:v1";
 
 export const CATALOG_PUBLICATION_STATES = [
   "PREPARED",
@@ -213,6 +225,16 @@ function canonicalPath(value: unknown, context: string): string {
     return fail(context, "must be a confined canonical relative path");
   }
   return path;
+}
+
+function assertPayloadPath(path: string): void {
+  if (
+    RESERVED_PAYLOAD_PATHS.has(path) ||
+    path.startsWith(".catalog-publication/") ||
+    path.startsWith(".publish.lock.")
+  ) {
+    fail("Payload manifest", `must exclude reserved control path ${path}`);
+  }
 }
 
 function sortedUnique<T>(
@@ -452,9 +474,7 @@ export function buildCatalogPayloadManifest(
         entry.path.normalize("NFC"),
         `Payload entry ${index}.path`
       );
-      if (path === RECEIPT_PATH) {
-        fail("Payload manifest", "must exclude the generation receipt");
-      }
+      assertPayloadPath(path);
       return {
         hash: sha(entry.hash, `Payload entry ${index}.hash`),
         mode:
@@ -493,9 +513,7 @@ function parsePayloadManifest(value: unknown): CatalogPayloadManifestV1 {
       item.path,
       `Payload manifest entry ${index}.path`
     );
-    if (path === RECEIPT_PATH) {
-      fail("Payload manifest", "must exclude the generation receipt");
-    }
+    assertPayloadPath(path);
     return {
       hash: sha(item.hash, `Payload manifest entry ${index}.hash`),
       mode:

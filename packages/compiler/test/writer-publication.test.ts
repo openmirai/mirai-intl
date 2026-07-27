@@ -13,13 +13,16 @@ import { basename, dirname, join } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
-  verifyArtifactSet,
-  writeArtifactSet,
 } from "@openmirai/intl-compiler/internal";
 import type { PublicationState } from "@openmirai/intl-compiler/internal";
 import { describe, expect, it } from "vitest";
 
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+import { writeArtifactSet as writeAuthoritativeArtifactSet } from "../src/writer";
+import {
+  verifyArtifactSet,
+  writeArtifactSet,
+} from "./non-authoritative-writer";
 
 const states: ReadonlyArray<PublicationState> = [
   "PREPARED",
@@ -36,6 +39,19 @@ function fixtureArtifacts() {
 }
 
 describe("crash-safe catalog publication", () => {
+  it("requires explicit authority instead of inventing generation identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mirai-intl-publication-"));
+    try {
+      await expect(
+        writeAuthoritativeArtifactSet(root, fixtureArtifacts())
+      ).rejects.toThrow(
+        "Artifact writer options must declare generationInput or non-authoritative test mode"
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it.each(states)(
     "resumes an exact interrupted %s publication",
     async (state) => {

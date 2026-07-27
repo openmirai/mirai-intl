@@ -2808,22 +2808,24 @@ export async function generateConventionCatalogWithSnapshot(
   });
   const facade = stableFacadeOptions(loaded, compiled);
   const report = await createReport(loaded, compiled, artifacts, options);
+  const reconstructGenerationSnapshot = async (
+    snapshot: CatalogGenerationSnapshot
+  ): Promise<CatalogGenerationSnapshot> => {
+    const current = await loadConventionCatalogGenerationInput(
+      loaded.repositoryRoot
+    );
+    return buildCatalogGenerationSnapshot({
+      catalogLockHash: snapshot.catalogLockHash,
+      generationInput: current.generationInput,
+      payloadContentHash: snapshot.payload.contentHash,
+      payloadDirectory: snapshot.payload.directory,
+      payloadEntries: snapshot.payload.manifest.entries,
+      stableFacadeHash: snapshot.stableFacadeHash,
+    });
+  };
   const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
-    beforePayloadInstall: async (
-      snapshot
-    ): Promise<CatalogGenerationSnapshot> => {
-      const current = await loadConventionCatalogGenerationInput(
-        loaded.repositoryRoot
-      );
-      return buildCatalogGenerationSnapshot({
-        catalogLockHash: snapshot.catalogLockHash,
-        generationInput: current.generationInput,
-        payloadContentHash: snapshot.payload.contentHash,
-        payloadDirectory: snapshot.payload.directory,
-        payloadEntries: snapshot.payload.manifest.entries,
-        stableFacadeHash: snapshot.stableFacadeHash,
-      });
-    },
+    afterPointerCommit: reconstructGenerationSnapshot,
+    beforePayloadInstall: reconstructGenerationSnapshot,
     expectedCanonicalRoot: loaded.outputRoot,
     generationInput,
   });

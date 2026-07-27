@@ -19,12 +19,14 @@ import {
   emitArtifacts,
   generatedSourceHeader,
   recoverStalePublicationLock,
-  verifyArtifactSet,
-  writeArtifactSet,
 } from "@openmirai/intl-compiler/internal";
 import { describe, expect, it, vi } from "vitest";
 
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+import {
+  verifyArtifactSet,
+  writeArtifactSet,
+} from "./non-authoritative-writer";
 
 describe("generated artifact verification", () => {
   it("checks immutable files and keeps descriptors private in the stable facade", async () => {

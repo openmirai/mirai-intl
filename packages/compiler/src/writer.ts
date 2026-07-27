@@ -30,6 +30,7 @@ import type { EmittedArtifacts } from "./emit";
 import {
   buildCatalogGenerationInputIdentity,
   buildCatalogGenerationSnapshot,
+  NON_AUTHORITATIVE_ARTIFACT_ABI,
   parseCanonicalCatalogCurrentPointer,
   parseCanonicalCatalogGenerationReceipt,
   parseCanonicalCatalogPublicationJournal,
@@ -63,6 +64,10 @@ export type StableFacadeOptions = Readonly<{
 }>;
 
 export type ArtifactWriterOptions = Readonly<{
+  authority?: "non-authoritative-test-only";
+  afterPointerCommit?(
+    snapshot: CatalogGenerationSnapshot
+  ): CatalogGenerationSnapshot | Promise<CatalogGenerationSnapshot>;
   beforePayloadInstall?(
     snapshot: CatalogGenerationSnapshot
   ): CatalogGenerationSnapshot | Promise<CatalogGenerationSnapshot>;
@@ -72,7 +77,6 @@ export type ArtifactWriterOptions = Readonly<{
 }>;
 
 const emptyStableFacade: StableFacadeOptions = Object.freeze({ exports: [] });
-const emptyWriterOptions: ArtifactWriterOptions = Object.freeze({});
 
 export type PublicationState = CatalogPublicationState;
 
@@ -944,7 +948,7 @@ function payloadManifest(
   );
 }
 
-function deterministicGenerationInput(
+function nonAuthoritativeGenerationInput(
   contentHash: Sha256
 ): CatalogGenerationInputIdentityV1 {
   const emptyManifest = createIntegrityManifest([]);
@@ -972,7 +976,7 @@ function deterministicGenerationInput(
       lock,
       packageJsonHash,
     },
-    artifactAbi: "artifact-only:v1",
+    artifactAbi: NON_AUTHORITATIVE_ARTIFACT_ABI,
     compiler: {
       hash: canonicalHash({ modulesHash: emptyManifest.hash }),
       modules: emptyManifest,
@@ -987,6 +991,37 @@ function deterministicGenerationInput(
     locales: emptyManifest,
     runtimeAbi: RUNTIME_ABI,
   });
+}
+
+function writerGenerationInput(
+  contentHash: Sha256,
+  options: ArtifactWriterOptions
+): CatalogGenerationInputIdentityV1 {
+  if (options.generationInput !== undefined) {
+    if (options.authority !== undefined) {
+      throw new TypeError(
+        "Authoritative generationInput cannot use non-authoritative test mode"
+      );
+    }
+    return options.generationInput;
+  }
+  if (options.authority === "non-authoritative-test-only") {
+    return nonAuthoritativeGenerationInput(contentHash);
+  }
+  throw new TypeError(
+    "Artifact writer requires generationInput for authoritative publication"
+  );
+}
+
+function requiredWriterOptions(
+  options: ArtifactWriterOptions | undefined
+): ArtifactWriterOptions {
+  if (options === undefined) {
+    throw new TypeError(
+      "Artifact writer options must declare generationInput or non-authoritative test mode"
+    );
+  }
+  return options;
 }
 
 function publicationPlan(
@@ -1008,8 +1043,7 @@ function publicationPlan(
   const lockContent = catalogLockContent(contentHash, relativeDirectory);
   const snapshot = buildCatalogGenerationSnapshot({
     catalogLockHash: sha256(lockContent),
-    generationInput:
-      options.generationInput ?? deterministicGenerationInput(contentHash),
+    generationInput: writerGenerationInput(contentHash, options),
     payloadContentHash: contentHash,
     payloadDirectory: relativeDirectory,
     payloadEntries: manifest,
@@ -1941,6 +1975,14 @@ async function runPublication(
         ? basename(journal.previousDirectory)
         : undefined
     );
+    const reconstructed = await options.afterPointerCommit?.(plan.snapshot);
+    if (
+      reconstructed !== undefined &&
+      canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
+        canonicalJson(plan.snapshot)
+    ) {
+      throw new Error("Catalog generation inputs changed after pointer commit");
+    }
     journal = await advanceJournal(
       publicationRoot,
       journal,
@@ -1984,12 +2026,13 @@ export async function verifyArtifactSet(
   root: string,
   artifacts: EmittedArtifacts,
   facade: StableFacadeOptions = emptyStableFacade,
-  options: ArtifactWriterOptions = emptyWriterOptions
+  options?: ArtifactWriterOptions
 ): Promise<WriteResult> {
+  const writerOptions = requiredWriterOptions(options);
   assertStableFacadeOptions(facade);
-  const expected = await expectedOutputRoot(root, options);
+  const expected = await expectedOutputRoot(root, writerOptions);
   const outputRoot = await canonicalOutputRoot(root, expected);
-  const plan = publicationPlan(root, artifacts, facade, options);
+  const plan = publicationPlan(root, artifacts, facade, writerOptions);
   const publicationRoot = join(outputRoot, publicationDirectoryName);
   const journal = await readJournal(outputRoot, publicationRoot);
   if (journal) {
@@ -2021,17 +2064,18 @@ export async function writeArtifactSet(
   root: string,
   artifacts: EmittedArtifacts,
   facade: StableFacadeOptions = emptyStableFacade,
-  options: ArtifactWriterOptions = emptyWriterOptions
+  options?: ArtifactWriterOptions
 ): Promise<WriteResult> {
+  const writerOptions = requiredWriterOptions(options);
   assertStableFacadeOptions(facade);
   artifactContentHash(artifacts);
-  const expected = await expectedOutputRoot(root, options);
+  const expected = await expectedOutputRoot(root, writerOptions);
   await mkdir(root, { recursive: true });
   const outputRoot = await canonicalOutputRoot(root, expected);
-  const plan = publicationPlan(root, artifacts, facade, options);
+  const plan = publicationPlan(root, artifacts, facade, writerOptions);
   return withPublicationLock(root, outputRoot, (ownerToken) =>
     runPublication(root, outputRoot, ownerToken, artifacts, plan, {
-      ...options,
+      ...writerOptions,
       expectedCanonicalRoot: outputRoot,
     })
   );

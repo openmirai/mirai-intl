@@ -1,4 +1,12 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -8,9 +16,12 @@ import type * as Writer from "../src/writer";
 import type ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+
 const instrumentation = vi.hoisted(() => ({
   compileCalls: 0,
   emitCalls: 0,
+  mutateAfterPointerCommit: undefined as undefined | (() => Promise<void>),
   mutateBeforeInstall: undefined as undefined | (() => Promise<void>),
   programs: 0,
 }));
@@ -63,6 +74,10 @@ vi.mock("../src/writer", async (importOriginal) => {
     ) =>
       actual.writeArtifactSet(root, artifacts, facade, {
         ...options,
+        afterPointerCommit: async (snapshot) => {
+          await instrumentation.mutateAfterPointerCommit?.();
+          return (await options?.afterPointerCommit?.(snapshot)) ?? snapshot;
+        },
         beforePayloadInstall: async (snapshot) => {
           await instrumentation.mutateBeforeInstall?.();
           return (await options?.beforePayloadInstall?.(snapshot)) ?? snapshot;
@@ -71,7 +86,10 @@ vi.mock("../src/writer", async (importOriginal) => {
   };
 });
 
+import { compileCatalog } from "../src/compile";
+import { emitArtifacts } from "../src/emit";
 import { ensureMiraiIntlCatalog } from "../src/lifecycle";
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 const dashboardFixture = resolve(
   import.meta.dirname,
@@ -92,6 +110,7 @@ describe("catalog generation receipt fast path", () => {
   beforeEach(() => {
     instrumentation.compileCalls = 0;
     instrumentation.emitCalls = 0;
+    instrumentation.mutateAfterPointerCommit = undefined;
     instrumentation.mutateBeforeInstall = undefined;
     instrumentation.programs = 0;
   });
@@ -147,6 +166,106 @@ describe("catalog generation receipt fast path", () => {
       await rm(container, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("fails closed when generation inputs mutate after pointer commit", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      instrumentation.mutateAfterPointerCommit = async () => {
+        const locale = join(root, "src/locales/global/en.json");
+        const value = JSON.parse(await readFile(locale, "utf8")) as Record<
+          string,
+          unknown
+        >;
+        await writeFile(
+          locale,
+          `${JSON.stringify(
+            { ...value, appName: "Late mutation {edition}" },
+            null,
+            2
+          )}\n`,
+          "utf8"
+        );
+        instrumentation.mutateAfterPointerCommit = undefined;
+      };
+
+      await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+        "Catalog generation inputs changed after pointer commit"
+      );
+      await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(/./u);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("rejects generated roots reached through an ancestor symlink", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      const i18n = join(root, "src/i18n");
+      const relocated = join(root, "relocated-i18n");
+      await rename(i18n, relocated);
+      await symlink(relocated, i18n, "dir");
+
+      await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+        /symbolic-link ancestors/u
+      );
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("rejects absolute generated-directory overrides", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      expect(() =>
+        ensureMiraiIntlCatalog({
+          generatedDirectory: join(container, "outside"),
+          root,
+        })
+      ).toThrow("Generated catalog directory must be relative");
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a valid receipt loaded from a different configured output root", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      await cp(
+        join(root, "src/i18n/generated"),
+        join(root, "src/i18n/alternate"),
+        { recursive: true }
+      );
+
+      await expect(
+        ensureMiraiIntlCatalog({
+          generatedDirectory: "src/i18n/alternate",
+          root,
+        })
+      ).rejects.toThrow(
+        "Generated catalog root does not match the loaded catalog output root"
+      );
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("never accepts a non-authoritative test receipt for lifecycle reuse", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      await writeArtifactSet(
+        join(root, "src/i18n/generated"),
+        emitArtifacts(compileCatalog(catalogFixtureSource), "constants")
+      );
+
+      await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+        "Non-authoritative test generation receipt cannot be reused in production"
+      );
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
 
   it("hard-fails corrupt output instead of regenerating changed inputs", async () => {
     const { container, root } = await conventionApp();

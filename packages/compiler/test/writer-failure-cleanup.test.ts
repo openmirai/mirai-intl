@@ -6,12 +6,14 @@ import { join } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
-  verifyArtifactSet,
-  writeArtifactSet,
 } from "@openmirai/intl-compiler/internal";
 import { expect, it, vi } from "vitest";
 
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+import {
+  verifyArtifactSet,
+  writeArtifactSet,
+} from "./non-authoritative-writer";
 
 const injectedFailure = vi.hoisted(() => ({ nextStagingWrite: false }));
 

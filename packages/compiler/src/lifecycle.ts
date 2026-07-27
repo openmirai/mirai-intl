@@ -1,5 +1,5 @@
-import { lstat, readFile, readdir } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import {
@@ -8,6 +8,7 @@ import {
 } from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
 import {
+  NON_AUTHORITATIVE_ARTIFACT_ABI,
   parseCanonicalCatalogCurrentPointer,
   parseCanonicalCatalogGenerationReceipt,
 } from "./generation-snapshot";
@@ -58,6 +59,42 @@ async function readRegularText(path: string, label: string): Promise<string> {
   return readFile(path, "utf8");
 }
 
+function isWithin(root: string, candidate: string): boolean {
+  const relation = relative(root, candidate);
+  return (
+    relation !== "" &&
+    relation !== ".." &&
+    !relation.startsWith(`..${sep}`) &&
+    !isAbsolute(relation)
+  );
+}
+
+async function assertGeneratedRootConfinement(
+  root: string,
+  generatedRoot: string
+): Promise<string> {
+  const [canonicalRoot, canonicalGeneratedRoot] = await Promise.all([
+    realpath(root),
+    realpath(generatedRoot),
+  ]);
+  if (!isWithin(canonicalRoot, canonicalGeneratedRoot)) {
+    throw new Error(
+      "Generated catalog root must be a real child of the catalog root"
+    );
+  }
+  const relation = relative(resolve(root), resolve(generatedRoot));
+  let current = canonicalRoot;
+  for (const segment of relation.split(sep)) {
+    current = join(current, segment);
+    if ((await lstat(current)).isSymbolicLink()) {
+      throw new Error(
+        "Generated catalog root must not contain symbolic-link ancestors"
+      );
+    }
+  }
+  return canonicalGeneratedRoot;
+}
+
 async function reusePublishedGeneration(
   root: string,
   generatedRoot: string
@@ -69,6 +106,10 @@ async function reusePublishedGeneration(
   if (rootKind !== "directory") {
     throw new Error("Generated catalog root is not a regular directory");
   }
+  const canonicalGeneratedRoot = await assertGeneratedRootConfinement(
+    root,
+    generatedRoot
+  );
 
   const topLevel = (
     await readdir(generatedRoot, { withFileTypes: true })
@@ -104,6 +145,11 @@ async function reusePublishedGeneration(
     "Catalog generation receipt"
   );
   const receipt = parseCanonicalCatalogGenerationReceipt(receiptSource);
+  if (receipt.abi.artifactAbi === NON_AUTHORITATIVE_ARTIFACT_ABI) {
+    throw new Error(
+      "Non-authoritative test generation receipt cannot be reused in production"
+    );
+  }
   if (sha256(receiptSource) !== current.generationReceiptHash) {
     throw new Error(
       "Generated current pointer does not bind its generation receipt"
@@ -196,6 +242,11 @@ async function reusePublishedGeneration(
   }
 
   const input = await loadConventionCatalogGenerationInput(root);
+  if ((await realpath(input.loaded.outputRoot)) !== canonicalGeneratedRoot) {
+    throw new Error(
+      "Generated catalog root does not match the loaded catalog output root"
+    );
+  }
   if (
     sha256(canonicalJson(input.generationInput)) !== receipt.generationInputHash
   ) {
@@ -220,6 +271,12 @@ function resolvedOptions(options: MiraiIntlTransformOptions): Readonly<{
   root: string;
 }> {
   const root = resolve(options.root ?? process.cwd());
+  if (
+    options.generatedDirectory !== undefined &&
+    isAbsolute(options.generatedDirectory)
+  ) {
+    throw new Error("Generated catalog directory must be relative");
+  }
   const generatedRoot = resolve(
     root,
     options.generatedDirectory ?? "src/i18n/generated"

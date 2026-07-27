@@ -144,7 +144,7 @@ describe("catalog generation snapshot contracts", () => {
     );
   });
 
-  it("normalizes and orders payloads while excluding the receipt", () => {
+  it("normalizes and orders payloads while excluding reserved controls", () => {
     const payload = buildCatalogPayloadManifest([
       { hash: hash("z"), mode: null, path: "z.json", size: 1 },
       { hash: hash("a"), mode: 0o644, path: "nested\\a.json", size: 2 },
@@ -155,16 +155,38 @@ describe("catalog generation snapshot contracts", () => {
     ]);
     expect(payload.hash).toBe(canonicalHash(payload.entries));
 
+    for (const path of [
+      ".catalog-publication",
+      ".catalog-publication/journal.v1.json",
+      ".publish.lock",
+      ".publish.lock.owner.candidate",
+      ".publish.lock.recovering",
+      "catalog-generation-receipt.v1.json",
+      "catalog.lock.json",
+      "current.json",
+      "index.ts",
+    ]) {
+      expect(() =>
+        buildCatalogPayloadManifest([
+          {
+            hash: hash(path),
+            mode: null,
+            path,
+            size: 1,
+          },
+        ])
+      ).toThrow(`must exclude reserved control path ${path}`);
+    }
     expect(() =>
       buildCatalogPayloadManifest([
         {
-          hash: hash("receipt"),
+          hash: hash("legitimate journal"),
           mode: null,
-          path: "catalog-generation-receipt.v1.json",
+          path: "journal.v1.json",
           size: 1,
         },
       ])
-    ).toThrow("must exclude the generation receipt");
+    ).not.toThrow();
     expect(() =>
       buildCatalogPayloadManifest([
         { hash: hash("a"), mode: null, path: "a.json", size: 1 },
@@ -225,6 +247,23 @@ describe("catalog generation snapshot contracts", () => {
       setAtPath(copy, path, replacement);
       expect(() => parseCatalogGenerationSnapshot(copy)).toThrow(/./u);
     }
+  });
+
+  it("rejects reserved control paths while parsing payload manifests", () => {
+    const receipt = clone(snapshot().generationReceipt);
+    const entry = receipt.payload.manifest.entries[0];
+    if (!entry) {
+      throw new Error("Expected a payload entry fixture");
+    }
+    const entries = [{ ...entry, path: "current.json" }];
+    const manifestHash = canonicalHash(entries);
+    setAtPath(receipt, ["payload", "manifest", "entries"], entries);
+    setAtPath(receipt, ["payload", "manifest", "hash"], manifestHash);
+    setAtPath(receipt, ["payload", "manifestHash"], manifestHash);
+
+    expect(() => parseCatalogGenerationReceipt(receipt)).toThrow(
+      "must exclude reserved control path current.json"
+    );
   });
 
   it("requires canonical receipt and pointer bytes", () => {
