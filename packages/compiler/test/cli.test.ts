@@ -278,6 +278,12 @@ describe("convention-only CLI", () => {
         ],
         success: false,
       });
+
+      const colored = runCli(root, "catalog-check", "--color");
+      expect(colored.status, `${colored.stdout}${colored.stderr}`).toBe(1);
+      expect(colored.stderr).toBe("");
+      expect(colored.stdout).toContain("\u001b[31mERROR\u001b[0m");
+      expect(colored.stdout).toContain("\u001b[31m✗\u001b[0m");
     } finally {
       await rm(root, { force: true, recursive: true });
     }
