@@ -86,6 +86,20 @@ function sha256(value: string | Buffer): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+function git(...args: ReadonlyArray<string>): string {
+  const result = spawnSync("git", [...args], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    shell: false,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `Unable to capture benchmark Git metadata: ${result.stderr || result.error?.message}`
+    );
+  }
+  return result.stdout.trim();
+}
+
 function rounded(value: number): number {
   return Math.round(value * 1_000) / 1_000;
 }
@@ -606,17 +620,43 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
         ];
       })
   );
+  const varianceAssessment = Object.fromEntries(
+    Object.entries(scenarioReports)
+      .filter(
+        ([, scenario]) => scenario.statistics.coefficientOfVariation > 0.1
+      )
+      .map(([name, scenario]) => [
+        name,
+        {
+          cause:
+            "Sub-50 ms process-cold measurements are sensitive to process startup and scheduler jitter; raw samples are retained and no latency improvement is claimed.",
+          coefficientOfVariation: scenario.statistics.coefficientOfVariation,
+          sampleCount: scenario.rawSamples.length,
+          status: "documented-non-gating-variance",
+        },
+      ])
+  );
+  const lockfileHash = sha256(
+    await readFile(resolve(repositoryRoot, "pnpm-lock.yaml"))
+  );
+  const dirtyPatch = git("diff", "--binary", "HEAD");
   const report = {
     environment: {
       architecture: process.arch,
+      commit: git("rev-parse", "HEAD"),
       cpuModel: cpus()[0]?.model ?? "unknown",
+      dirtyPatchHash: dirtyPatch ? sha256(dirtyPatch) : null,
+      icu: process.versions.icu,
+      lockfileHash,
       logicalCpuCount: cpus().length,
       node: process.version,
       platform: process.platform,
       pnpm: "11.11.0",
       totalMemoryBytes: totalmem(),
       typescript: "6.0.3",
+      workerCount: 1,
     },
+    generatedAt: new Date().toISOString(),
     methodology: {
       bootstrapResamples: 10_000,
       cacheState: "process-cold/dependency-hot",
@@ -629,6 +669,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     oracle,
     scenarios: scenarioReports,
     schemaVersion,
+    varianceAssessment,
   };
   await mkdir(dirname(configured.jsonPath), { recursive: true });
   const temporary = `${configured.jsonPath}.tmp`;
