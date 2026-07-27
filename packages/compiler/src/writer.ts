@@ -1031,7 +1031,10 @@ function publicationPlan(
   });
 }
 
-function expectedPublicationHash(plan: PublicationPlan): Sha256 {
+function expectedPublicationHash(
+  plan: PublicationPlan,
+  previousDirectory: string | null
+): Sha256 {
   return sha256(
     canonicalJson({
       contentHash: plan.contentHash,
@@ -1041,6 +1044,7 @@ function expectedPublicationHash(plan: PublicationPlan): Sha256 {
       pointerHash: sha256(plan.pointerContent),
       receiptHash: plan.receiptHash,
       selectorHash: sha256(plan.selectorContent),
+      previousDirectory,
     })
   );
 }
@@ -1299,6 +1303,45 @@ async function assertKnownBuilds(
       throw error;
     }
   }
+}
+
+async function cleanupLegacySiblingStages(
+  outputRoot: string
+): Promise<boolean> {
+  const parent = dirname(outputRoot);
+  const escapedBase = basename(outputRoot).replaceAll(
+    /[.*+?^${}()|[\]\\]/gu,
+    "\\$&"
+  );
+  const reservedName = new RegExp(
+    `^\\.${escapedBase}\\.[\\da-z-]+\\.tmp$`,
+    "u"
+  );
+  let changed = false;
+  for (const entry of await readdir(parent, { withFileTypes: true })) {
+    if (!reservedName.test(entry.name)) {
+      continue;
+    }
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new Error(
+        `Legacy generated staging entry ${entry.name} must be a non-symlink directory`
+      );
+    }
+    const candidate = join(parent, entry.name);
+    if (
+      !isWithin(parent, candidate) ||
+      !isSamePath(dirname(candidate), parent) ||
+      !isSamePath(await realpath(candidate), candidate)
+    ) {
+      throw new Error("Legacy generated staging cleanup escaped its parent");
+    }
+    await rm(candidate, { recursive: true });
+    changed = true;
+  }
+  if (changed) {
+    await syncDirectory(parent);
+  }
+  return changed;
 }
 
 async function assertCommittedPlan(
@@ -1641,18 +1684,28 @@ async function removePreviousPayload(
   previousDirectory: string | null,
   selectedDirectory: string
 ): Promise<void> {
-  if (!previousDirectory || previousDirectory === selectedDirectory) {
+  if (!previousDirectory) {
     return;
   }
-  if (!/^builds\/[\da-f]{64}$/u.test(previousDirectory)) {
+  if (
+    !/^builds\/[\da-f]{64}$/u.test(previousDirectory) ||
+    !/^builds\/[\da-f]{64}$/u.test(selectedDirectory)
+  ) {
     throw new Error("Publication journal previous payload identity is invalid");
   }
   const previous = resolve(outputRoot, previousDirectory);
+  const selected = resolve(outputRoot, selectedDirectory);
   if (
     !isWithin(outputRoot, previous) ||
     !isSamePath(previous, join(outputRoot, previousDirectory))
   ) {
     throw new Error("Previous generated payload escapes the output root");
+  }
+  if (isSamePath(previous, selected)) {
+    if (previousDirectory !== selectedDirectory) {
+      throw new Error("Previous generated payload aliases selected payload");
+    }
+    return;
   }
   if (
     !(await assertConfinedDirectory(
@@ -1720,7 +1773,10 @@ async function runPublication(
   let journal = await readJournal(outputRoot, publicationRoot);
   await assertPublicationArea(outputRoot, publicationRoot, journal);
   if (journal) {
-    if (journal.expectedPublicationHash !== expectedPublicationHash(plan)) {
+    if (
+      journal.expectedPublicationHash !==
+      expectedPublicationHash(plan, journal.previousDirectory)
+    ) {
       throw new Error(
         "Interrupted publication does not match the exact expected generation"
       );
@@ -1731,10 +1787,11 @@ async function runPublication(
     if (current && canonicalJson(current) === canonicalJson(expectedPointer)) {
       try {
         await assertCommittedPlan(root, outputRoot, plan);
+        const cleanedLegacyStage = await cleanupLegacySiblingStages(outputRoot);
         await rm(publicationRoot, { recursive: true });
         await syncDirectory(root);
         return {
-          changed: false,
+          changed: cleanedLegacyStage,
           contentHash: plan.contentHash,
           directory: plan.destination,
         };
@@ -1743,7 +1800,10 @@ async function runPublication(
       }
     }
     journal = {
-      expectedPublicationHash: expectedPublicationHash(plan),
+      expectedPublicationHash: expectedPublicationHash(
+        plan,
+        current?.directory ?? null
+      ),
       ownerToken,
       previousDirectory: current?.directory ?? null,
       schemaVersion: 1,
@@ -1905,6 +1965,7 @@ async function runPublication(
     );
     await options.publicationHooks?.afterPreviousPayloadRemoval?.();
     await assertKnownBuilds(root, [plan.directoryName]);
+    await cleanupLegacySiblingStages(outputRoot);
     await rm(stageRoot, { force: true, recursive: true });
     await rm(join(publicationRoot, journalFileName));
     await syncDirectory(publicationRoot);

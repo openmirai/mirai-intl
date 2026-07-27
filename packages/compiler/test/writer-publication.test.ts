@@ -8,7 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   compileCatalog,
@@ -109,7 +109,7 @@ describe("crash-safe catalog publication", () => {
     }
   });
 
-  it("rejects a traversal previousDirectory in an otherwise canonical journal", async () => {
+  it("rejects a previousDirectory traversal aliasing the selected payload", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-publication-"));
     try {
       const previousArtifacts = fixtureArtifacts();
@@ -117,7 +117,7 @@ describe("crash-safe catalog publication", () => {
         compileCatalog(catalogFixtureSource),
         "precompiled"
       );
-      await writeArtifactSet(root, previousArtifacts);
+      const previous = await writeArtifactSet(root, previousArtifacts);
       await expect(
         writeArtifactSet(root, nextArtifacts, undefined, {
           publicationHooks: {
@@ -134,11 +134,14 @@ describe("crash-safe catalog publication", () => {
         string,
         unknown
       >;
+      const pointer = JSON.parse(
+        await readFile(join(root, "current.json"), "utf8")
+      ) as { directory: string };
       await writeFile(
         journalPath,
         `${JSON.stringify({
           ...journal,
-          previousDirectory: "builds/../outside",
+          previousDirectory: `builds/../${pointer.directory}`,
         })}\n`,
         "utf8"
       );
@@ -146,8 +149,45 @@ describe("crash-safe catalog publication", () => {
       await expect(writeArtifactSet(root, nextArtifacts)).rejects.toThrowError(
         /journal|confined|malformed/u
       );
+      await expect(readdir(join(root, "builds"))).resolves.toEqual(
+        expect.arrayContaining([
+          basename(previous.directory),
+          basename(pointer.directory),
+        ])
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("removes only confined legacy sibling staging directories", async () => {
+    const container = await mkdtemp(join(tmpdir(), "mirai-intl-publication-"));
+    const root = join(container, "generated");
+    const external = await mkdtemp(join(tmpdir(), "mirai-intl-external-"));
+    const artifacts = fixtureArtifacts();
+    try {
+      await writeArtifactSet(root, artifacts);
+      const abandoned = join(dirname(root), ".generated.abandoned.tmp");
+      await mkdir(abandoned);
+      await expect(writeArtifactSet(root, artifacts)).resolves.toMatchObject({
+        changed: true,
+      });
+      await expect(readdir(dirname(root))).resolves.not.toContain(
+        basename(abandoned)
+      );
+
+      await symlink(
+        external,
+        join(dirname(root), ".generated.malicious.tmp"),
+        "dir"
+      );
+      await expect(writeArtifactSet(root, artifacts)).rejects.toThrowError(
+        /Legacy generated staging entry|symbolic link/u
+      );
+      await expect(readdir(external)).resolves.toEqual([]);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+      await rm(external, { force: true, recursive: true });
     }
   });
 
