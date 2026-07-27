@@ -1114,6 +1114,41 @@ async function controlSnapshot(
   return { hash: canonicalHash(sources), sources };
 }
 
+async function validatePreviousControlBackup(
+  outputRoot: string,
+  previousControlsRoot: string,
+  expectedHash: Sha256 | null
+): Promise<void> {
+  const entries = await readdir(previousControlsRoot, { withFileTypes: true });
+  if (expectedHash === null) {
+    if (entries.length !== 0) {
+      throw new Error("Unexpected previous generated control backup");
+    }
+    return;
+  }
+  const expectedNames = new Set([
+    "index.ts",
+    "catalog.lock.json",
+    receiptFileName,
+    "current.json",
+  ]);
+  if (
+    entries.length !== expectedNames.size ||
+    entries.some(
+      (entry) =>
+        !expectedNames.has(entry.name) ||
+        !entry.isFile() ||
+        entry.isSymbolicLink()
+    )
+  ) {
+    throw new Error("Previous generated control backup is incomplete");
+  }
+  const previous = await controlSnapshot(previousControlsRoot, outputRoot);
+  if (previous.hash !== expectedHash) {
+    throw new Error("Previous generated control backup identity changed");
+  }
+}
+
 async function syncDirectory(directory: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
@@ -1731,17 +1766,11 @@ async function rollbackCommittedPointer(
         );
       }
     }
-    const previousEntries = await readdir(previousControlsRoot);
-    if (currentJournal.previousControlsHash === null) {
-      if (previousEntries.length !== 0) {
-        throw new Error("Unexpected previous generated control backup");
-      }
-    } else {
-      const previous = await controlSnapshot(previousControlsRoot, outputRoot);
-      if (previous.hash !== currentJournal.previousControlsHash) {
-        throw new Error("Previous generated control backup identity changed");
-      }
-    }
+    await validatePreviousControlBackup(
+      outputRoot,
+      previousControlsRoot,
+      currentJournal.previousControlsHash
+    );
     await rm(join(root, "current.json"), { force: true });
     await syncDirectory(root);
     currentJournal = await advanceJournal(
@@ -1753,6 +1782,11 @@ async function rollbackCommittedPointer(
   }
 
   if (currentJournal.state === "ROLLBACK_POINTER_REMOVED") {
+    await validatePreviousControlBackup(
+      outputRoot,
+      previousControlsRoot,
+      currentJournal.previousControlsHash
+    );
     for (const name of [
       "index.ts",
       "catalog.lock.json",

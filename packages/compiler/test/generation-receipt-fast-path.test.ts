@@ -606,6 +606,101 @@ describe("catalog generation receipt fast path", () => {
     60_000
   );
 
+  it.each(["missing", "tampered", "added"] as const)(
+    "rejects a %s backup before restoring POINTER_REMOVED controls",
+    async (kind) => {
+      const { container, root } = await conventionApp();
+      try {
+        await ensureMiraiIntlCatalog({ root });
+        const generated = join(root, "src/i18n/generated");
+        const locale = join(root, "src/locales/global/en.json");
+        const original = JSON.parse(await readFile(locale, "utf8")) as Record<
+          string,
+          unknown
+        >;
+        await writeFile(
+          locale,
+          `${JSON.stringify(
+            { ...original, appName: "First change {edition}" },
+            null,
+            2
+          )}\n`,
+          "utf8"
+        );
+        instrumentation.mutateAfterPointerCommit = async () => {
+          await writeFile(
+            locale,
+            `${JSON.stringify(
+              { ...original, appName: "Second change {edition}" },
+              null,
+              2
+            )}\n`,
+            "utf8"
+          );
+          instrumentation.mutateAfterPointerCommit = undefined;
+        };
+        instrumentation.interruptAfterState = "ROLLBACK_POINTER_REMOVED";
+        await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+          "Injected lifecycle ROLLBACK_POINTER_REMOVED interruption"
+        );
+        const publication = join(generated, ".catalog-publication");
+        const journal = JSON.parse(
+          await readFile(join(publication, "journal.v1.json"), "utf8")
+        ) as { stageDirectory: string };
+        const previousControls = join(
+          publication,
+          journal.stageDirectory,
+          "previous-controls"
+        );
+        const before = {
+          facade: await readFile(join(generated, "index.ts"), "utf8"),
+          lock: await readFile(join(generated, "catalog.lock.json"), "utf8"),
+          receipt: await readFile(
+            join(generated, "catalog-generation-receipt.v1.json"),
+            "utf8"
+          ),
+        };
+        if (kind === "missing") {
+          await rm(join(previousControls, "current.json"));
+        } else if (kind === "tampered") {
+          await writeFile(
+            join(previousControls, "current.json"),
+            "tampered\n",
+            "utf8"
+          );
+        } else {
+          await writeFile(
+            join(previousControls, "unexpected.json"),
+            "{}\n",
+            "utf8"
+          );
+        }
+
+        await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+          /backup|missing|identity|incomplete/u
+        );
+        await expect(
+          readFile(join(generated, "current.json"), "utf8")
+        ).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(
+          readFile(join(generated, "index.ts"), "utf8")
+        ).resolves.toBe(before.facade);
+        await expect(
+          readFile(join(generated, "catalog.lock.json"), "utf8")
+        ).resolves.toBe(before.lock);
+        await expect(
+          readFile(
+            join(generated, "catalog-generation-receipt.v1.json"),
+            "utf8"
+          )
+        ).resolves.toBe(before.receipt);
+      } finally {
+        await rm(container, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
   it("rejects generated roots reached through an ancestor symlink", async () => {
     const { container, root } = await conventionApp();
     try {
