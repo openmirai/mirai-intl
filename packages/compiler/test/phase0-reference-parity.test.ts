@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   rm,
   writeFile,
@@ -13,8 +14,12 @@ import { join, relative, resolve } from "node:path";
 import type ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
-import { analyzeConventionSources } from "../src/analyze-sources";
+import {
+  analyzeConventionSourceFiles,
+  analyzeConventionSources,
+} from "../src/analyze-sources";
 import { generateConventionCatalog } from "../src/catalog";
+import { transformMiraiIntlSource } from "../src/transform";
 
 const programInstrumentation = vi.hoisted(() => ({ count: 0 }));
 
@@ -192,6 +197,50 @@ describe("Phase 0 reference-engine parity", () => {
       await rm(container, { force: true, recursive: true });
     }
   }, 120_000);
+
+  it("analyzes an explicitly authorized mounted owner while preserving the transform exclusion", async () => {
+    const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
+    const root = join(container, "app");
+    const mountedOwner = join(root, "node_modules/@mirai/i18n/src/owner.ts");
+    const source = "export const owner = 1;\n";
+    try {
+      await createConventionApp(root, 1);
+      await mkdir(join(root, "node_modules/@mirai/i18n/src"), {
+        recursive: true,
+      });
+      await writeFile(mountedOwner, source, "utf8");
+      await generateConventionCatalog(root, { collectEnvironment: false });
+
+      programInstrumentation.count = 0;
+      const transformed = await transformMiraiIntlSource(source, mountedOwner, {
+        root,
+      });
+      expect(transformed).toBeNull();
+      expect(programInstrumentation.count).toBe(0);
+
+      const canonicalRoot = await realpath(root);
+      const canonicalMountedOwner = await realpath(mountedOwner);
+      const analysis = await analyzeConventionSourceFiles(
+        root,
+        [canonicalMountedOwner],
+        canonicalRoot
+      );
+      expect(programInstrumentation.count).toBe(1);
+      expect(analysis).toMatchObject({
+        candidates: 1,
+        diagnostics: [],
+        evidence: [
+          expect.objectContaining({
+            source: "node_modules/@mirai/i18n/src/owner.ts",
+          }),
+        ],
+        filesAnalyzed: 1,
+      });
+    } finally {
+      programInstrumentation.count = 0;
+      await rm(container, { force: true, recursive: true });
+    }
+  });
 
   it("keeps artifacts, reports, and receipts byte-identical across clean runs", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));

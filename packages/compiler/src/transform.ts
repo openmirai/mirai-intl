@@ -3441,7 +3441,10 @@ export async function transformMiraiIntlSource(
   options: MiraiIntlTransformOptions = {}
 ): Promise<MiraiIntlTransformResult | null> {
   const cleanId = cleanModuleId(id);
-  if (!isMiraiIntlTransformCandidate(source, cleanId)) {
+  if (
+    !options.authorizationEvidence &&
+    !isMiraiIntlTransformCandidate(source, cleanId)
+  ) {
     return null;
   }
   if (
