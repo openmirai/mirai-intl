@@ -38,7 +38,7 @@ async function fixture(): Promise<string> {
   await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
   await writeFile(join(root, "src/legacy.js"), "export const legacy = 1;\n");
   await writeJson(join(root, "tsconfig.a.json"), {
-    compilerOptions: { allowJs: true },
+    compilerOptions: { allowJs: true, resolveJsonModule: true },
   });
   await writeJson(join(root, "tsconfig.base.json"), {
     compilerOptions: { strict: true },
@@ -48,10 +48,10 @@ async function fixture(): Promise<string> {
     files: [],
   });
   await writeJson(join(root, "tsconfig.z.json"), {
-    compilerOptions: { allowJs: false },
+    compilerOptions: { allowJs: false, resolveJsonModule: false },
   });
   await writeJson(join(root, "tsconfig.json"), {
-    extends: ["./tsconfig.base.json", "./tsconfig.z.json", "./tsconfig.a.json"],
+    extends: ["./tsconfig.z.json", "./tsconfig.a.json", "./tsconfig.base.json"],
     include: ["src/**/*"],
     references: [{ path: "./tsconfig.types.json" }],
   });
@@ -81,6 +81,7 @@ describe("V2 build receipt verification", () => {
     expect(first.schemaVersion).toBe(2);
     expect(first.counters.semanticAuthorizationRuns).toBe(1);
     expect(first.projects[0]?.normalizedOptions.allowJs).toBe(true);
+    expect(first.projects[0]?.normalizedOptions.resolveJsonModule).toBe(true);
     expect(first.projects[0]?.rootFiles).toEqual(
       expect.arrayContaining(["src/legacy.js", "src/page.ts"])
     );
@@ -97,7 +98,7 @@ describe("V2 build receipt verification", () => {
       first.projects[0]?.configManifest.find(
         (entry) => entry.path === "tsconfig.json"
       )?.extends
-    ).toEqual(["tsconfig.base.json", "tsconfig.z.json", "tsconfig.a.json"]);
+    ).toEqual(["tsconfig.z.json", "tsconfig.a.json", "tsconfig.base.json"]);
 
     vi.resetModules();
     vi.doMock("typescript", () => {
@@ -206,6 +207,39 @@ describe("V2 build receipt verification", () => {
       const { verifyConventionBuildReceipt } =
         await import("../src/check-receipt");
       await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(error);
+    },
+    60_000
+  );
+
+  it.each([
+    ["script", "d.ts", "ts"],
+    ["ES module", "d.mts", "mts"],
+    ["CommonJS module", "d.cts", "cts"],
+  ] as const)(
+    "rejects a %s implementation added beside an authorized declaration",
+    async (_label, declarationExtension, implementationExtension) => {
+      const root = await fixture();
+      const declaration = `src/shadow.${declarationExtension}`;
+      await writeFile(
+        join(root, declaration),
+        "export declare const shadow: number;\n"
+      );
+      const receipt = await proveConventionCatalog(root);
+      expect(receipt.projects[0]?.rootFiles).toContain(declaration);
+
+      await writeFile(
+        join(root, `src/shadow.${implementationExtension}`),
+        "export const shadow = 1;\n"
+      );
+      vi.resetModules();
+      vi.doMock("typescript", () => {
+        throw new Error("build verification imported TypeScript");
+      });
+      const { verifyConventionBuildReceipt } =
+        await import("../src/check-receipt");
+      await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+        /check-project source universe is stale/u
+      );
     },
     60_000
   );

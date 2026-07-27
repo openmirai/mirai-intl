@@ -85,11 +85,14 @@ async function fixture(): Promise<string> {
   await writeJson(join(root, "tsconfig.a.json"), {
     compilerOptions: { allowJs: true },
   });
+  await writeJson(join(root, "tsconfig.omit.json"), {
+    compilerOptions: { strict: true },
+  });
   await writeJson(join(root, "tsconfig.z.json"), {
     compilerOptions: { allowJs: false },
   });
   await writeJson(join(root, "tsconfig.json"), {
-    extends: ["./tsconfig.z.json", "./tsconfig.a.json"],
+    extends: ["./tsconfig.z.json", "./tsconfig.a.json", "./tsconfig.omit.json"],
     include: ["src/**/*"],
   });
   await writeJson(join(root, "mirai-intl.config.json"), {

@@ -8,12 +8,12 @@ const DEFAULT_EXCLUDES = ["bower_components", "jspm_packages", "node_modules"];
 
 type ConfigField = Readonly<{ origin: string; value: unknown }>;
 type EffectiveConfig = Readonly<{
-  allowJs: boolean;
+  allowJs: boolean | undefined;
   exclude: ConfigField | undefined;
   files: ConfigField | undefined;
   include: ConfigField | undefined;
   outDir: ConfigField | undefined;
-  resolveJsonModule: boolean;
+  resolveJsonModule: boolean | undefined;
 }>;
 
 function workspacePath(root: string, file: string): string {
@@ -177,15 +177,15 @@ function extensionPriority(path: string): Readonly<{
   priority: number;
 }> {
   for (const [suffix, priority] of [
-    [".d.mts", 0],
-    [".mts", 1],
+    [".d.mts", 1],
+    [".mts", 0],
     [".mjs", 2],
-    [".d.cts", 0],
-    [".cts", 1],
+    [".d.cts", 1],
+    [".cts", 0],
     [".cjs", 2],
-    [".d.ts", 0],
-    [".ts", 1],
-    [".tsx", 2],
+    [".d.ts", 2],
+    [".ts", 0],
+    [".tsx", 1],
     [".js", 3],
     [".jsx", 4],
   ] as const) {
@@ -294,22 +294,23 @@ export async function reconstructProjectRootFiles(
     }
     resolving.add(path);
     let effective: EffectiveConfig = {
-      allowJs: false,
+      allowJs: undefined,
       exclude: undefined,
       files: undefined,
       include: undefined,
       outDir: undefined,
-      resolveJsonModule: false,
+      resolveJsonModule: undefined,
     };
     for (const parent of manifest.extends) {
       const inherited = visit(parent);
       effective = {
-        allowJs: inherited.allowJs,
+        allowJs: inherited.allowJs ?? effective.allowJs,
         exclude: inherited.exclude ?? effective.exclude,
         files: inherited.files ?? effective.files,
         include: inherited.include ?? effective.include,
         outDir: inherited.outDir ?? effective.outDir,
-        resolveJsonModule: inherited.resolveJsonModule,
+        resolveJsonModule:
+          inherited.resolveJsonModule ?? effective.resolveJsonModule,
       };
     }
     effective = mergeConfig(effective, config, dirname(resolve(root, path)));
@@ -370,8 +371,7 @@ export async function reconstructProjectRootFiles(
   const includedFiles = candidates
     .filter((file) => {
       if (
-        (!extensions.test(file) &&
-          !(effective.resolveJsonModule && file.endsWith(".json"))) ||
+        !extensions.test(file) ||
         (outDir && file.startsWith(`${outDir}${sep}`))
       ) {
         return false;
