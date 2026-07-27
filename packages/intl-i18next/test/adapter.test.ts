@@ -1,4 +1,5 @@
 import { emptyObjectSchema } from "@openmirai/intl-abi";
+import type { TextDescriptor } from "@openmirai/intl-abi";
 import { compileCatalog } from "@openmirai/intl-compiler/internal";
 import type { TypedCatalogManifest } from "@openmirai/intl-runtime";
 import { createPrecompiledDescriptor } from "@openmirai/intl-runtime";
@@ -52,7 +53,12 @@ const compiled = compileCatalog({
 });
 
 type Locale = "en" | "th";
-type CatalogContract = Readonly<Record<string, never>>;
+type CatalogContract = Readonly<{
+  greeting: TextDescriptor<Readonly<Record<never, never>>>;
+  results: Readonly<{
+    summary: TextDescriptor<Readonly<{ count: number }>>;
+  }>;
+}>;
 const catalogManifest = compiled.catalog.manifest as TypedCatalogManifest<
   CatalogContract,
   readonly ["en", "th"],
