@@ -43,6 +43,12 @@ export type IntlCheckFileIdentityV2 = Readonly<{
   path: string;
 }>;
 
+/** Application package and workspace lock inputs bound by authorization. */
+export type IntlCheckApplicationIdentityV2 = Readonly<{
+  packageManifest: IntlCheckFileIdentityV2;
+  workspaceLockfile: IntlCheckFileIdentityV2;
+}>;
+
 /** Deep-readonly JSON object used for canonical parsed configuration options. */
 export interface IntlCheckCanonicalJsonObjectV2 {
   readonly [key: string]: IntlCheckCanonicalJsonV2;
@@ -144,6 +150,8 @@ export type IntlCheckReceiptCountersV2 = Readonly<{
   ownerProjects: number;
   providerClosures: number;
   providerRoots: number;
+  semanticAuthorizationRuns: 1;
+  semanticFilesAnalyzed: number;
   sourceFiles: number;
   typescriptLibFiles: number;
 }>;
@@ -157,7 +165,9 @@ export type IntlCheckReceiptCountersV2 = Readonly<{
  * exceptions, and ABI fields.
  */
 export type IntlCheckReceiptV2 = Readonly<{
+  application: IntlCheckApplicationIdentityV2;
   artifactAbi: string;
+  compilerManifest: ReadonlyArray<IntlCheckFileIdentityV2>;
   compilerManifestHash: Sha256;
   counters: IntlCheckReceiptCountersV2;
   exceptions: ReadonlyArray<IntlCheckExceptionV1>;

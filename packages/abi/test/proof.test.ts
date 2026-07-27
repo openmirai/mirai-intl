@@ -4,7 +4,23 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 const hash = "sha256:0123456789abcdef" as const;
 
 const receipt = {
+  application: {
+    packageManifest: {
+      hash,
+      path: "package.json",
+    },
+    workspaceLockfile: {
+      hash,
+      path: "pnpm-lock.yaml",
+    },
+  },
   artifactAbi: "mirai-intl-artifact-v2",
+  compilerManifest: [
+    {
+      hash,
+      path: "node_modules/@openmirai/intl-compiler/dist/proof.js",
+    },
+  ],
   compilerManifestHash: hash,
   counters: {
     checkerProjects: 0,
@@ -14,6 +30,8 @@ const receipt = {
     ownerProjects: 1,
     providerClosures: 1,
     providerRoots: 1,
+    semanticAuthorizationRuns: 1,
+    semanticFilesAnalyzed: 1,
     sourceFiles: 1,
     typescriptLibFiles: 1,
   },
@@ -141,7 +159,9 @@ describe("IntlCheckReceiptV2", () => {
       schemaVersion: 2,
     });
     expect(receipt.projects[0]?.configManifest).toHaveLength(2);
+    expect(receipt.compilerManifest).toHaveLength(1);
     expect(receipt.providerClosures[0]?.providers).toHaveLength(1);
+    expect(receipt.counters.semanticAuthorizationRuns).toBe(1);
     expect(receipt.typescript.libs).toHaveLength(1);
   });
 
