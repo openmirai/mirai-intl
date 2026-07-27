@@ -1145,10 +1145,17 @@ function resolveModuleWithFrontier(
     kind: "directory" | "file",
     present: boolean
   ): void => {
+    const lexicalPath = resolve(path);
     // TypeScript walks existing ancestor directories while looking for package
     // scopes. An ancestor outside the workspace is not provider evidence by
-    // itself; any usable package control or provider file remains fail-closed.
-    const confined = confinedPath(path, present && kind === "file", "probe");
+    // itself. A probe that starts inside the workspace remains fail-closed even
+    // when a symlink redirects its nearest existing ancestor outside.
+    const confined = confinedPath(
+      lexicalPath,
+      isWithin(resolvedWorkspaceRoot, lexicalPath) ||
+        (present && kind === "file"),
+      "probe"
+    );
     if (!confined) {
       return;
     }

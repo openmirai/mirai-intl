@@ -1240,6 +1240,36 @@ describe("private named-key lowering", () => {
     }
   });
 
+  it("rejects an absent provider beneath a directory symlink escape", async () => {
+    const fixture = await createGeneratedCatalog();
+    const external = await mkdtemp(
+      join(tmpdir(), "mirai-intl-provider-directory-outside-")
+    );
+    const id = join(fixture.root, "src/escaped-provider-key.ts");
+    await symlink(external, join(fixture.root, "src/provider"), "dir");
+    const source = [
+      'import { useTranslations } from "x";',
+      'import { key } from "./provider/key";',
+      'const { t } = useTranslations("pages.home");',
+      "export const translated = t(key);",
+      "",
+    ].join("\n");
+
+    try {
+      await expect(
+        transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      ).rejects.toThrowError(
+        /Provider resolution probe for \.\/provider\/key escapes its workspace root/u
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+      await rm(external, { force: true, recursive: true });
+    }
+  });
+
   it("preserves configured ambient React types for automatic JSX props", async () => {
     const fixture = await createGeneratedCatalog();
     const id = join(fixture.root, "src/contextual-props.tsx");
