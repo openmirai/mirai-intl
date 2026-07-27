@@ -8,7 +8,10 @@ import { act, create } from "react-test-renderer";
 import type { ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
-import { createMiraiI18next } from "../src/index";
+import {
+  createMiraiI18next,
+  createProviderBoundUseTranslations,
+} from "../src/index";
 
 const compiled = compileCatalog({
   buildId: "intl-i18next-adapter-test",
@@ -25,6 +28,24 @@ const compiled = compileCatalog({
       translations: { en: "Hello", th: "สวัสดี" },
       valuesSchema: emptyObjectSchema,
     },
+    {
+      kind: "text",
+      path: "results.summary",
+      provenance: "packages/intl-i18next/test/adapter.test.ts:results.summary",
+      resultSchema: { type: "string" },
+      translations: {
+        en: "{count, plural, =0 {No results} one {# result} other {# results}}",
+        th: "{count, plural, =0 {ไม่พบผลลัพธ์} other {# รายการ}}",
+      },
+      valuesSchema: {
+        additionalProperties: false,
+        properties: {
+          count: { finite: true, minimum: 0, type: "number" },
+        },
+        required: ["count"],
+        type: "object",
+      },
+    },
   ],
   rendererCapabilityId: "portable-ir-v1",
   sourceLocale: "en",
@@ -40,8 +61,23 @@ const catalogManifest = compiled.catalog.manifest as TypedCatalogManifest<
 const isCatalogLocale = (locale: string): locale is Locale =>
   locale === "en" || locale === "th";
 const resources = {
-  en: { translation: { greeting: "Hello" } },
-  th: { translation: { greeting: "สวัสดี" } },
+  en: {
+    translation: {
+      greeting: "Hello",
+      results: {
+        summary:
+          "{count, plural, =0 {No results} one {# result} other {# results}}",
+      },
+    },
+  },
+  th: {
+    translation: {
+      greeting: "สวัสดี",
+      results: {
+        summary: "{count, plural, =0 {ไม่พบผลลัพธ์} other {# รายการ}}",
+      },
+    },
+  },
 } as const;
 const greetingDescriptor = compiled.descriptors[0];
 const greetingMessage = compiled.catalog.messages[0];
@@ -56,6 +92,16 @@ const greeting = createPrecompiledDescriptor(
   greetingDescriptor,
   undefined,
   greetingMessage
+);
+const pluralDescriptor = compiled.descriptors[1];
+const pluralMessage = compiled.catalog.messages[1];
+if (!pluralDescriptor || pluralDescriptor.kind !== "text" || !pluralMessage) {
+  throw new TypeError("Missing plural test descriptor");
+}
+const plural = createPrecompiledDescriptor(
+  pluralDescriptor,
+  undefined,
+  pluralMessage
 );
 
 describe("createMiraiI18next", () => {
@@ -104,6 +150,50 @@ describe("createMiraiI18next", () => {
     expect(thaiAttempts).toBe(2);
   });
 
+  it("requires successful activation before exposing controller translations", async () => {
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: (locale) => resources[locale],
+    });
+    const controller = adapter.createRequestController("en");
+
+    expect(controller.getActiveLocale()).toBeUndefined();
+    expect(() => controller.getTranslations()).toThrow(
+      "Cannot get translations before a locale is active; call activateLocale(locale) first"
+    );
+    await controller.loadLocale("en");
+    expect(controller.getActiveLocale()).toBeUndefined();
+    expect(() => controller.getTranslations()).toThrow(
+      "Cannot get translations before a locale is active; call activateLocale(locale) first"
+    );
+
+    await controller.activateLocale("en");
+    expect(controller.getActiveLocale()).toBe("en");
+    expect(
+      Reflect.apply(controller.getTranslations().t, undefined, [greeting])
+    ).toBe("Hello");
+  });
+
+  it("renders real ICU plurals through non-hook controller translations", async () => {
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      icu: {},
+      isCatalogLocale,
+      loadCatalogResource: (locale) => resources[locale],
+    });
+    const controller = adapter.createRequestController("en");
+    await controller.activateLocale("en");
+    const { t } = controller.getTranslations("results");
+
+    expect(Reflect.apply(t, undefined, [plural, { count: 1 }])).toBe(
+      "1 result"
+    );
+    expect(Reflect.apply(t, undefined, [plural, { count: 3 }])).toBe(
+      "3 results"
+    );
+  });
+
   it("serializes locale transitions in FIFO order", async () => {
     const adapter = createMiraiI18next({
       catalogManifest,
@@ -113,14 +203,20 @@ describe("createMiraiI18next", () => {
     const controller = adapter.createRequestController("en");
     await controller.activateLocale("en");
     const changes: Array<string> = [];
-    controller.instance.on("languageChanged", (locale) => changes.push(locale));
+    const activeDuringChanges: Array<Locale | undefined> = [];
+    controller.instance.on("languageChanged", (locale) => {
+      changes.push(locale);
+      activeDuringChanges.push(controller.getActiveLocale());
+    });
 
     const thai = controller.activateLocale("th");
     const english = controller.activateLocale("en");
     await Promise.all([thai, english]);
 
     expect(changes.slice(-2)).toEqual(["th", "en"]);
+    expect(activeDuringChanges.slice(-2)).toEqual(["en", "th"]);
     expect(controller.instance.language).toBe("en");
+    expect(controller.getActiveLocale()).toBe("en");
   });
 
   it("retries failed activation without replacing the active locale", async () => {
@@ -142,8 +238,10 @@ describe("createMiraiI18next", () => {
       "temporary locale load failure"
     );
     expect(controller.instance.language).toBe("en");
+    expect(controller.getActiveLocale()).toBe("en");
     await expect(controller.activateLocale("th")).resolves.toBeUndefined();
     expect(controller.instance.language).toBe("th");
+    expect(controller.getActiveLocale()).toBe("th");
     expect(thaiAttempts).toBe(2);
   });
 
@@ -195,6 +293,9 @@ describe("createMiraiI18next", () => {
     controller.dispose();
     expect(off).toHaveBeenCalledTimes(1);
     expect(() => controller.loadLocale("en")).toThrow(
+      "The Mirai Intl controller has been disposed"
+    );
+    expect(() => controller.getTranslations()).toThrow(
       "The Mirai Intl controller has been disposed"
     );
   });
@@ -272,6 +373,96 @@ describe("createMiraiI18next", () => {
     expect(output).toContain("Translation unavailable");
     expect(output).not.toContain("greeting");
     expect(diagnostics).toHaveLength(1);
+  });
+
+  it("keeps strict and recovering behavior for non-hook translations", async () => {
+    const strictAdapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: () => ({ translation: {} }),
+      recovery: false,
+    });
+    const strictController = strictAdapter.createRequestController("en");
+    await strictController.activateLocale("en");
+    expect(() =>
+      Reflect.apply(strictController.getTranslations().t, undefined, [greeting])
+    ).toThrow(/translation|resource|renderer/iu);
+
+    const diagnostics: Array<unknown> = [];
+    const recoveringAdapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: () => ({ translation: {} }),
+      recovery: {
+        diagnosticSink: (diagnostic) => diagnostics.push(diagnostic),
+        missingMessageFallback: "Translation unavailable",
+      },
+    });
+    const recoveringController =
+      recoveringAdapter.createRequestController("en");
+    await recoveringController.activateLocale("en");
+    const output = Reflect.apply(
+      recoveringController.getTranslations().t,
+      undefined,
+      [greeting]
+    );
+
+    expect(output).toBe("Translation unavailable");
+    expect(output).not.toContain("greeting");
+    expect(diagnostics).toHaveLength(1);
+  });
+
+  it("binds shared typed hooks to the nearest adapter provider", async () => {
+    const firstAdapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: () => ({
+        translation: { greeting: "First provider" },
+      }),
+    });
+    const secondAdapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: () => ({
+        translation: { greeting: "Second provider" },
+      }),
+    });
+    const firstController = firstAdapter.createRequestController("en");
+    const secondController = secondAdapter.createRequestController("en");
+    await Promise.all([
+      firstController.activateLocale("en"),
+      secondController.activateLocale("en"),
+    ]);
+    const useSharedTranslations =
+      createProviderBoundUseTranslations<CatalogContract>();
+    const Greeting = () => {
+      const { t } = useSharedTranslations();
+      return createElement(
+        "span",
+        null,
+        Reflect.apply(t, undefined, [greeting])
+      );
+    };
+
+    const output = renderToString(
+      createElement(
+        "main",
+        null,
+        createElement(
+          firstAdapter.Provider,
+          { controller: firstController },
+          createElement(Greeting)
+        ),
+        createElement(
+          secondAdapter.Provider,
+          { controller: secondController },
+          createElement(Greeting)
+        )
+      )
+    );
+
+    expect(output).toContain("First provider");
+    expect(output).toContain("Second provider");
   });
 
   it("warns once with a human-readable, key-free production recovery message", async () => {

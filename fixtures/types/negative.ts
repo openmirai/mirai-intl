@@ -20,11 +20,33 @@ import type {
   ExactCatalogLocale,
   FixtureCatalog,
   FixtureCatalogManifest,
+  exactCatalogManifest,
 } from "./descriptors";
 import type { ArgumentFreeTextKeysFor } from "@openmirai/intl-runtime/react";
 import type { TextDescriptor } from "@openmirai/intl-abi";
+import type { MiraiI18nextAdapter } from "@openmirai/intl-i18next";
+import { createProviderBoundUseTranslations } from "@openmirai/intl-i18next";
 
 const renderChildren = (children: ReadonlyArray<unknown>): unknown => children;
+declare const i18nextAdapter: MiraiI18nextAdapter<typeof exactCatalogManifest>;
+const requestController = i18nextAdapter.createRequestController("en");
+const useSharedTranslations =
+  createProviderBoundUseTranslations<FixtureCatalog>();
+
+// @ts-expect-error Adapter hooks reject unknown namespaces.
+i18nextAdapter.useTranslations("missing");
+
+// @ts-expect-error Controller translations reject unknown namespaces.
+requestController.getTranslations("missing");
+
+// @ts-expect-error Controller namespace translators reject unknown keys.
+requestController.getTranslations("app").t("missing");
+
+// @ts-expect-error Provider-bound shared hooks reject unknown namespaces.
+useSharedTranslations("missing");
+
+// @ts-expect-error Provider-bound namespace translators reject unknown keys.
+useSharedTranslations("app").t("missing");
 
 interface FormSchemaFixtureCatalog {
   form: {
