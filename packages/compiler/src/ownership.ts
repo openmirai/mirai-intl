@@ -15,6 +15,8 @@ export type OwnedSourceFile = Readonly<{
   absolute: string;
   file: string;
   owner: string;
+  /** @internal Exact TypeScript owner configuration for semantic batching. */
+  ownerCompilerOptions: ts.CompilerOptions;
 }>;
 
 export type ConventionSourceUniverse = Readonly<{
@@ -82,6 +84,7 @@ async function projectFiles(
       "configManifestHash" | "normalizedOptionsHash"
     >;
     files: ReadonlySet<string>;
+    options: ts.CompilerOptions;
   }>
 > {
   const configPath = resolve(root, project.path);
@@ -278,6 +281,7 @@ async function projectFiles(
         .toSorted(),
     },
     files: new Set(files),
+    options: parsed.options,
   };
 }
 
@@ -357,6 +361,7 @@ export async function resolveConventionSourceUniverse(
         absolute,
         file: receiptRelativePath(workspaceRoot, absolute),
         owner,
+        ownerCompilerOptions: matching[0]?.options ?? {},
       };
     });
   return {

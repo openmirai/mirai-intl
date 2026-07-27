@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { proveConventionCatalog } from "../src/proof";
+import { verifyProviderResolutionFrontier } from "../src/provider-resolution-identity";
 
 const roots: Array<string> = [];
 
@@ -104,6 +105,57 @@ async function fixture(): Promise<string> {
   return root;
 }
 
+async function workspaceFixture(): Promise<{
+  packageRoot: string;
+  workspaceRoot: string;
+}> {
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "mirai-intl-receipt-workspace-v2-")
+  );
+  roots.push(workspaceRoot);
+  const packageRoot = join(workspaceRoot, "packages/app");
+  await writeFile(
+    join(workspaceRoot, "pnpm-workspace.yaml"),
+    "packages:\n  - packages/*\n"
+  );
+  await writeFile(
+    join(workspaceRoot, "pnpm-lock.yaml"),
+    "lockfileVersion: '9.0'\n"
+  );
+  await writeJson(join(packageRoot, "package.json"), {
+    dependencies: { vite: "8.1.4" },
+    name: "@example/workspace-receipt-v2",
+    version: "1.0.0",
+  });
+  await writeJson(join(packageRoot, "src/locales/global/en.json"), {
+    group: { greeting: "Hello" },
+  });
+  await writeJson(join(packageRoot, "src/locales/global/th.json"), {
+    group: { greeting: "สวัสดี" },
+  });
+  await writeFile(
+    join(packageRoot, "src/page.ts"),
+    [
+      'import { key } from "./key";',
+      'import { useTranslations } from "x";',
+      'const { t } = useTranslations("group");',
+      "export const page = t(key);",
+      "",
+    ].join("\n")
+  );
+  await writeFile(
+    join(packageRoot, "src/key.d.ts"),
+    'export declare const key: "greeting";\n'
+  );
+  await writeJson(join(packageRoot, "tsconfig.json"), {
+    include: ["src/**/*.ts"],
+  });
+  await writeJson(join(packageRoot, "mirai-intl.config.json"), {
+    checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+  });
+  return { packageRoot, workspaceRoot };
+}
+
 afterEach(async () => {
   vi.doUnmock("typescript");
   await Promise.all(
@@ -123,7 +175,7 @@ describe("V2 build receipt verification", () => {
     await expect(readFile(path, "utf8")).resolves.toBe(firstBytes);
     expect(first.schemaVersion).toBe(2);
     expect(first.counters.semanticAuthorizationRuns).toBe(1);
-    expect(first.counters.providerRoots).toBe(2);
+    expect(first.counters.providerRoots).toBe(3);
     expect(first.projects[0]?.normalizedOptions.allowJs).toBe(true);
     expect(first.projects[0]?.normalizedOptions.moduleSuffixes).toEqual([
       ".ios",
@@ -168,6 +220,17 @@ describe("V2 build receipt verification", () => {
             }),
           ],
           root: "node_modules/@example/transitive/index.d.ts",
+        }),
+        expect.objectContaining({
+          resolutions: [
+            expect.objectContaining({
+              from: "src/page.ts",
+              packageName: null,
+              packageVersion: null,
+              specifier: "x",
+            }),
+          ],
+          root: "src/page.ts",
         }),
       ])
     );
@@ -375,6 +438,83 @@ describe("V2 build receipt verification", () => {
     },
     60_000
   );
+
+  it("binds hoisted workspace resolution changes into evidence and receipt invalidation", async () => {
+    const { packageRoot, workspaceRoot } = await workspaceFixture();
+    const missing = await proveConventionCatalog(packageRoot);
+    const missingResolution = missing.providerClosures
+      .find((closure) => closure.source === "packages/app/src/page.ts")
+      ?.providers.flatMap((provider) => provider.resolutions)
+      .find((resolution) => resolution.specifier === "x");
+    expect(missingResolution).toMatchObject({
+      from: "packages/app/src/page.ts",
+      packageName: null,
+      packageVersion: null,
+      specifier: "x",
+    });
+    expect(missingResolution?.probes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "directory",
+          path: "node_modules",
+          present: false,
+        }),
+      ])
+    );
+
+    await writeJson(join(workspaceRoot, "node_modules/x/package.json"), {
+      name: "x",
+      types: "./index.d.ts",
+      version: "1.0.0",
+    });
+    await writeFile(
+      join(workspaceRoot, "node_modules/x/index.d.ts"),
+      "export declare function useTranslations(): { t(key: string): string };\n"
+    );
+    if (!missingResolution) {
+      throw new Error("Missing unresolved hoisted provider receipt evidence");
+    }
+    await expect(
+      verifyProviderResolutionFrontier(
+        workspaceRoot,
+        missingResolution.optionsHash,
+        missingResolution
+      )
+    ).rejects.toThrow(/provider resolution frontier is stale/u);
+
+    const present = await proveConventionCatalog(packageRoot);
+    const presentProvider = present.providerClosures
+      .find((closure) => closure.source === "packages/app/src/page.ts")
+      ?.providers.find(
+        (provider) => provider.root === "node_modules/x/index.d.ts"
+      );
+    expect(presentProvider).toMatchObject({
+      declarations: [
+        expect.objectContaining({ path: "node_modules/x/index.d.ts" }),
+      ],
+      kind: "external",
+      resolutions: [
+        expect.objectContaining({
+          packageName: "x",
+          packageVersion: "1.0.0",
+          specifier: "x",
+        }),
+      ],
+    });
+    const presentResolution = presentProvider?.resolutions.at(0);
+    if (!presentResolution) {
+      throw new Error("Missing resolved hoisted provider receipt evidence");
+    }
+
+    await rm(join(workspaceRoot, "node_modules/x"), { recursive: true });
+    await expect(
+      verifyProviderResolutionFrontier(
+        workspaceRoot,
+        presentResolution.optionsHash,
+        presentResolution
+      )
+    ).rejects.toThrow(/provider resolution frontier is stale/u);
+  }, 60_000);
 
   it.each([
     ["typeRoots", { typeRoots: ["./node_modules/@types"] }],

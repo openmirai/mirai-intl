@@ -20,9 +20,14 @@ import {
 import type { CatalogSource, MessageSource } from "../src/internal";
 import {
   isMiraiIntlTransformCandidate,
+  transformMiraiIntlOwnerBatch,
   transformMiraiIntlSource,
 } from "../src/transform";
-import type { MiraiIntlTransformResult } from "../src/transform";
+import type {
+  MiraiIntlSemanticBatchObservation,
+  MiraiIntlSemanticEvidence,
+  MiraiIntlTransformResult,
+} from "../src/transform";
 import { writeArtifactSet } from "./non-authoritative-writer";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -1261,40 +1266,74 @@ describe("private named-key lowering", () => {
     }
   });
 
-  it("reports the bounded provider budget instead of a widened-key fallback", async () => {
-    const fixture = await createGeneratedCatalog();
-    const id = join(fixture.root, "src/provider-budget.ts");
-    const providerCount = 66;
-    for (let index = 0; index < providerCount; index += 1) {
-      const source =
-        index === providerCount - 1
-          ? 'export declare const key: "title";\n'
-          : `export { key } from "./provider-${index + 1}";\n`;
-      await writeFile(
-        join(fixture.root, `src/provider-${index}.ts`),
-        source,
-        "utf8"
-      );
-    }
-    const source = [
-      'import { useTranslations } from "x";',
-      'import { key } from "./provider-0";',
-      'const { t } = useTranslations("pages.home");',
-      "export const translated = t(key);",
-      "",
-    ].join("\n");
+  it.each([
+    { exceeds: false, providerCount: 64 },
+    { exceeds: true, providerCount: 66 },
+  ])(
+    "keeps the exact provider budget boundary in finite-closure fallback ($providerCount providers)",
+    async ({ exceeds, providerCount }) => {
+      const fixture = await createGeneratedCatalog();
+      const id = join(fixture.root, "src/provider-budget.ts");
+      for (let index = 0; index < providerCount; index += 1) {
+        const source =
+          index === providerCount - 1
+            ? 'export declare const key: "title";\n'
+            : `export { key } from "./provider-${index + 1}";\n`;
+        await writeFile(
+          join(fixture.root, `src/provider-${index}.ts`),
+          source,
+          "utf8"
+        );
+      }
+      const source = [
+        'import { useTranslations } from "x";',
+        'import { key } from "./provider-0";',
+        'const { t } = useTranslations("pages.home");',
+        "export const translated = t(key);",
+        "",
+      ].join("\n");
 
-    try {
-      await expect(
-        transformMiraiIntlSource(source, id, {
-          generatedDirectory: fixture.generatedDirectory,
-          root: fixture.root,
-        })
-      ).rejects.toThrowError(/exceeded the 64-file provider budget/u);
-    } finally {
-      await rm(fixture.root, { force: true, recursive: true });
+      try {
+        let evidence: MiraiIntlSemanticEvidence | undefined;
+        let observation: MiraiIntlSemanticBatchObservation | undefined;
+        const [result] = await transformMiraiIntlOwnerBatch(
+          [
+            {
+              authorizationEvidence: {
+                record(value) {
+                  evidence = value;
+                },
+                workspaceRoot: "/",
+              },
+              id,
+              source,
+            },
+          ],
+          {
+            generatedDirectory: fixture.generatedDirectory,
+            root: fixture.root,
+          },
+          (value) => {
+            observation = value;
+          }
+        );
+        expect(observation).toEqual({
+          fallbackFiles: 1,
+          fallbackPrograms: 1,
+          sharedFiles: 0,
+          sharedPrograms: 0,
+        });
+        expect(evidence?.providerBudgetExceeded).toBe(exceeds);
+        expect(result?.error instanceof Error).toBe(exceeds);
+        expect(
+          result?.error instanceof Error ? result.error.message : ""
+        ).toMatch(exceeds ? /exceeded the 64-file provider budget/u : /^$/u);
+        expect(result?.result == null).toBe(exceeds);
+      } finally {
+        await rm(fixture.root, { force: true, recursive: true });
+      }
     }
-  });
+  );
 
   it("lowers namespace-bound server dynamic calls through the same private runtime lookup", async () => {
     const fixture = await createGeneratedCatalog();

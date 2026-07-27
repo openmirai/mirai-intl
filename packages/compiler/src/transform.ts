@@ -33,6 +33,30 @@ export type MiraiIntlTransformResult = Readonly<{
   map: MiraiIntlSourceMap;
 }>;
 
+/** @internal Benchmark/test observation only; never serialized into authority. */
+export type MiraiIntlSemanticBatchObservation = Readonly<{
+  fallbackFiles: number;
+  fallbackPrograms: number;
+  sharedFiles: number;
+  sharedPrograms: number;
+}>;
+
+/** @internal Exact-owner batch input used by source authorization. */
+export type MiraiIntlSemanticBatchSource = Readonly<{
+  authorizationEvidence: NonNullable<
+    MiraiIntlTransformOptions["authorizationEvidence"]
+  >;
+  id: string;
+  source: string;
+}>;
+
+/** @internal Per-file result preserves reference-engine error isolation. */
+export type MiraiIntlSemanticBatchResult = Readonly<{
+  error?: unknown;
+  id: string;
+  result?: MiraiIntlTransformResult | null;
+}>;
+
 type SemanticProviderResolution = Readonly<{
   controlPaths: ReadonlyArray<string>;
   from: string;
@@ -167,7 +191,6 @@ const reactDependencyHooks = new Set([
   "useMemo",
 ]);
 const catalogCache = new Map<string, CatalogCacheEntry>();
-const moduleResolutionOptionsCache = new Map<string, ts.CompilerOptions>();
 const miraiIntlImportedOperations = new Set([
   "createFormErrorTranslator",
   "createFormSchema",
@@ -639,20 +662,14 @@ function requiresMiraiIntlAnalysis(source: string, id: string): boolean {
 }
 
 function moduleResolutionOptions(root: string): ts.CompilerOptions {
-  const cached = moduleResolutionOptionsCache.get(root);
-  if (cached) {
-    return cached;
-  }
   const configPath = ts.findConfigFile(root, ts.sys.fileExists);
   if (!configPath) {
-    const fallback = {
+    return {
       allowJs: true,
       module: ts.ModuleKind.ESNext,
       moduleResolution: ts.ModuleResolutionKind.Bundler,
       target: ts.ScriptTarget.Latest,
     } satisfies ts.CompilerOptions;
-    moduleResolutionOptionsCache.set(root, fallback);
-    return fallback;
   }
   const read = ts.readConfigFile(configPath, ts.sys.readFile);
   if (read.error) {
@@ -676,7 +693,6 @@ function moduleResolutionOptions(root: string): ts.CompilerOptions {
         .join("\n")
     );
   }
-  moduleResolutionOptionsCache.set(root, parsed.options);
   return parsed.options;
 }
 
@@ -1052,13 +1068,19 @@ function finiteDependencyModules(
     ts.forEachChild(node, collectDynamicDependencies);
   };
   collectDynamicDependencies(sourceFile);
+  for (const translatorName of [...translatorNames].toSorted(
+    compareCanonicalStrings
+  )) {
+    traceName(translatorName);
+  }
   return modules;
 }
 
 function resolveModuleWithFrontier(
   moduleName: string,
   containingFile: string,
-  options: ts.CompilerOptions
+  options: ts.CompilerOptions,
+  workspaceRoot: string
 ): Readonly<{
   frontier: SemanticProviderResolution;
   resolvedModule: ts.ResolvedModuleFull | undefined;
@@ -1078,19 +1100,46 @@ function resolveModuleWithFrontier(
   >();
   const controlPaths = new Set<string>();
   const realpaths = new Map<string, string>();
+  const canonicalWorkspaceRoot =
+    ts.sys.realpath?.(workspaceRoot) ?? resolve(workspaceRoot);
+  const confinedPath = (
+    path: string,
+    relevant: boolean,
+    kind: "control" | "probe" | "realpath"
+  ): string | undefined => {
+    const absolute = resolve(path);
+    if (isWithin(canonicalWorkspaceRoot, absolute)) {
+      return absolute;
+    }
+    if (relevant) {
+      throw new Error(
+        `Provider resolution ${kind} for ${moduleName} escapes its workspace root: ${absolute}`
+      );
+    }
+    return undefined;
+  };
+  if (!confinedPath(containingFile, true, "control")) {
+    throw new Error(
+      `Provider resolution source for ${moduleName} escapes its workspace root`
+    );
+  }
   const recordProbe = (
     path: string,
     kind: "directory" | "file",
     present: boolean
   ): void => {
-    const identity = `${path}\u0000${kind}`;
+    const confined = confinedPath(path, present, "probe");
+    if (!confined) {
+      return;
+    }
+    const identity = `${confined}\u0000${kind}`;
     const previous = probes.get(identity);
     if (previous && previous.present !== present) {
       throw new Error(
         `Provider resolution frontier changed while resolving ${moduleName}`
       );
     }
-    probes.set(identity, { kind, path, present });
+    probes.set(identity, { kind, path: confined, present });
   };
   const resolutionHost: ts.ModuleResolutionHost = {
     ...ts.sys,
@@ -1107,14 +1156,21 @@ function resolveModuleWithFrontier(
     readFile(path) {
       const value = ts.sys.readFile(path);
       if (value !== undefined) {
-        controlPaths.add(path);
-        recordProbe(path, "file", true);
+        const confined = confinedPath(path, true, "control");
+        if (confined) {
+          controlPaths.add(confined);
+          recordProbe(confined, "file", true);
+        }
       }
       return value;
     },
     realpath(path) {
       const target = ts.sys.realpath?.(path) ?? resolve(path);
-      realpaths.set(path, target);
+      const confinedSource = confinedPath(path, true, "realpath");
+      const confinedTarget = confinedPath(target, true, "realpath");
+      if (confinedSource && confinedTarget) {
+        realpaths.set(confinedSource, confinedTarget);
+      }
       return target;
     },
   };
@@ -1129,7 +1185,15 @@ function resolveModuleWithFrontier(
     const target =
       ts.sys.realpath?.(resolvedModule.resolvedFileName) ??
       resolve(resolvedModule.resolvedFileName);
-    realpaths.set(resolvedModule.resolvedFileName, target);
+    const confinedSource = confinedPath(
+      resolvedModule.resolvedFileName,
+      true,
+      "realpath"
+    );
+    const confinedTarget = confinedPath(target, true, "realpath");
+    if (confinedSource && confinedTarget) {
+      realpaths.set(confinedSource, confinedTarget);
+    }
     recordProbe(
       resolvedModule.resolvedFileName,
       "file",
@@ -1155,18 +1219,23 @@ function createProgram(
   id: string,
   root: string,
   catalog: CurrentCatalog,
-  generatedFacadeModules: ReadonlySet<string>
+  generatedFacadeModules: ReadonlySet<string>,
+  ownerCompilerOptions?: ts.CompilerOptions,
+  workspaceRoot: string = root
 ): Readonly<{
   checker: ts.TypeChecker;
   program: ts.Program;
   providerBudgetExceeded: string | undefined;
   providerRoots: ReadonlyArray<
     Readonly<{
+      includeDeclarations: boolean;
       resolutions: ReadonlyArray<SemanticProviderResolution>;
       root: string;
     }>
   >;
   sourceFile: ts.SourceFile;
+  sourceRoots: ReadonlySet<string>;
+  tripleSlashControls: number;
   unsupportedProviderResolutionOptions: ReadonlyArray<"typeRoots" | "types">;
 }> {
   const finiteModules = finiteDependencyModules(
@@ -1181,7 +1250,7 @@ function createProgram(
   const resolvesDependencies =
     generatedFacadeModules.size > 0 || finiteModules.size > 0;
   const projectOptions = resolvesDependencies
-    ? moduleResolutionOptions(root)
+    ? (ownerCompilerOptions ?? moduleResolutionOptions(root))
     : undefined;
   const configuredAmbientTypes = projectOptions?.types ?? [];
   const maximumAmbientTypes = 16;
@@ -1231,6 +1300,7 @@ function createProgram(
     string,
     Map<string, SemanticProviderResolution>
   >();
+  const unresolvedProviderRoots = new Set<string>();
   let providerBudgetExceeded: string | undefined;
   const isAllowedProvider = (
     canonical: string,
@@ -1258,13 +1328,17 @@ function createProgram(
     return true;
   };
   const recordProviderResolution = (
-    resolution: ts.ResolvedModuleFull,
+    resolution: ts.ResolvedModuleFull | undefined,
     frontier: SemanticProviderResolution
   ): void => {
-    let entries = providerResolutions.get(resolution.resolvedFileName);
+    const providerRoot = resolution?.resolvedFileName ?? frontier.from;
+    if (!resolution) {
+      unresolvedProviderRoots.add(providerRoot);
+    }
+    let entries = providerResolutions.get(providerRoot);
     if (!entries) {
       entries = new Map();
-      providerResolutions.set(resolution.resolvedFileName, entries);
+      providerResolutions.set(providerRoot, entries);
     }
     entries.set(`${frontier.from}\u0000${frontier.specifier}`, frontier);
   };
@@ -1273,9 +1347,15 @@ function createProgram(
       if (generatedFacadeModules.has(moduleName)) {
         continue;
       }
-      const traced = resolveModuleWithFrontier(moduleName, id, projectOptions);
+      const traced = resolveModuleWithFrontier(
+        moduleName,
+        id,
+        projectOptions,
+        workspaceRoot
+      );
       const resolution = traced.resolvedModule;
       if (!resolution) {
+        recordProviderResolution(undefined, traced.frontier);
         continue;
       }
       const canonical = ts.sys.realpath
@@ -1332,10 +1412,12 @@ function createProgram(
       const traced = resolveModuleWithFrontier(
         moduleName,
         containingFile,
-        projectOptions
+        projectOptions,
+        workspaceRoot
       );
       const resolution = traced.resolvedModule;
       if (!resolution) {
+        recordProviderResolution(undefined, traced.frontier);
         return undefined;
       }
       const canonical = ts.sys.realpath
@@ -1389,6 +1471,7 @@ function createProgram(
     providerRoots: [...providerResolutions.keys()]
       .toSorted(compareCanonicalStrings)
       .map((providerRoot) => ({
+        includeDeclarations: !unresolvedProviderRoots.has(providerRoot),
         resolutions: [
           ...(providerResolutions.get(providerRoot)?.values() ?? []),
         ].toSorted((left, right) =>
@@ -1400,11 +1483,117 @@ function createProgram(
         root: providerRoot,
       })),
     sourceFile,
+    sourceRoots: new Set([id]),
+    tripleSlashControls:
+      sourceFile.referencedFiles.length +
+      sourceFile.typeReferenceDirectives.length +
+      sourceFile.libReferenceDirectives.length,
     unsupportedProviderResolutionOptions: [
       ...(projectOptions?.typeRoots?.length ? (["typeRoots"] as const) : []),
       ...(projectOptions?.types?.length ? (["types"] as const) : []),
     ],
   };
+}
+
+type SemanticProgramContext = ReturnType<typeof createProgram>;
+
+function sharedSemanticProgram(
+  sources: ReadonlyArray<Readonly<{ id: string; source: string }>>,
+  _ownerCompilerOptions: ts.CompilerOptions
+): ReadonlyMap<string, SemanticProgramContext> {
+  const compilerOptions: ts.CompilerOptions = {
+    allowJs: true,
+    jsx: ts.JsxEmit.Preserve,
+    lib: ["lib.es5.d.ts"],
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    noResolve: true,
+    target: ts.ScriptTarget.Latest,
+    types: [],
+  };
+  const sourceFiles = new Map(
+    sources.map(({ id, source }) => [
+      id,
+      ts.createSourceFile(
+        id,
+        source,
+        ts.ScriptTarget.Latest,
+        true,
+        scriptKindFor(id)
+      ),
+    ])
+  );
+  const host = ts.createCompilerHost(compilerOptions, true);
+  const fileExists = host.fileExists.bind(host);
+  const readHostFile = host.readFile.bind(host);
+  const getHostSourceFile = host.getSourceFile.bind(host);
+  host.fileExists = (fileName) =>
+    sourceFiles.has(fileName) || fileExists(fileName);
+  host.readFile = (fileName) =>
+    sourceFiles.get(fileName)?.text ?? readHostFile(fileName);
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) =>
+    sourceFiles.get(fileName) ??
+    getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
+  const program = ts.createProgram(
+    [...sourceFiles.keys()],
+    compilerOptions,
+    host
+  );
+  const checker = program.getTypeChecker();
+  const sourceRoots = new Set(sourceFiles.keys());
+  return new Map(
+    [...sourceFiles].map(([id, sourceFile]) => [
+      id,
+      {
+        checker,
+        program,
+        providerBudgetExceeded: undefined,
+        providerRoots: [],
+        sourceFile,
+        sourceRoots,
+        tripleSlashControls: 0,
+        unsupportedProviderResolutionOptions: [],
+      },
+    ])
+  );
+}
+
+function isSafeSharedSemanticSource(source: string, id: string): boolean {
+  const sourceFile = ts.createSourceFile(
+    id,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(id)
+  );
+  if (
+    !ts.isExternalModule(sourceFile) ||
+    sourceFile.referencedFiles.length > 0 ||
+    sourceFile.typeReferenceDirectives.length > 0 ||
+    sourceFile.libReferenceDirectives.length > 0 ||
+    finiteDependencyModules(sourceFile).size > 0
+  ) {
+    return false;
+  }
+  let unsafe = false;
+  const visit = (node: ts.Node): void => {
+    if (unsafe) {
+      return;
+    }
+    if (
+      (ts.isModuleDeclaration(node) &&
+        ((node.flags & ts.NodeFlags.GlobalAugmentation) !== 0 ||
+          node.name.text === "global" ||
+          ts.isStringLiteral(node.name))) ||
+      ts.isNamespaceExportDeclaration(node)
+    ) {
+      unsafe = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return !unsafe;
 }
 
 function evidencePath(workspaceRoot: string, file: string): string {
@@ -1425,11 +1614,13 @@ function semanticEvidence(
   providerBudgetExceeded: string | undefined,
   providerRoots: ReadonlyArray<
     Readonly<{
+      includeDeclarations: boolean;
       resolutions: ReadonlyArray<SemanticProviderResolution>;
       root: string;
     }>
   >,
   sourceFile: ts.SourceFile,
+  sourceRoots: ReadonlySet<string>,
   generatedFacadeModules: ReadonlySet<string>,
   catalog: CurrentCatalog,
   workspaceRoot: string,
@@ -1444,8 +1635,7 @@ function semanticEvidence(
     .getSourceFiles()
     .filter(
       (file) =>
-        file.fileName !== sourceFile.fileName &&
-        /\.d\.[cm]?ts$/u.test(file.fileName)
+        !sourceRoots.has(file.fileName) && /\.d\.[cm]?ts$/u.test(file.fileName)
     )
     .map((file) => {
       const programPath = resolve(file.fileName);
@@ -1484,7 +1674,13 @@ function semanticEvidence(
   );
   const evidenceProviderRoots = [
     ...(generatedFacadeModules.size > 0
-      ? [{ resolutions: [], root: catalog.generatedFacadePath }]
+      ? [
+          {
+            includeDeclarations: true,
+            resolutions: [],
+            root: catalog.generatedFacadePath,
+          },
+        ]
       : []),
     ...providerRoots,
   ];
@@ -1493,11 +1689,13 @@ function semanticEvidence(
       const providerRoot = provider.root;
       const providerPath = evidencePath(workspaceRoot, resolve(providerRoot));
       const providerDirectory = dirname(providerPath).split(sep).join("/");
-      const providerDeclarations = declarations.filter(
-        (declaration) =>
-          declaration.path === providerPath ||
-          declaration.path.startsWith(`${providerDirectory}/`)
-      );
+      const providerDeclarations = provider.includeDeclarations
+        ? declarations.filter(
+            (declaration) =>
+              declaration.path === providerPath ||
+              declaration.path.startsWith(`${providerDirectory}/`)
+          )
+        : [];
       let kind: "external" | "generated" | "workspace" = "workspace";
       if (providerPath === generatedFacadePath) {
         kind = "generated";
@@ -1590,7 +1788,9 @@ function analyzeSource(
   root: string,
   catalog: CurrentCatalog,
   generatedImports: GeneratedFacadeImportNames,
-  authorizationEvidence?: MiraiIntlTransformOptions["authorizationEvidence"]
+  authorizationEvidence?: MiraiIntlTransformOptions["authorizationEvidence"],
+  semanticProgram?: SemanticProgramContext,
+  ownerCompilerOptions?: ts.CompilerOptions
 ): Readonly<{
   imports: ReadonlyArray<
     Readonly<{ descriptor: string; local: string; module: string }>
@@ -1616,20 +1816,38 @@ function analyzeSource(
     providerBudgetExceeded,
     providerRoots,
     sourceFile,
+    sourceRoots,
+    tripleSlashControls,
     unsupportedProviderResolutionOptions,
-  } = createProgram(source, id, root, catalog, generatedImports.facadeModules);
+  } =
+    semanticProgram ??
+    createProgram(
+      source,
+      id,
+      root,
+      catalog,
+      generatedImports.facadeModules,
+      ownerCompilerOptions,
+      authorizationEvidence?.workspaceRoot ?? root
+    );
   authorizationEvidence?.record(
     semanticEvidence(
       program,
       providerBudgetExceeded,
       providerRoots,
       sourceFile,
+      sourceRoots,
       generatedImports.facadeModules,
       catalog,
       authorizationEvidence.workspaceRoot,
       unsupportedProviderResolutionOptions
     )
   );
+  if (tripleSlashControls > 0) {
+    throw new Error(
+      `${id}:1:1: Triple-slash reference controls are not supported by finite Mirai Intl semantic authorization`
+    );
+  }
   const factorySymbols = new Map<ts.Symbol, FactoryKind>();
   const objectSymbols = new Map<ts.Symbol, string>();
   const translationKeyFactorySymbols = new Set<ts.Symbol>();
@@ -3604,10 +3822,13 @@ function transformSource(
   return { code: stripSourceMapComment(result.outputText), map };
 }
 
-export async function transformMiraiIntlSource(
+async function transformMiraiIntlSourceWithCatalog(
   source: string,
   id: string,
-  options: MiraiIntlTransformOptions = {}
+  options: MiraiIntlTransformOptions,
+  catalog: CurrentCatalog,
+  semanticProgram?: SemanticProgramContext,
+  ownerCompilerOptions?: ts.CompilerOptions
 ): Promise<MiraiIntlTransformResult | null> {
   const cleanId = cleanModuleId(id);
   if (
@@ -3622,7 +3843,6 @@ export async function transformMiraiIntlSource(
   ) {
     return null;
   }
-  const catalog = await loadCurrentCatalog(options);
   if (
     cleanId === catalog.selectedDirectory ||
     cleanId.startsWith(`${catalog.selectedDirectory}${sep}`)
@@ -3642,7 +3862,9 @@ export async function transformMiraiIntlSource(
     root,
     catalog,
     generatedImports,
-    options.authorizationEvidence
+    options.authorizationEvidence,
+    semanticProgram,
+    ownerCompilerOptions
   );
   if (analysis.replacements.size === 0 && analysis.removedNodes.size === 0) {
     return null;
@@ -3667,6 +3889,88 @@ export async function transformMiraiIntlSource(
     ...transformed,
     dependencies: [...catalog.dependencies].toSorted(),
   };
+}
+
+export async function transformMiraiIntlSource(
+  source: string,
+  id: string,
+  options: MiraiIntlTransformOptions = {}
+): Promise<MiraiIntlTransformResult | null> {
+  return transformMiraiIntlSourceWithCatalog(
+    source,
+    id,
+    options,
+    await loadCurrentCatalog(options)
+  );
+}
+
+/**
+ * Analyze an exact owner batch. Only isolated external modules with the same
+ * reference-engine closure (ES5 lib, no providers) share a checker. Files with
+ * provider visibility, global scope, augmentations, or triple-slash controls
+ * deterministically retain the finite per-file Program.
+ */
+export async function transformMiraiIntlOwnerBatch(
+  sources: ReadonlyArray<MiraiIntlSemanticBatchSource>,
+  options: Omit<MiraiIntlTransformOptions, "authorizationEvidence"> = {},
+  observe?: (observation: MiraiIntlSemanticBatchObservation) => void,
+  forceFiniteClosure = false,
+  owner: Readonly<{
+    compilerOptions: ts.CompilerOptions;
+  }> = { compilerOptions: {} }
+): Promise<ReadonlyArray<MiraiIntlSemanticBatchResult>> {
+  if (sources.length === 0) {
+    observe?.({
+      fallbackFiles: 0,
+      fallbackPrograms: 0,
+      sharedFiles: 0,
+      sharedPrograms: 0,
+    });
+    return [];
+  }
+  const catalog = await loadCurrentCatalog(options);
+  const sharedSources = forceFiniteClosure
+    ? []
+    : sources.filter(({ id, source }) =>
+        isSafeSharedSemanticSource(source, cleanModuleId(id))
+      );
+  const sharedPrograms =
+    sharedSources.length > 0
+      ? sharedSemanticProgram(
+          sharedSources.map(({ id, source }) => ({
+            id: cleanModuleId(id),
+            source,
+          })),
+          owner.compilerOptions
+        )
+      : new Map<string, SemanticProgramContext>();
+  const fallbackFiles = sources.length - sharedSources.length;
+  observe?.({
+    fallbackFiles,
+    fallbackPrograms: fallbackFiles,
+    sharedFiles: sharedSources.length,
+    sharedPrograms: sharedSources.length > 0 ? 1 : 0,
+  });
+  return Promise.all(
+    sources.map(async ({ authorizationEvidence, id, source }) => {
+      const cleanId = cleanModuleId(id);
+      try {
+        return {
+          id,
+          result: await transformMiraiIntlSourceWithCatalog(
+            source,
+            cleanId,
+            { ...options, authorizationEvidence },
+            catalog,
+            sharedPrograms.get(cleanId),
+            owner.compilerOptions
+          ),
+        };
+      } catch (error) {
+        return { error, id };
+      }
+    })
+  );
 }
 
 export function isMiraiIntlTransformCandidate(

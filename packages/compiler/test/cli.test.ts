@@ -56,6 +56,12 @@ async function writeConventionApp(root: string): Promise<void> {
   await writeJson(join(root, "src/locales/global/th.json"), {
     greeting: "สวัสดี {name}",
   });
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
+  });
+  await writeJson(join(root, "mirai-intl.config.json"), {
+    checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+  });
 }
 
 function sha256(value: string): string {
@@ -761,7 +767,7 @@ describe("convention-only CLI", () => {
     }
   }, 60_000);
 
-  it("generates and verifies a convention catalog without configuration", async () => {
+  it("generates and verifies a convention catalog with minimal configuration", async () => {
     const root = await createConventionApp();
     try {
       const generated = runCli(root, "generate", "--json");
@@ -1275,6 +1281,7 @@ describe("convention-only CLI", () => {
             rule: "source-analysis",
           },
         ],
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
       });
       const generated = runCli(root, "generate");
       expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(

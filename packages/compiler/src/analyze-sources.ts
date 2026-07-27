@@ -5,8 +5,10 @@ import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
 import { compareCanonicalStrings, sha256 } from "./canonical";
 import { loadConventionCatalog } from "./catalog";
 import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
-import { transformMiraiIntlSource } from "./transform";
+import { resolveConventionSourceUniverse } from "./ownership";
+import { transformMiraiIntlOwnerBatch } from "./transform";
 import type {
+  MiraiIntlSemanticBatchObservation,
   MiraiIntlSemanticEvidence,
   MiraiIntlTransformOptions,
 } from "./transform";
@@ -43,7 +45,15 @@ export type ConventionSourceAnalysis = Readonly<{
 }>;
 
 export type AnalyzeConventionSourcesOptions = MiraiIntlTransformOptions &
-  Readonly<Record<never, never>>;
+  Readonly<{
+    /** @internal Benchmark/test observation only; never enters receipts. */
+    semanticBatchObserver?: (
+      owner: string,
+      observation: MiraiIntlSemanticBatchObservation
+    ) => void;
+    /** @internal Phase-1 finite-closure oracle for parity tests/benchmarks. */
+    semanticEngine?: "owner-batch" | "reference";
+  }>;
 
 function parseTransformDiagnostic(
   error: unknown,
@@ -177,11 +187,19 @@ export async function analyzeConventionSources(
     root,
     generatedDirectory
   );
+  const universe = await resolveConventionSourceUniverse(
+    root,
+    loaded.checkProjects,
+    generatedDirectory,
+    sourceFiles
+  );
   return analyzeLoadedConventionSourceFiles(
     loaded,
     root,
     generatedDirectory,
-    sourceFiles
+    universe.files,
+    universe.workspaceRoot,
+    options
   );
 }
 
@@ -194,12 +212,22 @@ export async function analyzeConventionSourceFiles(
 ): Promise<ConventionSourceAnalysis> {
   const loaded = await loadConventionCatalog(packageRoot);
   const root = resolve(options.root ?? loaded.repositoryRoot);
+  const generatedDirectory =
+    options.generatedDirectory ?? loaded.discovery.output;
+  const universe = await resolveConventionSourceUniverse(
+    root,
+    loaded.checkProjects,
+    generatedDirectory,
+    sourceFiles
+  );
+  const requested = new Set(sourceFiles);
   return analyzeLoadedConventionSourceFiles(
     loaded,
     root,
-    options.generatedDirectory ?? loaded.discovery.output,
-    sourceFiles,
-    workspaceRoot
+    generatedDirectory,
+    universe.files.filter(({ absolute }) => requested.has(absolute)),
+    workspaceRoot,
+    options
   );
 }
 
@@ -207,8 +235,16 @@ async function analyzeLoadedConventionSourceFiles(
   loaded: Awaited<ReturnType<typeof loadConventionCatalog>>,
   root: string,
   generatedDirectory: string,
-  sourceFiles: ReadonlyArray<string>,
-  workspaceRoot: string = root
+  sourceFiles: ReadonlyArray<
+    Readonly<{
+      absolute: string;
+      file: string;
+      owner: string;
+      ownerCompilerOptions: ts.CompilerOptions;
+    }>
+  >,
+  workspaceRoot: string = root,
+  options: AnalyzeConventionSourcesOptions = {}
 ): Promise<ConventionSourceAnalysis> {
   const diagnostics: Array<ConventionSourceDiagnostic> = [];
   const exceptionDiagnostics: Array<ExceptionDiagnostic> = [];
@@ -216,10 +252,17 @@ async function analyzeLoadedConventionSourceFiles(
   let filesAnalyzed = 0;
   const evidence: Array<MiraiIntlSemanticEvidence> = [];
 
-  for (const file of sourceFiles) {
-    const source = await readFile(file, "utf8");
+  const loadedSources = await Promise.all(
+    sourceFiles.map(async ({ absolute, owner, ownerCompilerOptions }) => ({
+      file: absolute,
+      owner,
+      ownerCompilerOptions,
+      source: await readFile(absolute, "utf8"),
+    }))
+  );
+  for (const { file, source } of loadedSources) {
     filesAnalyzed += 1;
-
+    candidates += 1;
     diagnostics.push(
       ...analyzeHardcodedLiterals({
         filePath: file,
@@ -227,34 +270,60 @@ async function analyzeLoadedConventionSourceFiles(
         source,
       })
     );
-
-    // The compiler owns authority for whether a module contains an intl
-    // operation. A lexical pre-filter let aliases, props and callbacks evade
-    // the deployment check while being rejected during an actual transform.
-    // Transform every eligible first-party source instead; it returns null for
-    // unrelated modules without changing the source.
-    candidates += 1;
-    let semanticEvidence: MiraiIntlSemanticEvidence | undefined;
-    try {
-      await transformMiraiIntlSource(source, file, {
+  }
+  const owners = new Map<string, Array<(typeof loadedSources)[number]>>();
+  for (const entry of loadedSources) {
+    const entries = owners.get(entry.owner) ?? [];
+    entries.push(entry);
+    owners.set(entry.owner, entries);
+  }
+  const {
+    semanticBatchObserver: observe,
+    semanticEngine = "owner-batch",
+    ...transformOptions
+  } = options;
+  for (const [owner, ownedSources] of [...owners].toSorted(([left], [right]) =>
+    compareCanonicalStrings(left, right)
+  )) {
+    const evidenceByFile = new Map<string, MiraiIntlSemanticEvidence>();
+    const results = await transformMiraiIntlOwnerBatch(
+      ownedSources.map(({ file, source }) => ({
         authorizationEvidence: {
           record(value) {
-            semanticEvidence = value;
+            evidenceByFile.set(file, value);
           },
           workspaceRoot,
         },
+        id: file,
+        source,
+      })),
+      {
+        ...transformOptions,
         generatedDirectory,
         root,
-      });
-    } catch (error) {
-      exceptionDiagnostics.push(parseTransformDiagnostic(error, file, source));
+      },
+      (observation) => observe?.(owner, observation),
+      semanticEngine === "reference",
+      {
+        compilerOptions: ownedSources[0]?.ownerCompilerOptions ?? {},
+      }
+    );
+    for (const result of results) {
+      const source =
+        ownedSources.find(({ file }) => file === result.id)?.source ?? "";
+      if ("error" in result) {
+        exceptionDiagnostics.push(
+          parseTransformDiagnostic(result.error, result.id, source)
+        );
+      }
+      const semanticEvidence = evidenceByFile.get(result.id);
+      if (!semanticEvidence) {
+        throw new Error(
+          `Mirai Intl source analysis did not record semantic evidence for ${relative(workspaceRoot, result.id).split(sep).join("/")}`
+        );
+      }
+      evidence.push(semanticEvidence);
     }
-    if (!semanticEvidence) {
-      throw new Error(
-        `Mirai Intl source analysis did not record semantic evidence for ${relative(workspaceRoot, file).split(sep).join("/")}`
-      );
-    }
-    evidence.push(semanticEvidence);
   }
 
   return {
