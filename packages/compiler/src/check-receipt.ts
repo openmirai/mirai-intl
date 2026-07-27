@@ -8,7 +8,7 @@ import type {
   IntlBuildVerificationCountersV2,
 } from "@openmirai/intl-abi";
 
-import { canonicalJson, sha256 } from "./canonical";
+import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import {
   loadConventionCatalog,
   verifyLoadedConventionCatalog,
@@ -21,6 +21,7 @@ import {
   computeApplicationPackageIdentity,
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
+import { reconstructProviderResolution } from "./provider-resolution-identity";
 import { reconstructProjectRootFiles } from "./source-universe-identity";
 import type {
   IntegrityManifestEntry,
@@ -266,6 +267,15 @@ export async function verifyConventionBuildReceipt(
     ),
     verifyFiles(
       workspace,
+      receipt.providerClosures.flatMap((closure) =>
+        closure.providers.flatMap((provider) =>
+          provider.resolutions.flatMap((resolution) => resolution.controlFiles)
+        )
+      ),
+      "Mirai Intl provider resolution control"
+    ),
+    verifyFiles(
+      workspace,
       receipt.providerClosures.flatMap((closure) => closure.libs),
       "Mirai Intl loaded TypeScript lib"
     ),
@@ -281,6 +291,41 @@ export async function verifyConventionBuildReceipt(
       throw new Error(
         `Mirai Intl check-project source universe is stale: ${project.path}; expected ${canonicalJson(project.rootFiles)}, received ${canonicalJson(rootFiles)}`
       );
+    }
+  }
+  const sourceByFile = new Map(
+    receipt.sources.map((ledgerEntry) => [ledgerEntry.file, ledgerEntry])
+  );
+  const projectByPath = new Map(
+    receipt.projects.map((project) => [project.path, project])
+  );
+  for (const closure of receipt.providerClosures) {
+    const ledgerEntry = sourceByFile.get(closure.source);
+    const project = ledgerEntry
+      ? projectByPath.get(ledgerEntry.owner)
+      : undefined;
+    if (!project) {
+      throw new Error(
+        `Mirai Intl provider closure has no owning check project: ${closure.source}`
+      );
+    }
+    for (const provider of closure.providers) {
+      for (const resolution of provider.resolutions) {
+        const current = await reconstructProviderResolution(
+          workspace,
+          project.normalizedOptions,
+          resolution
+        );
+        if (
+          current.root !== provider.root ||
+          canonicalJson(current.controlFiles) !==
+            canonicalJson(resolution.controlFiles)
+        ) {
+          throw new Error(
+            `Mirai Intl provider resolution is stale: ${resolution.specifier}`
+          );
+        }
+      }
     }
   }
   const generatedPrefix = relative(
@@ -302,14 +347,16 @@ export async function verifyConventionBuildReceipt(
         .map((file) => ({ file, owner: project.path }))
     )
     .toSorted((left, right) =>
-      `${left.file}\u0000${left.owner}`.localeCompare(
+      compareCanonicalStrings(
+        `${left.file}\u0000${left.owner}`,
         `${right.file}\u0000${right.owner}`
       )
     );
   const receiptOwners = receipt.sources
     .map(({ file, owner }) => ({ file, owner }))
     .toSorted((left, right) =>
-      `${left.file}\u0000${left.owner}`.localeCompare(
+      compareCanonicalStrings(
+        `${left.file}\u0000${left.owner}`,
         `${right.file}\u0000${right.owner}`
       )
     );

@@ -109,6 +109,7 @@ const receipt = {
           ],
           hash,
           kind: "external",
+          resolutions: [],
           root: "node_modules/@types/node",
         },
       ],

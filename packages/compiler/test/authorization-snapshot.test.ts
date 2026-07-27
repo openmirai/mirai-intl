@@ -4,7 +4,7 @@ import type {
   RuntimeAbi,
   Sha256,
 } from "@openmirai/intl-abi";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildIntlCheckReceiptV2,
@@ -97,6 +97,22 @@ function input(): SourceAuthorizationSnapshotInput {
         {
           declarations: [file("types/provider.d.ts")],
           kind: "workspace" as const,
+          resolutions: [
+            {
+              controlFiles: [file("types/ä.package.json")],
+              from: source,
+              packageName: null,
+              packageVersion: null,
+              specifier: "ä-provider",
+            },
+            {
+              controlFiles: [file("types/z.package.json")],
+              from: source,
+              packageName: null,
+              packageVersion: null,
+              specifier: "z-provider",
+            },
+          ],
           root: "types",
         },
       ],
@@ -133,6 +149,9 @@ function clone<T>(value: T): T {
 }
 
 function mutatePrimitive(value: unknown): unknown {
+  if (value === null) {
+    return "mutated-null";
+  }
   if (typeof value === "string") {
     return SHA256_PATTERN.test(value) ? hash(`mutated:${value}`) : `${value}-x`;
   }
@@ -213,6 +232,11 @@ describe("source authorization snapshots", () => {
       "src/excepted.ts",
       "src/main.ts",
     ]);
+    expect(
+      snapshot.providerClosures[0]?.providers[0]?.resolutions.map(
+        (resolution) => resolution.specifier
+      )
+    ).toEqual(["z-provider", "ä-provider"]);
     expect(snapshot.counters).toMatchObject({
       checkerProjects: 1,
       exceptions: 1,
@@ -224,6 +248,25 @@ describe("source authorization snapshots", () => {
       sourceFiles: 2,
     });
     expect(parseSourceAuthorizationSnapshot(snapshot)).toEqual(snapshot);
+  });
+
+  it("orders Unicode authority identities without locale collation", () => {
+    const localeCompare = vi
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(() => {
+        throw new Error("authority ordering used locale collation");
+      });
+    try {
+      const snapshot = buildSourceAuthorizationSnapshot(input());
+      expect(
+        snapshot.providerClosures[0]?.providers[0]?.resolutions.map(
+          (resolution) => resolution.specifier
+        )
+      ).toEqual(["z-provider", "ä-provider"]);
+      expect(localeCompare).not.toHaveBeenCalled();
+    } finally {
+      localeCompare.mockRestore();
+    }
   });
 
   it("requires observed semantic counters to match actual work", () => {
@@ -315,6 +358,16 @@ describe("source authorization snapshots", () => {
     const missing = clone(value) as Record<string, unknown>;
     delete missing.generationReceiptHash;
     expect(() => parseIntlCheckReceiptV2(missing)).toThrow(
+      "unexpected or missing fields"
+    );
+
+    const legacyProvider = clone(value) as unknown as {
+      providerClosures: Array<{
+        providers: Array<Record<string, unknown>>;
+      }>;
+    };
+    delete legacyProvider.providerClosures[0]?.providers[0]?.resolutions;
+    expect(() => parseIntlCheckReceiptV2(legacyProvider)).toThrow(
       "unexpected or missing fields"
     );
 

@@ -8,6 +8,7 @@ import type {
   IntlCheckProjectV2,
   IntlCheckProviderClosureV2,
   IntlCheckProviderKindV2,
+  IntlCheckProviderResolutionV2,
   IntlCheckProviderV2,
   IntlCheckReceiptCountersV2,
   IntlCheckReceiptV2,
@@ -435,6 +436,45 @@ function providerIdentity(
   return `${provider.root}\u0000${provider.kind}`;
 }
 
+function nullableText(value: unknown, context: string): string | null {
+  return value === null ? null : text(value, context);
+}
+
+function parseProviderResolution(
+  value: unknown,
+  context: string,
+  normalize = false
+): IntlCheckProviderResolutionV2 {
+  const object = exact(
+    value,
+    ["controlFiles", "from", "packageName", "packageVersion", "specifier"],
+    context
+  );
+  const controlFiles = parseFiles(
+    object.controlFiles,
+    `${context}.controlFiles`,
+    normalize
+  );
+  const packageName = nullableText(
+    object.packageName,
+    `${context}.packageName`
+  );
+  const packageVersion = nullableText(
+    object.packageVersion,
+    `${context}.packageVersion`
+  );
+  if ((packageName === null) !== (packageVersion === null)) {
+    fail(context, "must bind both package name and version or neither");
+  }
+  return {
+    controlFiles,
+    from: path(object.from, `${context}.from`, normalize),
+    packageName,
+    packageVersion,
+    specifier: text(object.specifier, `${context}.specifier`),
+  };
+}
+
 function parseProvider(
   value: unknown,
   context: string,
@@ -442,7 +482,7 @@ function parseProvider(
 ): IntlCheckProviderV2 {
   const object = exact(
     value,
-    ["declarationHash", "declarations", "hash", "kind", "root"],
+    ["declarationHash", "declarations", "hash", "kind", "resolutions", "root"],
     context
   );
   const declarations = parseFiles(
@@ -456,10 +496,26 @@ function parseProvider(
   ) {
     fail(`${context}.kind`, "is unsupported");
   }
+  if (!Array.isArray(object.resolutions)) {
+    fail(`${context}.resolutions`, "must be an array");
+  }
+  const resolutions = object.resolutions.map((resolution, index) =>
+    parseProviderResolution(
+      resolution,
+      `${context}.resolutions[${index}]`,
+      normalize
+    )
+  );
+  sortedUnique(
+    resolutions,
+    (resolution) => `${resolution.from}\u0000${resolution.specifier}`,
+    `${context}.resolutions`
+  );
   const base = {
     declarationHash: sha(object.declarationHash, `${context}.declarationHash`),
     declarations,
     kind: object.kind as IntlCheckProviderKindV2,
+    resolutions,
     root: path(object.root, `${context}.root`, normalize),
   };
   if (base.declarationHash !== canonicalHash(declarations)) {
@@ -959,10 +1015,33 @@ function canonicalProvider(
     ),
     (entry) => entry.path
   );
+  const resolutions = sortBy(
+    input.resolutions.map((resolution, resolutionIndex) =>
+      parseProviderResolution(
+        {
+          ...resolution,
+          controlFiles: sortBy(
+            resolution.controlFiles.map((entry, controlIndex) =>
+              parseFile(
+                entry,
+                `${context}.resolutions[${resolutionIndex}].controlFiles[${controlIndex}]`,
+                true
+              )
+            ),
+            (entry) => entry.path
+          ),
+        },
+        `${context}.resolutions[${resolutionIndex}]`,
+        true
+      )
+    ),
+    (resolution) => `${resolution.from}\u0000${resolution.specifier}`
+  );
   const base = {
     declarationHash: canonicalHash(declarations),
     declarations,
     kind: input.kind,
+    resolutions,
     root: path(input.root, `${context}.root`, true),
   };
   return parseProvider({ ...base, hash: canonicalHash(base) }, context);

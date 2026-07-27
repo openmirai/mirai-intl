@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
-import { sha256 } from "./canonical";
+import { compareCanonicalStrings, sha256 } from "./canonical";
 import { loadConventionCatalog } from "./catalog";
 import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
 import { transformMiraiIntlSource } from "./transform";
@@ -162,7 +162,7 @@ export async function collectConventionSourceFiles(
   };
 
   await visit(root);
-  return files.toSorted((left, right) => left.localeCompare(right));
+  return files.toSorted(compareCanonicalStrings);
 }
 
 export async function analyzeConventionSources(
@@ -268,7 +268,7 @@ async function analyzeLoadedConventionSourceFiles(
       ),
     ],
     evidence: evidence.toSorted((left, right) =>
-      left.source.localeCompare(right.source)
+      compareCanonicalStrings(left.source, right.source)
     ),
     filesAnalyzed,
   };

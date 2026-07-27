@@ -17,7 +17,12 @@ import type {
   IntlCheckReceiptV2,
 } from "@openmirai/intl-abi";
 
-import { canonicalHash, canonicalJson, sha256 } from "./canonical";
+import {
+  canonicalHash,
+  canonicalJson,
+  compareCanonicalStrings,
+  sha256,
+} from "./canonical";
 import {
   loadConventionCatalog,
   verifyLoadedConventionCatalog,
@@ -38,6 +43,7 @@ import {
 } from "./integrity-identity";
 import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
+import { captureProviderResolutions } from "./provider-resolution-identity";
 
 const artifactAbi = "mirai-intl-artifact-v2";
 const proofDirectory = "build-proofs";
@@ -95,7 +101,9 @@ export async function discoverEmittedModules(
       "Build proof requires at least one emitted JavaScript module"
     );
   }
-  return modules.toSorted((left, right) => left.path.localeCompare(right.path));
+  return modules.toSorted((left, right) =>
+    compareCanonicalStrings(left.path, right.path)
+  );
 }
 
 type BuildProofReceipts = Readonly<{
@@ -128,7 +136,7 @@ async function buildProofReceipts(
   }
   const receipts = await Promise.all(
     [...dependencies]
-      .toSorted(([left], [right]) => left.localeCompare(right))
+      .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
       .map(async ([dependency, dependencyRoot]) => ({
         dependency,
         receipt: (await verifyConventionBuildReceipt(dependencyRoot)).receipt,
@@ -225,7 +233,7 @@ async function emittedEvidence(
     })
   );
   const sorted = emitted.toSorted((left, right) =>
-    left.path.localeCompare(right.path)
+    compareCanonicalStrings(left.path, right.path)
   );
   if (new Set(sorted.map((entry) => entry.path)).size !== sorted.length) {
     throw new Error("Build proof emitted module paths must be unique");
@@ -547,19 +555,44 @@ async function createConventionCheckReceipt(
       ? ("exception" as const)
       : ("accepted" as const),
   }));
-  const providerClosures = analysis.evidence.map((entry) => ({
-    ambientTypeFileLimit: entry.ambientTypeFileLimit,
-    declarations: entry.declarations,
-    libs: entry.libs,
-    providerBudgetExceeded: false as const,
-    providerRootLimit: entry.providerRootLimit,
-    providers: entry.providers.map((provider) => ({
-      declarations: provider.declarations,
-      kind: provider.kind,
-      root: provider.root,
-    })),
-    source: entry.source,
-  }));
+  const ownerBySource = new Map(
+    universe.files.map((entry) => [entry.file, entry.owner])
+  );
+  const projectByPath = new Map(
+    universe.projects.map((project) => [project.path, project])
+  );
+  const providerClosures = await Promise.all(
+    analysis.evidence.map(async (entry) => {
+      const owner = ownerBySource.get(entry.source);
+      const project = owner ? projectByPath.get(owner) : undefined;
+      if (!project) {
+        throw new Error(
+          `Semantic provider closure has no owning check project: ${entry.source}`
+        );
+      }
+      return {
+        ambientTypeFileLimit: entry.ambientTypeFileLimit,
+        declarations: entry.declarations,
+        libs: entry.libs,
+        providerBudgetExceeded: false as const,
+        providerRootLimit: entry.providerRootLimit,
+        providers: await Promise.all(
+          entry.providers.map(async (provider) => ({
+            declarations: provider.declarations,
+            kind: provider.kind,
+            resolutions: await captureProviderResolutions(
+              universe.workspaceRoot,
+              project.normalizedOptions,
+              provider.root,
+              provider.resolutions
+            ),
+            root: provider.root,
+          }))
+        ),
+        source: entry.source,
+      };
+    })
+  );
   const loadedLibs = new Map(
     analysis.evidence.flatMap((entry) =>
       entry.libs.map((file) => [file.path, file] as const)
@@ -584,7 +617,7 @@ async function createConventionCheckReceipt(
     sources,
     typescript: {
       libs: [...loadedLibs.values()].toSorted((left, right) =>
-        left.path.localeCompare(right.path)
+        compareCanonicalStrings(left.path, right.path)
       ),
       package: packageIdentity(immutable.typescript),
     },

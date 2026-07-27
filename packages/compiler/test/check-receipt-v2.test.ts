@@ -24,18 +24,56 @@ async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "mirai-intl-receipt-v2-"));
   roots.push(root);
   await writeJson(join(root, "package.json"), {
-    dependencies: { vite: "8.1.4" },
+    dependencies: { "@example/provider": "1.0.0", vite: "8.1.4" },
     name: "@example/receipt-v2",
     version: "1.0.0",
   });
+  await writeJson(join(root, "node_modules/@example/provider/package.json"), {
+    dependencies: { "@example/transitive": "1.0.0" },
+    exports: { ".": "./index.js" },
+    name: "@example/provider",
+    types: "./index.d.ts",
+    version: "1.0.0",
+  });
+  await writeFile(
+    join(root, "node_modules/@example/provider/index.d.ts"),
+    'export { key } from "@example/transitive";\n'
+  );
+  await writeFile(
+    join(root, "node_modules/@example/provider/alternate.d.ts"),
+    'export declare const key: "greeting";\n'
+  );
+  await writeJson(join(root, "node_modules/@example/transitive/package.json"), {
+    exports: { ".": "./index.js" },
+    name: "@example/transitive",
+    types: "./index.d.ts",
+    version: "1.0.0",
+  });
+  await writeFile(
+    join(root, "node_modules/@example/transitive/index.d.ts"),
+    'export declare const key: "greeting";\n'
+  );
+  await writeFile(
+    join(root, "node_modules/@example/transitive/alternate.d.ts"),
+    'export declare const key: "greeting";\n'
+  );
   await writeJson(join(root, "src/locales/global/en.json"), {
-    greeting: "Hello",
+    group: { greeting: "Hello" },
   });
   await writeJson(join(root, "src/locales/global/th.json"), {
-    greeting: "สวัสดี",
+    group: { greeting: "สวัสดี" },
   });
   await mkdir(join(root, "src"), { recursive: true });
-  await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
+  await writeFile(
+    join(root, "src/page.ts"),
+    [
+      'import { key } from "@example/provider";',
+      'import { useTranslations } from "x";',
+      'const { t } = useTranslations("group");',
+      "export const page = t(key);",
+      "",
+    ].join("\n")
+  );
   await writeFile(join(root, "src/legacy.js"), "export const legacy = 1;\n");
   await writeJson(join(root, "tsconfig.a.json"), {
     compilerOptions: { allowJs: true, resolveJsonModule: true },
@@ -51,6 +89,7 @@ async function fixture(): Promise<string> {
     compilerOptions: { allowJs: false, resolveJsonModule: false },
   });
   await writeJson(join(root, "tsconfig.json"), {
+    exclude: ["src/node_modules"],
     extends: ["./tsconfig.z.json", "./tsconfig.a.json", "./tsconfig.base.json"],
     include: ["src/**/*"],
     references: [{ path: "./tsconfig.types.json" }],
@@ -80,10 +119,49 @@ describe("V2 build receipt verification", () => {
     await expect(readFile(path, "utf8")).resolves.toBe(firstBytes);
     expect(first.schemaVersion).toBe(2);
     expect(first.counters.semanticAuthorizationRuns).toBe(1);
+    expect(first.counters.providerRoots).toBe(2);
     expect(first.projects[0]?.normalizedOptions.allowJs).toBe(true);
     expect(first.projects[0]?.normalizedOptions.resolveJsonModule).toBe(true);
     expect(first.projects[0]?.rootFiles).toEqual(
       expect.arrayContaining(["src/legacy.js", "src/page.ts"])
+    );
+    expect(
+      first.providerClosures.find((closure) => closure.source === "src/page.ts")
+        ?.providers
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resolutions: [
+            expect.objectContaining({
+              controlFiles: [
+                expect.objectContaining({
+                  path: "node_modules/@example/provider/package.json",
+                }),
+              ],
+              packageName: "@example/provider",
+              packageVersion: "1.0.0",
+              specifier: "@example/provider",
+            }),
+          ],
+          root: "node_modules/@example/provider/index.d.ts",
+        }),
+        expect.objectContaining({
+          resolutions: [
+            expect.objectContaining({
+              controlFiles: [
+                expect.objectContaining({
+                  path: "node_modules/@example/transitive/package.json",
+                }),
+              ],
+              from: "node_modules/@example/provider/index.d.ts",
+              packageName: "@example/transitive",
+              packageVersion: "1.0.0",
+              specifier: "@example/transitive",
+            }),
+          ],
+          root: "node_modules/@example/transitive/index.d.ts",
+        }),
+      ])
     );
     expect(
       first.projects[0]?.configManifest.map((entry) => entry.path)
@@ -145,6 +223,121 @@ describe("V2 build receipt verification", () => {
     await writeFile(pointerPath, `${JSON.stringify(pointer)}\n`);
     await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(/./u);
   }, 60_000);
+
+  it.each([
+    [
+      "nearer package addition",
+      async (root: string) => {
+        await writeJson(
+          join(root, "src/node_modules/@example/provider/package.json"),
+          {
+            exports: { ".": "./index.d.ts" },
+            name: "@example/provider",
+            version: "2.0.0",
+          }
+        );
+        await writeFile(
+          join(root, "src/node_modules/@example/provider/index.d.ts"),
+          'export declare const key: "greeting";\n'
+        );
+      },
+      /provider package identity is stale/u,
+    ],
+    [
+      "implementation addition",
+      async (root: string) => {
+        await writeFile(
+          join(root, "node_modules/@example/provider/index.ts"),
+          'export const key = "greeting" as const;\n'
+        );
+      },
+      /provider resolution is stale/u,
+    ],
+    [
+      "provider removal",
+      async (root: string) => {
+        await rm(join(root, "node_modules/@example/provider"), {
+          recursive: true,
+        });
+      },
+      /receipt input must be a regular file/u,
+    ],
+    [
+      "exports retarget",
+      async (root: string) => {
+        await writeJson(
+          join(root, "node_modules/@example/provider/package.json"),
+          {
+            exports: { ".": "./alternate.js" },
+            name: "@example/provider",
+            types: "./index.d.ts",
+            version: "1.0.0",
+          }
+        );
+      },
+      /provider resolution control is stale or corrupt/u,
+    ],
+    [
+      "types retarget",
+      async (root: string) => {
+        await writeJson(
+          join(root, "node_modules/@example/provider/package.json"),
+          {
+            exports: { ".": "./index.js" },
+            name: "@example/provider",
+            types: "./alternate.d.ts",
+            version: "1.0.0",
+          }
+        );
+      },
+      /provider resolution control is stale or corrupt/u,
+    ],
+    [
+      "package identity mutation",
+      async (root: string) => {
+        await writeJson(
+          join(root, "node_modules/@example/provider/package.json"),
+          {
+            exports: { ".": "./index.js" },
+            name: "@example/provider",
+            types: "./index.d.ts",
+            version: "2.0.0",
+          }
+        );
+      },
+      /provider resolution control is stale or corrupt/u,
+    ],
+    [
+      "transitive exports retarget",
+      async (root: string) => {
+        await writeJson(
+          join(root, "node_modules/@example/transitive/package.json"),
+          {
+            exports: { ".": "./alternate.js" },
+            name: "@example/transitive",
+            types: "./index.d.ts",
+            version: "1.0.0",
+          }
+        );
+      },
+      /provider resolution control is stale or corrupt/u,
+    ],
+  ] as const)(
+    "rejects provider authority after %s",
+    async (_label, mutate, error) => {
+      const root = await fixture();
+      await proveConventionCatalog(root);
+      await mutate(root);
+      vi.resetModules();
+      vi.doMock("typescript", () => {
+        throw new Error("build verification imported TypeScript");
+      });
+      const { verifyConventionBuildReceipt } =
+        await import("../src/check-receipt");
+      await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(error);
+    },
+    60_000
+  );
 
   it("rejects legacy V1 explicitly", async () => {
     const root = await fixture();

@@ -100,12 +100,21 @@ export type IntlCheckProviderKindV2 =
   | "generated"
   | "workspace";
 
+export type IntlCheckProviderResolutionV2 = Readonly<{
+  controlFiles: ReadonlyArray<IntlCheckFileIdentityV2>;
+  from: string;
+  packageName: string | null;
+  packageVersion: string | null;
+  specifier: string;
+}>;
+
 /** One finite provider root and the declarations admitted from that root. */
 export type IntlCheckProviderV2 = Readonly<{
   declarationHash: Sha256;
   declarations: ReadonlyArray<IntlCheckFileIdentityV2>;
   hash: Sha256;
   kind: IntlCheckProviderKindV2;
+  resolutions: ReadonlyArray<IntlCheckProviderResolutionV2>;
   root: string;
 }>;
 

@@ -9,7 +9,7 @@ import type {
 } from "@openmirai/intl-abi";
 import ts from "typescript";
 
-import { sha256 } from "./canonical";
+import { compareCanonicalStrings, sha256 } from "./canonical";
 
 export type OwnedSourceFile = Readonly<{
   absolute: string;
@@ -226,7 +226,7 @@ async function projectFiles(
   }
   const configManifest = await Promise.all(
     [...edges]
-      .toSorted(([left], [right]) => left.localeCompare(right))
+      .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
       .map(async ([path, edge]) => ({
         extends: edge.extends.map((entry) =>
           receiptRelativePath(workspaceRoot, entry)
@@ -259,7 +259,7 @@ async function projectFiles(
       return Object.fromEntries(
         Object.entries(value)
           .filter(([, entry]) => entry !== undefined)
-          .toSorted(([left], [right]) => left.localeCompare(right))
+          .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
           .map(([key, entry]) => [key, normalizeOption(entry)])
       );
     }
@@ -339,7 +339,7 @@ export async function resolveConventionSourceUniverse(
     )
   );
   const files = [...sourceFiles]
-    .toSorted((left, right) => left.localeCompare(right))
+    .toSorted(compareCanonicalStrings)
     .map((absolute) => {
       const matching = ownerProjects.filter((entry) =>
         entry.files.has(absolute)
@@ -363,7 +363,9 @@ export async function resolveConventionSourceUniverse(
     files,
     projects: projectsWithFiles
       .map(({ evidence }) => evidence)
-      .toSorted((left, right) => left.path.localeCompare(right.path)),
+      .toSorted((left, right) =>
+        compareCanonicalStrings(left.path, right.path)
+      ),
     workspaceRoot,
   };
 }

@@ -3,7 +3,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import ts from "typescript";
 
-import { sha256 } from "./canonical";
+import { compareCanonicalStrings, sha256 } from "./canonical";
 import { privateMessageSliceSpecifier } from "./private-module";
 
 export type MiraiIntlTransformOptions = Readonly<{
@@ -47,6 +47,14 @@ export type MiraiIntlSemanticEvidence = Readonly<{
         Readonly<{ hash: `sha256:${string}`; path: string }>
       >;
       kind: "ambient" | "external" | "generated" | "workspace";
+      resolutions: ReadonlyArray<
+        Readonly<{
+          from: string;
+          packageName: string | null;
+          packageVersion: string | null;
+          specifier: string;
+        }>
+      >;
       root: string;
     }>
   >;
@@ -776,7 +784,7 @@ function generatedFacadeTypeModule(catalog: CurrentCatalog): string {
     }
   }
   const entries = [...namespaces.entries()].toSorted(([left], [right]) =>
-    left.localeCompare(right)
+    compareCanonicalStrings(left, right)
   );
   const namespaceType =
     entries.map(([namespace]) => JSON.stringify(namespace)).join(" | ") ||
@@ -1042,7 +1050,19 @@ function createProgram(
   checker: ts.TypeChecker;
   program: ts.Program;
   providerBudgetExceeded: string | undefined;
-  providerRoots: ReadonlyArray<string>;
+  providerRoots: ReadonlyArray<
+    Readonly<{
+      resolutions: ReadonlyArray<
+        Readonly<{
+          from: string;
+          packageName: string | null;
+          packageVersion: string | null;
+          specifier: string;
+        }>
+      >;
+      root: string;
+    }>
+  >;
   sourceFile: ts.SourceFile;
 }> {
   const finiteModules = finiteDependencyModules(
@@ -1103,6 +1123,18 @@ function createProgram(
   const maximumProviderFiles = 64;
   const providerFiles = new Set<string>();
   const providerRootNames = new Set<string>();
+  const providerResolutions = new Map<
+    string,
+    Map<
+      string,
+      Readonly<{
+        from: string;
+        packageName: string | null;
+        packageVersion: string | null;
+        specifier: string;
+      }>
+    >
+  >();
   let providerBudgetExceeded: string | undefined;
   const isAllowedProvider = (
     canonical: string,
@@ -1129,6 +1161,23 @@ function createProgram(
     providerFiles.add(canonical);
     return true;
   };
+  const recordProviderResolution = (
+    moduleName: string,
+    resolution: ts.ResolvedModuleFull,
+    containingFile: string
+  ): void => {
+    let entries = providerResolutions.get(resolution.resolvedFileName);
+    if (!entries) {
+      entries = new Map();
+      providerResolutions.set(resolution.resolvedFileName, entries);
+    }
+    entries.set(`${containingFile}\u0000${moduleName}`, {
+      from: containingFile,
+      packageName: resolution.packageId?.name ?? null,
+      packageVersion: resolution.packageId?.version ?? null,
+      specifier: moduleName,
+    });
+  };
   if (projectOptions) {
     for (const moduleName of finiteModules) {
       if (generatedFacadeModules.has(moduleName)) {
@@ -1151,6 +1200,7 @@ function createProgram(
         claimProvider(canonical, moduleName)
       ) {
         providerRootNames.add(resolution.resolvedFileName);
+        recordProviderResolution(moduleName, resolution, id);
       }
     }
   }
@@ -1226,6 +1276,7 @@ function createProgram(
       if (!claimProvider(canonical, moduleName)) {
         return undefined;
       }
+      recordProviderResolution(moduleName, resolution, containingFile);
       return resolution;
     };
     host.resolveModuleNameLiterals = (moduleLiterals, containingFile) =>
@@ -1249,7 +1300,19 @@ function createProgram(
     checker: program.getTypeChecker(),
     program,
     providerBudgetExceeded,
-    providerRoots: [...providerRootNames].toSorted(),
+    providerRoots: [...providerResolutions.keys()]
+      .toSorted(compareCanonicalStrings)
+      .map((providerRoot) => ({
+        resolutions: [
+          ...(providerResolutions.get(providerRoot)?.values() ?? []),
+        ].toSorted((left, right) =>
+          compareCanonicalStrings(
+            `${left.from}\u0000${left.specifier}`,
+            `${right.from}\u0000${right.specifier}`
+          )
+        ),
+        root: providerRoot,
+      })),
     sourceFile,
   };
 }
@@ -1270,7 +1333,19 @@ function evidencePath(workspaceRoot: string, file: string): string {
 function semanticEvidence(
   program: ts.Program,
   providerBudgetExceeded: string | undefined,
-  providerRoots: ReadonlyArray<string>,
+  providerRoots: ReadonlyArray<
+    Readonly<{
+      resolutions: ReadonlyArray<
+        Readonly<{
+          from: string;
+          packageName: string | null;
+          packageVersion: string | null;
+          specifier: string;
+        }>
+      >;
+      root: string;
+    }>
+  >,
   sourceFile: ts.SourceFile,
   generatedFacadeModules: ReadonlySet<string>,
   catalog: CurrentCatalog,
@@ -1303,7 +1378,7 @@ function semanticEvidence(
         path: evidencePath(workspaceRoot, absolute),
       };
     })
-    .toSorted((left, right) => left.path.localeCompare(right.path));
+    .toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
   const libs = declarationEntries
     .filter(({ absolute }) =>
       /[/\\]typescript[/\\]lib[/\\]lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u.test(
@@ -1324,11 +1399,14 @@ function semanticEvidence(
     catalog.generatedFacadePath
   );
   const evidenceProviderRoots = [
-    ...(generatedFacadeModules.size > 0 ? [catalog.generatedFacadePath] : []),
+    ...(generatedFacadeModules.size > 0
+      ? [{ resolutions: [], root: catalog.generatedFacadePath }]
+      : []),
     ...providerRoots,
   ];
   const providers = evidenceProviderRoots
-    .map((providerRoot) => {
+    .map((provider) => {
+      const providerRoot = provider.root;
       const providerPath = evidencePath(workspaceRoot, resolve(providerRoot));
       const providerDirectory = dirname(providerPath).split(sep).join("/");
       const providerDeclarations = declarations.filter(
@@ -1345,10 +1423,14 @@ function semanticEvidence(
       return {
         declarations: providerDeclarations,
         kind,
+        resolutions: provider.resolutions.map((resolution) => ({
+          ...resolution,
+          from: evidencePath(workspaceRoot, cleanModuleId(resolution.from)),
+        })),
         root: providerPath,
       };
     })
-    .toSorted((left, right) => left.root.localeCompare(right.root));
+    .toSorted((left, right) => compareCanonicalStrings(left.root, right.root));
   return {
     ambientTypeFileLimit: 16,
     declarations,
@@ -2359,7 +2441,7 @@ function analyzeSource(
     }
     if (registry.complete || selectedMessages !== undefined) {
       for (const message of messages.toSorted((left, right) =>
-        left.path.localeCompare(right.path)
+        compareCanonicalStrings(left.path, right.path)
       )) {
         if (!registry.entries.has(message.path)) {
           registry.entries.set(message.path, {
@@ -2463,7 +2545,7 @@ function analyzeSource(
       messages.set(path, message);
     }
     return [...messages.values()].toSorted((left, right) =>
-      left.path.localeCompare(right.path)
+      compareCanonicalStrings(left.path, right.path)
     );
   };
 
@@ -3001,10 +3083,10 @@ function analyzeSource(
   return {
     dynamicHelpers,
     dynamicRegistries: [...dynamicRegistries.entries()]
-      .toSorted(([left], [right]) => left.localeCompare(right))
+      .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
       .map(([, registry]) => ({
         entries: [...registry.entries.values()].toSorted((left, right) =>
-          left.key.localeCompare(right.key)
+          compareCanonicalStrings(left.key, right.key)
         ),
         local: registry.local,
       })),
