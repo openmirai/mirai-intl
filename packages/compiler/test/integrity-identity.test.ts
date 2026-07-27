@@ -114,18 +114,37 @@ describe("resolved dependency identity", () => {
       })
     );
     await write(join(dependencyRoot, "index.js"), "export const value = 1;\n");
+    await write(
+      join(dependencyRoot, "helper.js"),
+      "export const helper = 1;\n"
+    );
 
     const before = await computeResolvedPackageIdentity(
       "fixture-dependency",
       root
     );
     expect(before.entry.path).toBe("index.js");
+    expect(before.packageFiles.entries.map((entry) => entry.path)).toEqual([
+      "helper.js",
+      "index.js",
+      "package.json",
+    ]);
+    await write(
+      join(dependencyRoot, "helper.js"),
+      "export const helper = 2;\n"
+    );
+    const afterNonEntryMutation = await computeResolvedPackageIdentity(
+      "fixture-dependency",
+      root
+    );
+    expect(afterNonEntryMutation.hash).not.toBe(before.hash);
+
     await write(join(dependencyRoot, "index.js"), "export const value = 2;\n");
     const afterEntryMutation = await computeResolvedPackageIdentity(
       "fixture-dependency",
       root
     );
-    expect(afterEntryMutation.hash).not.toBe(before.hash);
+    expect(afterEntryMutation.hash).not.toBe(afterNonEntryMutation.hash);
 
     await write(
       join(dependencyRoot, "package.json"),

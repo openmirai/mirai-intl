@@ -32,6 +32,7 @@ export interface ResolvedPackageIdentity {
   readonly entry: IntegrityManifestEntry;
   readonly hash: Sha256;
   readonly name: string;
+  readonly packageFiles: IntegrityManifest;
   readonly packageJsonHash: Sha256;
   readonly version: string;
 }
@@ -70,6 +71,7 @@ const LOCK_NAMES = [
   "bun.lock",
   "bun.lockb",
 ] as const;
+const EXCLUDED_PACKAGE_DIRECTORIES = new Set([".cache", "node_modules"]);
 
 let immutableIdentity: Promise<ImmutableIntegrityIdentity> | undefined;
 
@@ -233,6 +235,36 @@ async function enumerateCompilerModules(
   return paths;
 }
 
+async function enumeratePackageFiles(
+  root: string,
+  directory = root
+): Promise<Array<string>> {
+  const directoryStat = await lstat(directory);
+  if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+    throw new Error(`Package manifest directory is not a regular directory`);
+  }
+
+  const paths: Array<string> = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    const stat = await lstat(path);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Package manifest tree contains a symlink`);
+    }
+    if (stat.isDirectory()) {
+      if (!EXCLUDED_PACKAGE_DIRECTORIES.has(entry.name)) {
+        paths.push(...(await enumeratePackageFiles(root, path)));
+      }
+      continue;
+    }
+    if (!stat.isFile()) {
+      throw new Error(`Package manifest tree contains a non-regular entry`);
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+
 export async function computeCompilerImplementationIdentity(
   moduleRoot: string
 ): Promise<CompilerImplementationIdentity> {
@@ -312,10 +344,18 @@ export async function computeResolvedPackageIdentity(
   const packageJsonHash = hashBytes(
     Buffer.from(canonicalJson(parsedPackageJson), "utf8")
   );
-  const entry = await manifestEntry(root, resolvedEntry);
+  const [entry, packageFiles] = await Promise.all([
+    manifestEntry(root, resolvedEntry),
+    Promise.all(
+      (await enumeratePackageFiles(root)).map((path) =>
+        manifestEntry(root, path)
+      )
+    ).then(createIntegrityManifest),
+  ]);
   const baseIdentity = {
     entry,
     name: packageJson.name,
+    packageFiles,
     packageJsonHash,
     version: packageJson.version,
   };
