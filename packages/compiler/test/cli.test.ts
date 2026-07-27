@@ -27,6 +27,7 @@ import { colorEnabled } from "../src/reporter";
 
 const cli = resolve(import.meta.dirname, "../src/cli.ts");
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
+const builtCli = join(repositoryRoot, "packages/compiler/dist/cli.js");
 const tsx = resolve(
   import.meta.dirname,
   "../../../node_modules/tsx/dist/cli.mjs"
@@ -88,6 +89,15 @@ function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
   return runCliWithEnvironment(root, process.env, ...arguments_);
 }
 
+async function requireBuiltCli(): Promise<string> {
+  await readFile(builtCli, "utf8").catch(() => {
+    throw new Error(
+      "Mirai Intl CLI tests require the pretest build; run corepack pnpm test instead of invoking Vitest without building"
+    );
+  });
+  return builtCli;
+}
+
 async function ensureInstrumentation(
   directory: string
 ): Promise<Readonly<{ hook: string; report: string }>> {
@@ -96,32 +106,15 @@ async function ensureInstrumentation(
     join(repositoryRoot, "packages/compiler/package.json")
   ).resolve("typescript");
   await writeFile(
-    join(directory, "typescript-proxy.mjs"),
-    [
-      `import actual from ${JSON.stringify(pathToFileURL(actualTypeScript).href)};`,
-      "const wrapped = Object.create(actual);",
-      'Object.defineProperty(wrapped, "createProgram", {',
-      "  value(...args) {",
-      "    globalThis.__miraiEnsurePrograms += 1;",
-      "    return Reflect.apply(actual.createProgram, actual, args);",
-      "  },",
-      "});",
-      "globalThis.__miraiEnsureTypeScriptLoaded = true;",
-      "export default wrapped;",
-      "",
-    ].join("\n"),
-    "utf8"
-  );
-  await writeFile(
     join(directory, "ensure-loader.mjs"),
     [
-      'const proxy = new URL("./typescript-proxy.mjs", import.meta.url).href;',
-      "export async function resolve(specifier, context, nextResolve) {",
-      '  if (specifier === "typescript") return { shortCircuit: true, url: proxy };',
-      "  return nextResolve(specifier, context);",
-      "}",
-      "export async function load(url, context, nextLoad) {",
-      "  const loaded = await nextLoad(url, context);",
+      `const typescript = ${JSON.stringify(pathToFileURL(actualTypeScript).href)};`,
+      "export function load(url, context, nextLoad) {",
+      "  const loaded = nextLoad(url, context);",
+      "  if (url === typescript) {",
+      "    globalThis.__miraiEnsureTypeScriptLoaded = true;",
+      "    return loaded;",
+      "  }",
       '  if (loaded.format !== "module") return loaded;',
       '  let source = Buffer.isBuffer(loaded.source) ? loaded.source.toString("utf8") : String(loaded.source);',
       '  if (url.includes("/packages/compiler/dist/analyze-sources-")) {',
@@ -147,7 +140,8 @@ async function ensureInstrumentation(
     hook,
     [
       'import { writeFileSync } from "node:fs";',
-      'import { register } from "node:module";',
+      'import { registerHooks } from "node:module";',
+      'import { load } from "./ensure-loader.mjs";',
       "globalThis.__miraiEnsureCompileCalls = 0;",
       "globalThis.__miraiEnsureEmitCalls = 0;",
       "globalThis.__miraiEnsurePrograms = 0;",
@@ -165,7 +159,7 @@ async function ensureInstrumentation(
       "  transformLoaded: globalThis.__miraiEnsureTransformLoaded,",
       "  typescriptLoaded: globalThis.__miraiEnsureTypeScriptLoaded,",
       "})));",
-      'register(new URL("./ensure-loader.mjs", import.meta.url), import.meta.url);',
+      "registerHooks({ load });",
       "",
     ].join("\n"),
     "utf8"
@@ -180,8 +174,8 @@ async function workspaceAnalysisInstrumentation(
   await writeFile(
     join(directory, "workspace-analysis-loader.mjs"),
     [
-      "export async function load(url, context, nextLoad) {",
-      "  const loaded = await nextLoad(url, context);",
+      "export function load(url, context, nextLoad) {",
+      "  const loaded = nextLoad(url, context);",
       '  if (loaded.format !== "module" || !url.includes("/packages/compiler/dist/analyze-sources-")) return loaded;',
       '  const source = typeof loaded.source === "string" ? loaded.source : Buffer.from(loaded.source).toString("utf8");',
       '  const transformed = source.replace("async function analyzeConventionSourceFiles(packageRoot, sourceFiles, workspaceRoot, options = {}) {", "async function analyzeConventionSourceFiles(packageRoot, sourceFiles, workspaceRoot, options = {}) {\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;");',
@@ -197,7 +191,8 @@ async function workspaceAnalysisInstrumentation(
     hook,
     [
       'import { writeFileSync } from "node:fs";',
-      'import { register } from "node:module";',
+      'import { registerHooks } from "node:module";',
+      'import { load } from "./workspace-analysis-loader.mjs";',
       "globalThis.__miraiWorkspaceAnalysisCalls = 0;",
       "globalThis.__miraiWorkspaceAnalysisInstrumented = false;",
       `const report = ${JSON.stringify(report)};`,
@@ -205,7 +200,7 @@ async function workspaceAnalysisInstrumentation(
       "  analysisCalls: globalThis.__miraiWorkspaceAnalysisCalls,",
       "  instrumented: globalThis.__miraiWorkspaceAnalysisInstrumented,",
       "})));",
-      'register(new URL("./workspace-analysis-loader.mjs", import.meta.url), import.meta.url);',
+      "registerHooks({ load });",
       "",
     ].join("\n"),
     "utf8"
@@ -368,22 +363,18 @@ describe("convention-only CLI", () => {
         checkProjects: [{ path: "tsconfig.json", role: "owner" }],
       });
 
-      const built = spawnSync("corepack", ["pnpm", "build"], {
-        cwd: repositoryRoot,
-        encoding: "utf8",
-        env: process.env,
-        shell: false,
-        timeout: 120_000,
-      });
-      expect(built.status, `${built.stdout}${built.stderr}`).toBe(0);
-      const builtCli = join(repositoryRoot, "packages/compiler/dist/cli.js");
-      const generated = spawnSync(process.execPath, [builtCli, "generate"], {
-        cwd: app,
-        encoding: "utf8",
-        env: process.env,
-        shell: false,
-        timeout: 60_000,
-      });
+      const publishedCli = await requireBuiltCli();
+      const generated = spawnSync(
+        process.execPath,
+        [publishedCli, "generate"],
+        {
+          cwd: app,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
       expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
         0
       );
@@ -405,7 +396,7 @@ describe("convention-only CLI", () => {
         [
           "--import",
           instrumentation.hook,
-          builtCli,
+          publishedCli,
           "check",
           "--workspace",
           "--format=json",
@@ -1036,32 +1027,28 @@ describe("convention-only CLI", () => {
       join(tmpdir(), "mirai-intl-ensure-instrumentation-")
     );
     try {
-      const built = spawnSync("corepack", ["pnpm", "build"], {
-        cwd: repositoryRoot,
-        encoding: "utf8",
-        env: process.env,
-        shell: false,
-        timeout: 120_000,
-      });
-      expect(built.status, `${built.stdout}${built.stderr}`).toBe(0);
-      const builtCli = join(repositoryRoot, "packages/compiler/dist/cli.js");
-      const generated = spawnSync(process.execPath, [builtCli, "generate"], {
-        cwd: root,
-        encoding: "utf8",
-        env: process.env,
-        shell: false,
-        timeout: 60_000,
-      });
+      const publishedCli = await requireBuiltCli();
+      const generated = spawnSync(
+        process.execPath,
+        [publishedCli, "generate"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
       expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
         0
       );
-      expect(await readFile(builtCli, "utf8")).not.toMatch(
+      expect(await readFile(publishedCli, "utf8")).not.toMatch(
         /^import .*["']\.\/analyze-sources-/mu
       );
       const instrumentation = await ensureInstrumentation(instrumentationRoot);
       const ensured = spawnSync(
         process.execPath,
-        ["--import", instrumentation.hook, builtCli, "ensure", "--json"],
+        ["--import", instrumentation.hook, publishedCli, "ensure", "--json"],
         {
           cwd: root,
           encoding: "utf8",
