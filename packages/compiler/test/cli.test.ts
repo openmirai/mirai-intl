@@ -427,20 +427,20 @@ describe("convention-only CLI", () => {
       expect(
         JSON.parse(await readFile(instrumentation.report, "utf8"))
       ).toEqual({ analysisCalls: 1, instrumented: true });
-      expect(failureReport).toMatchObject({
+      expect(failureReport).toEqual({
+        command: "check",
         diagnostics: [
           {
             code: "INTL_CATALOG_INVALID",
+            file: "apps/auth",
+            hint: "Create or correct apps/auth, then rerun mirai-intl check --workspace.",
             message: expect.stringContaining(
               "Mirai Intl source analysis failed with 1 diagnostic(s)"
             ),
             severity: "error",
           },
         ],
-        result: {
-          catalogs: [{ root: "apps/auth" }],
-          valid: false,
-        },
+        schemaVersion: 1,
         success: false,
       });
       expect(JSON.stringify(failureReport)).toContain(
@@ -636,12 +636,9 @@ describe("convention-only CLI", () => {
 
       const source = await readFile(report, "utf8");
       expect(source).not.toContain("\u001b[");
-      expect(JSON.parse(source)).toMatchObject({
+      expect(JSON.parse(source)).toEqual({
         command: "generate",
         diagnostics: [],
-        result: {
-          report: { discovery: { catalogId: "@example/cli-app" } },
-        },
         schemaVersion: 1,
         success: true,
       });

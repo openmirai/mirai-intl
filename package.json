@@ -18,12 +18,14 @@
     "build": "tsdown",
     "check:generated": "tsx scripts/check-generated.ts",
     "clean": "rimraf packages/*/dist packages/*/tsconfig.tsbuildinfo *.tsbuildinfo coverage .tmp",
+    "diagnostic:smoke": "tsx scripts/real-diagnostic-smoke.ts",
     "format": "oxfmt --check .",
     "format:fix": "oxfmt --write .",
     "generate:fixtures": "tsx scripts/generate-fixtures.ts",
     "lint": "oxlint . && oxfmt --check .",
     "lint:fix": "oxlint --fix --fix-suggestions . && oxfmt --write .",
     "pack:smoke": "tsx scripts/pack-smoke.ts",
+    "prediagnostic:smoke": "corepack pnpm build",
     "prepare": "husky",
     "pretest": "corepack pnpm build",
     "release": "release-it",
@@ -32,7 +34,7 @@
     "test": "vitest run --exclude packages/runtime/test/perf.test.ts",
     "typecheck": "tsc -b --force --pretty false && tsc -p tsconfig.tools.json --pretty false",
     "typecheck:fixtures": "tsx scripts/type-fixtures.ts",
-    "verify": "corepack pnpm format && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm typecheck:fixtures && corepack pnpm test && corepack pnpm test:perf && corepack pnpm check:generated && corepack pnpm benchmark && corepack pnpm pack:smoke",
+    "verify": "corepack pnpm format && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm typecheck:fixtures && corepack pnpm test && corepack pnpm test:perf && corepack pnpm check:generated && corepack pnpm benchmark && corepack pnpm pack:smoke && corepack pnpm diagnostic:smoke",
     "test:perf": "vitest run packages/runtime/test/perf.test.ts"
   },
   "devDependencies": {
