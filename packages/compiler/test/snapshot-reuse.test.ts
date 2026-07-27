@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type * as AnalyzeSources from "../src/analyze-sources";
 import type * as Compile from "../src/compile";
-import type * as TypeScript from "typescript";
+import type ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const instrumentation = vi.hoisted(() => ({
@@ -15,8 +15,8 @@ const instrumentation = vi.hoisted(() => ({
 }));
 
 vi.mock("typescript", async (importOriginal) => {
-  const actual = await importOriginal<typeof TypeScript>();
-  const compiler = actual.default;
+  const actual = await importOriginal<Record<string, unknown>>();
+  const compiler = Reflect.get(actual, "default") as typeof ts;
   const instrumented = Object.create(compiler) as typeof compiler;
   Object.defineProperty(instrumented, "createProgram", {
     value: (...arguments_: Parameters<typeof compiler.createProgram>) => {
@@ -197,9 +197,7 @@ describe("compiler-owned catalog snapshots", () => {
 
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow(
-        "Mirai Intl inputs changed before receipt authorization"
-      );
+      ).rejects.toThrow("Generated current pointer is stale or tampered");
       await expectReceiptRemoved(root);
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -227,7 +225,9 @@ describe("compiler-owned catalog snapshots", () => {
 
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow(/Current artifact set .* does not match/u);
+      ).rejects.toThrow(
+        "Generated artifact directory does not match its destination files: catalog.contract.gen.json is corrupt"
+      );
       await expectReceiptRemoved(root);
     } finally {
       await rm(root, { force: true, recursive: true });

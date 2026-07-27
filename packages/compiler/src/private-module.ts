@@ -96,7 +96,8 @@ function assertGeneratedFacadeSelector(
   );
   if (
     !isRecord(selector) ||
-    selector.schemaVersion !== 1 ||
+    Object.keys(selector).length !== 3 ||
+    selector.schemaVersion !== 2 ||
     selector.contentHash !== hash ||
     selector.directory !== directory
   ) {

@@ -12,10 +12,18 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { emptyObjectSchema } from "@openmirai/intl-abi";
 import type { NextConfig as OfficialNextConfig } from "next";
 import { build as buildVite, createServer as createViteServer } from "vite";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  compileCatalog,
+  defineIntlConfig,
+  emitArtifacts,
+  writeArtifactSet,
+} from "../src/internal";
+import type { CatalogSource } from "../src/internal";
 import { withMiraiIntl } from "../src/next";
 import { miraiIntlVite } from "../src/vite";
 
@@ -26,48 +34,36 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 const messageModule = "catalog.messages.gen.mjs";
 const privateCarrier = "catalog.manifest.gen.mjs";
+const adapterArtifacts = emitArtifacts(
+  compileCatalog(
+    defineIntlConfig({
+      buildId: "adapter-fixture-build",
+      catalogPackage: "@example/adapter-fixture",
+      id: "adapter-fixture",
+      locales: ["en"],
+      messages: [
+        {
+          kind: "text",
+          path: "pages.home.title",
+          provenance:
+            "packages/compiler/test/adapters.test.ts:pages.home.title",
+          resultSchema: { type: "string" },
+          translations: { en: "Title" },
+          valuesSchema: emptyObjectSchema,
+        },
+      ],
+      rendererCapabilityId: "portable-ir-v1",
+      sourceLocale: "en",
+    } satisfies CatalogSource)
+  ),
+  "constants",
+  { compact: true }
+);
 
 async function createAdapterFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "mirai-intl-adapter-"));
   const generated = join(root, "src/i18n/generated");
-  const hash = "b".repeat(64);
-  const directory = `builds/${hash}`;
-  await writeJson(join(generated, "current.json"), {
-    contentHash: `sha256:${hash}`,
-    directory,
-  });
-  await writeFile(
-    join(generated, "index.ts"),
-    `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${hash}`, directory, schemaVersion: 1 })}\n`,
-    "utf8"
-  );
-  await writeJson(join(generated, directory, "catalog.contract.gen.json"), {
-    catalogId: "fixture",
-    messages: [{ kind: "text", path: "pages.home.title" }],
-    schemaVersion: 1,
-  });
-  await writeJson(join(generated, directory, "catalog.provenance.gen.json"), {
-    catalogHash: "sha256:catalog",
-    entries: [],
-    exports: [
-      {
-        descriptorExport: "m0",
-        module: messageModule,
-        path: "pages.home.title",
-        runtimeExport: "r0",
-      },
-    ],
-  });
-  await writeFile(
-    join(generated, directory, messageModule),
-    "export const m0 = {};\n",
-    "utf8"
-  );
-  await writeFile(
-    join(generated, directory, privateCarrier),
-    "export const catalogManifest = {};\n",
-    "utf8"
-  );
+  await writeArtifactSet(generated, adapterArtifacts);
   return root;
 }
 

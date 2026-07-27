@@ -9,8 +9,16 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { emptyObjectSchema } from "@openmirai/intl-abi";
 import { describe, expect, it } from "vitest";
 
+import {
+  compileCatalog,
+  defineIntlConfig,
+  emitArtifacts,
+  writeArtifactSet,
+} from "../src/internal";
+import type { CatalogSource, MessageSource } from "../src/internal";
 import {
   isMiraiIntlTransformCandidate,
   transformMiraiIntlSource,
@@ -24,15 +32,78 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 const messageModule = "catalog.messages.gen.mjs";
 
-const fixtureHash = "a".repeat(64);
+const textResultSchema = { type: "string" } as const;
+const countValuesSchema = {
+  additionalProperties: false,
+  properties: { count: { finite: true, type: "number" } },
+  required: ["count"],
+  type: "object",
+} as const;
+const fixtureMessages = [
+  ["pages.home.title", "text"],
+  ["pages.home.error.form.required", "text"],
+  ["pages.home.error.form.invalid", "text"],
+  ["pages.home.description", "rich"],
+  ["pages.home.settings", "value"],
+  ["pages.about.title", "text"],
+  ["rootTitle", "text"],
+  ["pages.{-$locale}.short-links.title", "text"],
+  ["pages.{-$locale}.short-links.page.resultsCount", "text-with-count"],
+  ["components.toast.activate.error", "text"],
+  ["components.toast.activate.success", "text"],
+  ["components.toast.add.error", "text"],
+  ["components.toast.add.success", "text"],
+  ["components.toast.status.active", "text"],
+  ["components.toast.status.inactive", "text"],
+  ["components.toast.locale.en", "text"],
+  ["components.toast.locale.th", "text"],
+  ["components.toast.rich", "rich"],
+  ["components.toast.parameterized", "text-with-count"],
+] as const;
+
+function fixtureMessage([
+  path,
+  fixtureKind,
+]: (typeof fixtureMessages)[number]): MessageSource {
+  const kind = fixtureKind === "text-with-count" ? "text" : fixtureKind;
+  return {
+    kind,
+    path,
+    provenance: `packages/compiler/test/transform.test.ts:${path}`,
+    resultSchema: textResultSchema,
+    translations:
+      fixtureKind === "text-with-count"
+        ? { en: "{count}", th: "{count}" }
+        : { en: "Fixture", th: "Fixture" },
+    valuesSchema:
+      fixtureKind === "text-with-count" ? countValuesSchema : emptyObjectSchema,
+  };
+}
+
+const fixtureCatalogSource = defineIntlConfig({
+  buildId: "transform-fixture-build",
+  catalogPackage: "@example/transform-fixture",
+  id: "transform-fixture",
+  locales: ["en", "th"],
+  messages: fixtureMessages.map(fixtureMessage),
+  rendererCapabilityId: "portable-ir-v1",
+  sourceLocale: "en",
+} satisfies CatalogSource);
+const fixtureArtifacts = emitArtifacts(
+  compileCatalog(fixtureCatalogSource),
+  "constants",
+  { compact: true }
+);
 
 async function createGeneratedCatalog(): Promise<
-  Readonly<{ generatedDirectory: string; root: string }>
+  Readonly<{
+    directory: string;
+    generatedDirectory: string;
+    root: string;
+  }>
 > {
   const root = await mkdtemp(join(tmpdir(), "mirai-intl-transform-"));
   const generatedDirectory = join(root, "src/i18n/generated");
-  const directory = `builds/${fixtureHash}`;
-  const selected = join(generatedDirectory, directory);
   await writeJson(join(root, "tsconfig.json"), {
     compilerOptions: {
       module: "ESNext",
@@ -40,118 +111,12 @@ async function createGeneratedCatalog(): Promise<
       paths: { "@/*": ["src/*"] },
     },
   });
-  await writeJson(join(generatedDirectory, "current.json"), {
-    contentHash: `sha256:${fixtureHash}`,
-    directory,
-  });
-  await writeFile(
-    join(generatedDirectory, "index.ts"),
-    [
-      `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${fixtureHash}`, directory, schemaVersion: 1 })}`,
-      `export type { CatalogContract } from "./${directory}/catalog.schema.gen.js";`,
-      "export const createFormErrorTranslator = undefined;",
-      "export const createFormSchema = undefined;",
-      "export const createTranslationKey = undefined;",
-      "",
-    ].join("\n"),
-    "utf8"
-  );
-  await writeJson(join(selected, "catalog.contract.gen.json"), {
-    catalogId: "fixture",
-    messages: [
-      {
-        argumentSchema: { properties: {}, required: [], type: "object" },
-        kind: "text",
-        path: "pages.home.title",
-      },
-      { kind: "text", path: "pages.home.error.form.required" },
-      { kind: "text", path: "pages.home.error.form.invalid" },
-      { kind: "rich", path: "pages.home.description" },
-      { kind: "value", path: "pages.home.settings" },
-      { kind: "text", path: "pages.about.title" },
-      { kind: "text", path: "rootTitle" },
-      { kind: "text", path: "pages.{-$locale}.short-links.title" },
-      {
-        kind: "text",
-        path: "pages.{-$locale}.short-links.page.resultsCount",
-        argumentSchema: {
-          properties: { count: { type: "number" } },
-          required: ["count"],
-          type: "object",
-        },
-      },
-      { kind: "text", path: "components.toast.activate.error" },
-      { kind: "text", path: "components.toast.activate.success" },
-      { kind: "text", path: "components.toast.add.error" },
-      { kind: "text", path: "components.toast.add.success" },
-      { kind: "text", path: "components.toast.status.active" },
-      { kind: "text", path: "components.toast.status.inactive" },
-      { kind: "text", path: "components.toast.locale.en" },
-      { kind: "text", path: "components.toast.locale.th" },
-      { kind: "rich", path: "components.toast.rich" },
-      {
-        argumentSchema: {
-          properties: { count: { type: "number" } },
-          required: ["count"],
-          type: "object",
-        },
-        kind: "text",
-        path: "components.toast.parameterized",
-      },
-    ],
-    schemaVersion: 1,
-  });
-  await writeJson(join(selected, "catalog.provenance.gen.json"), {
-    catalogHash: "sha256:catalog",
-    entries: [],
-    exports: [
-      "pages.home.title",
-      "pages.home.error.form.required",
-      "pages.home.error.form.invalid",
-      "pages.home.description",
-      "pages.home.settings",
-      "pages.about.title",
-      "rootTitle",
-      "pages.{-$locale}.short-links.title",
-      "pages.{-$locale}.short-links.page.resultsCount",
-      "components.toast.activate.error",
-      "components.toast.activate.success",
-      "components.toast.add.error",
-      "components.toast.add.success",
-      "components.toast.status.active",
-      "components.toast.status.inactive",
-      "components.toast.locale.en",
-      "components.toast.locale.th",
-      "components.toast.rich",
-      "components.toast.parameterized",
-    ].map((path, index) => ({
-      descriptorExport: `m${index}`,
-      module: messageModule,
-      path,
-      runtimeExport: `r${index}`,
-    })),
-  });
-  await writeFile(
-    join(selected, messageModule),
-    "export const m0 = {};\n",
-    "utf8"
-  );
-  await writeFile(
-    join(selected, "catalog.resources.gen.d.mts"),
-    'export type CatalogLocale = "en" | "th";\n',
-    "utf8"
-  );
-  await writeFile(
-    join(selected, "catalog.manifest.gen.d.mts"),
-    'export declare const catalogManifest: { readonly locales: readonly ["en", "th"] };\n',
-    "utf8"
-  );
-  await writeFile(
-    join(selected, "catalog.manifest.gen.mjs"),
-    "export const catalogManifest = {};\n",
-    "utf8"
-  );
-  return { generatedDirectory, root };
+  const written = await writeArtifactSet(generatedDirectory, fixtureArtifacts);
+  return {
+    directory: written.directory.replace(`${generatedDirectory}/`, ""),
+    generatedDirectory,
+    root,
+  };
 }
 
 function requireTransform(
@@ -433,7 +398,7 @@ describe("private named-key lowering", () => {
       expect(result.code).not.toContain("messageKey");
       expect(result.code).not.toContain("catalog.messages.gen.mjs");
       expect(result.dependencies).not.toContain(
-        join(fixture.generatedDirectory, `builds/${fixtureHash}`, messageModule)
+        join(fixture.generatedDirectory, fixture.directory, messageModule)
       );
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
@@ -1584,7 +1549,7 @@ describe("generated catalog read confinement", () => {
 
   it("rejects a symlinked selected build with otherwise valid artifacts", async () => {
     const fixture = await createGeneratedCatalog();
-    const selected = join(fixture.generatedDirectory, "builds", fixtureHash);
+    const selected = join(fixture.generatedDirectory, fixture.directory);
     const external = join(fixture.root, "external-selected-build");
     try {
       await rename(selected, external);
@@ -1603,7 +1568,7 @@ describe("generated catalog read confinement", () => {
     ["catalog.provenance.gen.json", "provenance"],
   ])("rejects a symlinked generated %s", async (fileName, artifactLabel) => {
     const fixture = await createGeneratedCatalog();
-    const selected = join(fixture.generatedDirectory, "builds", fixtureHash);
+    const selected = join(fixture.generatedDirectory, fixture.directory);
     const artifact = join(selected, fileName);
     const external = join(fixture.root, `external-${fileName}`);
     try {
@@ -1623,7 +1588,7 @@ describe("generated catalog read confinement", () => {
 
   it("rejects a symlinked private message module with otherwise valid JavaScript", async () => {
     const fixture = await createGeneratedCatalog();
-    const selected = join(fixture.generatedDirectory, "builds", fixtureHash);
+    const selected = join(fixture.generatedDirectory, fixture.directory);
     const module = join(selected, messageModule);
     const external = join(fixture.root, "external-message.mjs");
     try {
