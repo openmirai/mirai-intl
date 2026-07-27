@@ -27,7 +27,11 @@ vi.mock("typescript", async (importOriginal) => {
   Object.defineProperty(wrapped, "createProgram", {
     value: (...arguments_: Parameters<typeof actual.default.createProgram>) => {
       programInstrumentation.count += 1;
-      return Reflect.apply(actual.default.createProgram, actual.default, arguments_);
+      return Reflect.apply(
+        actual.default.createProgram,
+        actual.default,
+        arguments_
+      );
     },
   });
   return { ...actual, default: wrapped };
@@ -225,9 +229,7 @@ describe("Phase 0 reference-engine parity", () => {
         expect(proved.stderr).toBe("");
 
         runs.push({
-          artifacts: await snapshotFiles(
-            join(root, "src/i18n/generated")
-          ),
+          artifacts: await snapshotFiles(join(root, "src/i18n/generated")),
           checkReport: await readFile(checkReportPath, "utf8"),
           checkStdout: checked.stdout,
           proveReport: await readFile(proveReportPath, "utf8"),
