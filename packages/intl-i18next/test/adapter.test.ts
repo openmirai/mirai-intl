@@ -306,6 +306,180 @@ describe("createMiraiI18next", () => {
     );
   });
 
+  it("invalidates in-flight loads and activation when disposed", async () => {
+    const thaiGate = Promise.withResolvers<void>();
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: async (locale) => {
+        if (locale === "th") {
+          await thaiGate.promise;
+        }
+        return resources[locale];
+      },
+    });
+    const controller = adapter.createRequestController("en");
+    await controller.activateLocale("en");
+
+    const load = controller.loadLocale("th");
+    const activation = controller.activateLocale("th");
+    await Promise.resolve();
+    controller.dispose();
+    thaiGate.resolve();
+
+    await expect(load).rejects.toThrow(
+      "The Mirai Intl controller has been disposed"
+    );
+    await expect(activation).rejects.toThrow(
+      "The Mirai Intl controller has been disposed"
+    );
+    expect(controller.getActiveLocale()).toBe("en");
+    expect(controller.instance.language).toBe("en");
+    expect(
+      controller.instance.hasResourceBundle("th", "translation")
+    ).toBeFalsy();
+  });
+
+  it("restores the prior language when disposed during changeLanguage", async () => {
+    const changeGate = Promise.withResolvers<void>();
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: (locale) => resources[locale],
+    });
+    const controller = adapter.createRequestController("en");
+    await controller.activateLocale("en");
+    const changeLanguage = vi.spyOn(controller.instance, "changeLanguage");
+    const originalChangeLanguage = changeLanguage.getMockImplementation();
+    changeLanguage.mockImplementation(async (...input) => {
+      await changeGate.promise;
+      if (!originalChangeLanguage) {
+        throw new TypeError("Missing original changeLanguage implementation");
+      }
+      return originalChangeLanguage(...input);
+    });
+
+    const activation = controller.activateLocale("th");
+    await vi.waitFor(() => {
+      expect(changeLanguage).toHaveBeenCalledWith("th");
+    });
+    controller.dispose();
+    changeGate.resolve();
+
+    await expect(activation).rejects.toThrow(
+      "The Mirai Intl controller has been disposed"
+    );
+    expect(controller.getActiveLocale()).toBe("en");
+    expect(controller.instance.language).toBe("en");
+  });
+
+  it("activates an inactive request controller's requested locale in Provider", async () => {
+    const gate = Promise.withResolvers<void>();
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: async (locale) => {
+        await gate.promise;
+        return resources[locale];
+      },
+    });
+    const controller = adapter.createRequestController("th");
+    let renderer: ReactTestRenderer | undefined;
+    Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
+      configurable: true,
+      value: true,
+    });
+    try {
+      act(() => {
+        renderer = create(
+          createElement(
+            adapter.Provider,
+            { controller },
+            createElement("span", null, "ready")
+          )
+        );
+      });
+      expect(controller.getActiveLocale()).toBeUndefined();
+
+      await act(async () => {
+        gate.resolve();
+        await gate.promise;
+        await Promise.resolve();
+      });
+
+      expect(controller.getActiveLocale()).toBe("th");
+      expect(renderer?.toJSON()).toEqual({
+        children: ["ready"],
+        props: {},
+        type: "span",
+      });
+      act(() => renderer?.unmount());
+    } finally {
+      Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
+    }
+  });
+
+  it("activates each Provider controller and locale selection exactly once", async () => {
+    const gate = Promise.withResolvers<void>();
+    const adapter = createMiraiI18next({
+      catalogManifest,
+      isCatalogLocale,
+      loadCatalogResource: async (locale) => {
+        await gate.promise;
+        return resources[locale];
+      },
+    });
+    const controller = adapter.createRequestController("en");
+    const activateLocale = vi.fn(controller.activateLocale);
+    const instrumentedController = Object.freeze({
+      ...controller,
+      activateLocale,
+    });
+    let renderer: ReactTestRenderer | undefined;
+    const tree = createElement(
+      adapter.Provider,
+      { controller: instrumentedController },
+      createElement("span", null, "ready")
+    );
+    Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
+      configurable: true,
+      value: true,
+    });
+    try {
+      act(() => {
+        renderer = create(tree);
+      });
+      expect(activateLocale).toHaveBeenCalledTimes(1);
+      expect(activateLocale).toHaveBeenCalledWith("en");
+
+      await act(async () => {
+        gate.resolve();
+        await gate.promise;
+        await Promise.resolve();
+      });
+      expect(renderer?.toJSON()).toEqual({
+        children: ["ready"],
+        props: {},
+        type: "span",
+      });
+      expect(activateLocale).toHaveBeenCalledTimes(1);
+
+      act(() =>
+        renderer?.update(
+          createElement(
+            adapter.Provider,
+            { controller: instrumentedController },
+            createElement("span", null, "ready")
+          )
+        )
+      );
+      expect(activateLocale).toHaveBeenCalledTimes(1);
+      act(() => renderer?.unmount());
+    } finally {
+      Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
+    }
+  });
+
   it("holds browser children until the initial locale is ready", async () => {
     const gate = Promise.withResolvers<void>();
     const adapter = createMiraiI18next({

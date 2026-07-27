@@ -241,6 +241,7 @@ export function createMiraiI18next<
         initialLocale: Locale;
       }>
     | undefined;
+  const controllerInitialLocales = new WeakMap<object, Locale>();
 
   const assertLocale = (locale: Locale): void => {
     if (!options.isCatalogLocale(locale)) {
@@ -254,6 +255,7 @@ export function createMiraiI18next<
     assertLocale(initialLocale);
     const instance = createInstance();
     let disposed = false;
+    let lifecycleGeneration = 0;
     let activeLocale: Locale | undefined;
     let transitionTail: Promise<void> = Promise.resolve();
     const pendingLoads = new Map<Locale, Promise<void>>();
@@ -285,6 +287,12 @@ export function createMiraiI18next<
       }
     };
 
+    const assertGeneration = (generation: number): void => {
+      if (disposed || generation !== lifecycleGeneration) {
+        throw new Error("The Mirai Intl controller has been disposed");
+      }
+    };
+
     const loadLocale = (locale: Locale): Promise<void> => {
       assertActive();
       assertLocale(locale);
@@ -292,12 +300,15 @@ export function createMiraiI18next<
       if (existing) {
         return existing;
       }
+      const generation = lifecycleGeneration;
       const load = initialization
         .then(async () => {
+          assertGeneration(generation);
           if (instance.hasResourceBundle(locale, resourceNamespace)) {
             return;
           }
           const resource = await options.loadCatalogResource(locale);
+          assertGeneration(generation);
           instance.addResourceBundle(
             locale,
             resourceNamespace,
@@ -316,11 +327,33 @@ export function createMiraiI18next<
     const activateLocale = (locale: Locale): Promise<void> => {
       assertActive();
       assertLocale(locale);
+      const generation = lifecycleGeneration;
       const transition = transitionTail
         .catch(() => undefined)
         .then(async () => {
+          assertGeneration(generation);
           await loadLocale(locale);
-          await instance.changeLanguage(locale);
+          assertGeneration(generation);
+          const previousLocale = activeLocale ?? initialLocale;
+          try {
+            await instance.changeLanguage(locale);
+          } catch (error) {
+            if (instance.language !== previousLocale) {
+              await instance
+                .changeLanguage(previousLocale)
+                .catch(() => undefined);
+            }
+            assertGeneration(generation);
+            throw error;
+          }
+          if (disposed || generation !== lifecycleGeneration) {
+            if (instance.language !== previousLocale) {
+              await instance
+                .changeLanguage(previousLocale)
+                .catch(() => undefined);
+            }
+            assertGeneration(generation);
+          }
           activeLocale = locale;
           translationRuntime?.setLocale(locale);
         });
@@ -362,13 +395,14 @@ export function createMiraiI18next<
       return Object.freeze({ t });
     };
 
-    return Object.freeze({
+    const controller = Object.freeze({
       activateLocale,
       dispose() {
         if (disposed) {
           return;
         }
         disposed = true;
+        lifecycleGeneration += 1;
         pendingLoads.clear();
         instance.off("languageChanged");
       },
@@ -377,6 +411,8 @@ export function createMiraiI18next<
       instance,
       loadLocale,
     }) as unknown as MiraiI18nextController<Locale, Contract>;
+    controllerInitialLocales.set(controller, initialLocale);
+    return controller;
   };
 
   const getBrowserController = (
@@ -421,11 +457,17 @@ export function createMiraiI18next<
     MiraiI18nextProviderProps<Locale, Contract>
   > = ({ children, controller, initialLocale }) => {
     const controllerLocale = controller?.getActiveLocale();
-    const selectedLocale =
-      initialLocale ??
-      (controllerLocale && options.isCatalogLocale(controllerLocale)
-        ? controllerLocale
-        : defaultLocale);
+    let selectedLocale = initialLocale;
+    if (selectedLocale === undefined) {
+      if (controllerLocale && options.isCatalogLocale(controllerLocale)) {
+        selectedLocale = controllerLocale;
+      } else if (controller) {
+        selectedLocale =
+          controllerInitialLocales.get(controller) ?? defaultLocale;
+      } else {
+        selectedLocale = defaultLocale;
+      }
+    }
     const selectedController =
       controller ?? getBrowserController(selectedLocale);
     const [activationError, setActivationError] = useState<unknown>();
@@ -443,12 +485,16 @@ export function createMiraiI18next<
     useEffect(() => {
       let active = true;
       setActivationError(undefined);
-      if (
-        selectedController.getActiveLocale() !== selectedLocale ||
-        readySelection?.controller !== selectedController
-      ) {
-        setReadySelection(undefined);
+      if (selectedController.getActiveLocale() === selectedLocale) {
+        setReadySelection({
+          controller: selectedController,
+          locale: selectedLocale,
+        });
+        return () => {
+          active = false;
+        };
       }
+      setReadySelection(undefined);
       void selectedController.activateLocale(selectedLocale).then(
         () => {
           if (active) {
@@ -467,7 +513,7 @@ export function createMiraiI18next<
       return () => {
         active = false;
       };
-    }, [readySelection?.controller, selectedController, selectedLocale]);
+    }, [selectedController, selectedLocale]);
     if (activationError) {
       throw activationError;
     }
