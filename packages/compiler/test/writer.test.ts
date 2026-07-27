@@ -44,7 +44,6 @@ describe("generated artifact verification", () => {
         `// @mirai-intl-selector ${JSON.stringify({
           contentHash: written.contentHash,
           directory: relativeDirectory,
-          generationReceiptHash: pointer.generationReceiptHash,
           schemaVersion: 2,
         })}`,
         generatedSourceHeader,

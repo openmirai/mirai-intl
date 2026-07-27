@@ -22,9 +22,30 @@ import {
 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { canonicalJson, sha256 } from "./canonical";
+import { RUNTIME_ABI } from "@openmirai/intl-abi";
+import type { Sha256 } from "@openmirai/intl-abi";
+
+import { canonicalHash, canonicalJson, sha256 } from "./canonical";
 import type { EmittedArtifacts } from "./emit";
+import {
+  buildCatalogGenerationInputIdentity,
+  buildCatalogGenerationSnapshot,
+  parseCanonicalCatalogCurrentPointer,
+  parseCanonicalCatalogGenerationReceipt,
+  parseCanonicalCatalogPublicationJournal,
+  parseCatalogGenerationSnapshot,
+} from "./generation-snapshot";
+import type {
+  CatalogCurrentPointerBaseV2,
+  CatalogCurrentPointerV2,
+  CatalogGenerationInputIdentityV1,
+  CatalogGenerationSnapshot,
+  CatalogPayloadManifestEntryV1,
+  CatalogPublicationJournalV1,
+  CatalogPublicationState,
+} from "./generation-snapshot";
 import { generatedSourceHeader } from "./generated-source";
+import { createIntegrityManifest } from "./integrity-identity";
 
 export type WriteResult = Readonly<{
   changed: boolean;
@@ -42,71 +63,26 @@ export type StableFacadeOptions = Readonly<{
 }>;
 
 export type ArtifactWriterOptions = Readonly<{
+  beforePayloadInstall?(
+    snapshot: CatalogGenerationSnapshot
+  ): CatalogGenerationSnapshot | Promise<CatalogGenerationSnapshot>;
   expectedCanonicalRoot?: string;
-  generationIdentity?: CatalogGenerationIdentity;
+  generationInput?: CatalogGenerationInputIdentityV1;
   publicationHooks?: PublicationFaultInjectionHooks;
 }>;
 
 const emptyStableFacade: StableFacadeOptions = Object.freeze({ exports: [] });
 const emptyWriterOptions: ArtifactWriterOptions = Object.freeze({});
 
-type Sha256 = `sha256:${string}`;
-
-export type CatalogGenerationIdentity = Readonly<{
-  artifactAbi: string;
-  compilerHash: Sha256;
-  generationInputHash: Sha256;
-  icuHash: Sha256;
-  runtimeAbi: string;
-}>;
-
-export type PublicationState =
-  | "PREPARED"
-  | "STAGED_DURABLE"
-  | "PAYLOAD_INSTALLED"
-  | "SELECTORS_INSTALLED"
-  | "RECEIPT_INSTALLED"
-  | "POINTER_COMMITTED"
-  | "VALIDATED";
+export type PublicationState = CatalogPublicationState;
 
 export type PublicationFaultInjectionHooks = Readonly<{
+  afterPreviousPayloadRemoval?(): Promise<void> | void;
   afterState?(state: PublicationState): Promise<void> | void;
 }>;
 
-type SelectorBase = Readonly<{
-  contentHash: string;
-  directory: string;
-  schemaVersion: 2;
-}>;
-
-type SelectorIdentity = SelectorBase &
-  Readonly<{ generationReceiptHash: string }>;
-
-type CurrentPointer = SelectorIdentity;
-
-type PayloadManifestEntry = Readonly<{
-  hash: Sha256;
-  path: string;
-}>;
-
-export type CatalogGenerationReceiptV1 = Readonly<{
-  abi: Readonly<{
-    artifactAbi: string;
-    runtimeAbi: string;
-  }>;
-  compilerHash: Sha256;
-  generationInputHash: Sha256;
-  icuHash: Sha256;
-  payload: Readonly<{
-    contentHash: Sha256;
-    directory: string;
-    manifest: ReadonlyArray<PayloadManifestEntry>;
-    manifestHash: Sha256;
-  }>;
-  pointerBase: SelectorBase;
-  selectorBase: SelectorBase;
-  schemaVersion: 1;
-}>;
+type SelectorIdentity = CatalogCurrentPointerBaseV2;
+type CurrentPointer = CatalogCurrentPointerV2;
 
 type PublicationLockMetadata = Readonly<{
   acquiredAtMs: number;
@@ -296,7 +272,7 @@ async function readManagedTextFile(
 const flatArtifactName = /^[\dA-Za-z][\dA-Za-z._-]*$/u;
 
 function artifactEntries(
-  artifacts: EmittedArtifacts
+  artifacts: EmittedArtifacts | Readonly<Record<string, string>>
 ): ReadonlyArray<readonly [string, string]> {
   const prototype = Object.getPrototypeOf(artifacts);
   if (prototype !== Object.prototype && prototype !== null) {
@@ -339,7 +315,7 @@ function artifactEntries(
 }
 
 export function artifactContentHash(
-  artifacts: EmittedArtifacts
+  artifacts: EmittedArtifacts | Readonly<Record<string, string>>
 ): `sha256:${string}` {
   return sha256(canonicalJson(Object.fromEntries(artifactEntries(artifacts))));
 }
@@ -356,19 +332,13 @@ async function readCurrent(
   if (content === undefined) {
     return undefined;
   }
-  let value: unknown;
   try {
-    value = JSON.parse(content) as unknown;
+    return parseCanonicalCatalogCurrentPointer(content);
   } catch (error) {
     throw new Error("Generated current pointer is malformed", {
       cause: error,
     });
   }
-  const identity = parseSelectorIdentity(value, "Generated current pointer");
-  if (content !== `${canonicalJson(identity)}\n`) {
-    throw new Error("Generated current pointer is noncanonical");
-  }
-  return identity;
 }
 
 function parseSelectorIdentity(
@@ -382,12 +352,7 @@ function parseSelectorIdentity(
   const keys = Object.keys(descriptors).toSorted(compareStrings);
   if (
     canonicalJson(keys) !==
-    canonicalJson([
-      "contentHash",
-      "directory",
-      "generationReceiptHash",
-      "schemaVersion",
-    ])
+    canonicalJson(["contentHash", "directory", "schemaVersion"])
   ) {
     throw new Error(`${label} has unexpected fields`);
   }
@@ -398,32 +363,28 @@ function parseSelectorIdentity(
   }
   const contentHash: unknown = Reflect.get(value, "contentHash");
   const directory: unknown = Reflect.get(value, "directory");
-  const generationReceiptHash: unknown = Reflect.get(
-    value,
-    "generationReceiptHash"
-  );
   const schemaVersion: unknown = Reflect.get(value, "schemaVersion");
   if (
     typeof contentHash !== "string" ||
     typeof directory !== "string" ||
-    typeof generationReceiptHash !== "string" ||
-    !generationReceiptHash.startsWith("sha256:") ||
     schemaVersion !== 2
   ) {
     throw new Error(`${label} has invalid identity fields`);
   }
-  return { contentHash, directory, generationReceiptHash, schemaVersion };
+  assertSha256(contentHash, `${label}.contentHash`);
+  if (directory !== `builds/${contentHash.slice("sha256:".length)}`) {
+    throw new Error(`${label} does not identify its content-addressed payload`);
+  }
+  return { contentHash, directory, schemaVersion };
 }
 
 function catalogLockContent(
   contentHash: `sha256:${string}`,
-  directory: string,
-  generationReceiptHash: Sha256
+  directory: string
 ): string {
   return `${canonicalJson({
     contentHash,
     directory,
-    generationReceiptHash,
     schemaVersion: 2,
   })}\n`;
 }
@@ -473,15 +434,13 @@ function assertStableFacadeOptions(facade: StableFacadeOptions): void {
 function stableFacadeModule(
   relativeDirectory: string,
   facade: StableFacadeOptions,
-  contentHash: `sha256:${string}`,
-  generationReceiptHash: Sha256
+  contentHash: `sha256:${string}`
 ): string {
   assertStableFacadeOptions(facade);
   return [
     `${selectorPrefix}${canonicalJson({
       contentHash,
       directory: relativeDirectory,
-      generationReceiptHash,
       schemaVersion: 2,
     })}`,
     generatedSourceHeader,
@@ -951,79 +910,83 @@ type PublicationPlan = Readonly<{
   contentHash: Sha256;
   destination: string;
   directoryName: string;
-  identity: CatalogGenerationIdentity;
   lockContent: string;
-  manifest: ReadonlyArray<PayloadManifestEntry>;
+  manifest: ReadonlyArray<CatalogPayloadManifestEntryV1>;
   pointerContent: string;
   receiptContent: string;
   receiptHash: Sha256;
   relativeDirectory: string;
   selectorContent: string;
+  snapshot: CatalogGenerationSnapshot;
 }>;
 
-type PublicationJournal = Readonly<{
-  expectedPublicationHash: Sha256;
-  ownerToken: string;
-  previousDirectory: string | null;
-  schemaVersion: 1;
-  stageDirectory: string;
-  state: PublicationState;
-}>;
+type PublicationJournal = CatalogPublicationJournalV1;
 
 const publicationDirectoryName = ".catalog-publication";
 const journalFileName = "journal.v1.json";
 const receiptFileName = "catalog-generation-receipt.v1.json";
-const publicationStates: ReadonlyArray<PublicationState> = [
-  "PREPARED",
-  "STAGED_DURABLE",
-  "PAYLOAD_INSTALLED",
-  "SELECTORS_INSTALLED",
-  "RECEIPT_INSTALLED",
-  "POINTER_COMMITTED",
-  "VALIDATED",
-];
-
-function deterministicArtifactIdentity(
-  contentHash: Sha256
-): CatalogGenerationIdentity {
-  return Object.freeze({
-    artifactAbi: "artifact-only:v1",
-    compilerHash: sha256("artifact-only:compiler:v1"),
-    generationInputHash: sha256(
-      canonicalJson({ contentHash, mode: "artifact-only" })
-    ),
-    icuHash: sha256("artifact-only:icu:v1"),
-    runtimeAbi: "artifact-only:v1",
-  });
-}
-
 function assertSha256(value: string, label: string): asserts value is Sha256 {
   if (!/^sha256:[\da-f]{64}$/u.test(value)) {
     throw new Error(`${label} must be a canonical SHA-256 identity`);
   }
 }
 
-function generationIdentity(
-  contentHash: Sha256,
-  options: ArtifactWriterOptions
-): CatalogGenerationIdentity {
-  const identity =
-    options.generationIdentity ?? deterministicArtifactIdentity(contentHash);
-  assertSha256(identity.compilerHash, "Compiler hash");
-  assertSha256(identity.generationInputHash, "Generation input hash");
-  assertSha256(identity.icuHash, "ICU hash");
-  if (identity.artifactAbi.length === 0 || identity.runtimeAbi.length === 0) {
-    throw new Error("Generation ABI identities must not be empty");
-  }
-  return Object.freeze({ ...identity });
-}
-
 function payloadManifest(
   artifacts: EmittedArtifacts
-): ReadonlyArray<PayloadManifestEntry> {
+): ReadonlyArray<CatalogPayloadManifestEntryV1> {
   return artifactEntries(artifacts).map(([path, content]) =>
-    Object.freeze({ hash: sha256(content), path })
+    Object.freeze({
+      hash: sha256(content),
+      mode: null,
+      path,
+      size: Buffer.byteLength(content),
+    })
   );
+}
+
+function deterministicGenerationInput(
+  contentHash: Sha256
+): CatalogGenerationInputIdentityV1 {
+  const emptyManifest = createIntegrityManifest([]);
+  const packageEntry = {
+    hash: sha256("artifact-only:icu-entry:v1"),
+    path: "artifact-only-icu.js",
+    size: 0,
+  };
+  const packageFiles = createIntegrityManifest([packageEntry]);
+  const packageBase = {
+    entry: packageEntry,
+    name: "@formatjs/icu-messageformat-parser",
+    packageFiles,
+    packageJsonHash: sha256("artifact-only:icu-package-json:v1"),
+    version: "artifact-only",
+  };
+  const packageJsonHash = sha256("artifact-only:application-package-json:v1");
+  const lock = {
+    hash: sha256("artifact-only:application-lock:v1"),
+    name: "artifact-only.lock",
+  };
+  return buildCatalogGenerationInputIdentity({
+    application: {
+      hash: canonicalHash({ lock, packageJsonHash }),
+      lock,
+      packageJsonHash,
+    },
+    artifactAbi: "artifact-only:v1",
+    compiler: {
+      hash: canonicalHash({ modulesHash: emptyManifest.hash }),
+      modules: emptyManifest,
+    },
+    config: emptyManifest,
+    environment: { contentHash, mode: "artifact-only" },
+    generationOptions: {},
+    icu: {
+      ...packageBase,
+      hash: canonicalHash(packageBase),
+    },
+    locales: emptyManifest,
+    runtimeAbi: RUNTIME_ABI,
+  });
 }
 
 function publicationPlan(
@@ -1037,57 +1000,34 @@ function publicationPlan(
   const relativeDirectory = `builds/${directoryName}`;
   const destination = join(root, relativeDirectory);
   const manifest = payloadManifest(artifacts);
-  const identity = generationIdentity(contentHash, options);
-  const selectorBase: SelectorBase = {
-    contentHash,
-    directory: relativeDirectory,
-    schemaVersion: 2,
-  };
-  const receipt: CatalogGenerationReceiptV1 = {
-    abi: {
-      artifactAbi: identity.artifactAbi,
-      runtimeAbi: identity.runtimeAbi,
-    },
-    compilerHash: identity.compilerHash,
-    generationInputHash: identity.generationInputHash,
-    icuHash: identity.icuHash,
-    payload: {
-      contentHash,
-      directory: relativeDirectory,
-      manifest,
-      manifestHash: sha256(canonicalJson(manifest)),
-    },
-    pointerBase: selectorBase,
-    schemaVersion: 1,
-    selectorBase,
-  };
-  const receiptContent = `${canonicalJson(receipt)}\n`;
-  const receiptHash = sha256(receiptContent);
-  const pointer: CurrentPointer = {
-    ...selectorBase,
-    generationReceiptHash: receiptHash,
-  };
+  const selectorContent = stableFacadeModule(
+    relativeDirectory,
+    facade,
+    contentHash
+  );
+  const lockContent = catalogLockContent(contentHash, relativeDirectory);
+  const snapshot = buildCatalogGenerationSnapshot({
+    catalogLockHash: sha256(lockContent),
+    generationInput:
+      options.generationInput ?? deterministicGenerationInput(contentHash),
+    payloadContentHash: contentHash,
+    payloadDirectory: relativeDirectory,
+    payloadEntries: manifest,
+    stableFacadeHash: sha256(selectorContent),
+  });
+  const receiptContent = `${canonicalJson(snapshot.generationReceipt)}\n`;
   return Object.freeze({
     contentHash,
     destination,
     directoryName,
-    identity,
-    lockContent: catalogLockContent(
-      contentHash,
-      relativeDirectory,
-      receiptHash
-    ),
+    lockContent,
     manifest,
-    pointerContent: `${canonicalJson(pointer)}\n`,
+    pointerContent: `${canonicalJson(snapshot.pointer)}\n`,
     receiptContent,
-    receiptHash,
+    receiptHash: snapshot.generationReceiptHash,
     relativeDirectory,
-    selectorContent: stableFacadeModule(
-      relativeDirectory,
-      facade,
-      contentHash,
-      receiptHash
-    ),
+    selectorContent,
+    snapshot,
   });
 }
 
@@ -1095,7 +1035,7 @@ function expectedPublicationHash(plan: PublicationPlan): Sha256 {
   return sha256(
     canonicalJson({
       contentHash: plan.contentHash,
-      identity: plan.identity,
+      generationInputHash: plan.snapshot.generationInputHash,
       lockHash: sha256(plan.lockContent),
       manifest: plan.manifest,
       pointerHash: sha256(plan.pointerContent),
@@ -1161,63 +1101,13 @@ function journalContent(journal: PublicationJournal): string {
 }
 
 function parseJournal(source: string): PublicationJournal {
-  let value: unknown;
   try {
-    value = JSON.parse(source) as unknown;
+    return parseCanonicalCatalogPublicationJournal(source);
   } catch (error) {
     throw new Error("Generated publication journal is malformed", {
       cause: error,
     });
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Generated publication journal must be an object");
-  }
-  const keys = Object.keys(value).toSorted(compareStrings);
-  if (
-    canonicalJson(keys) !==
-    canonicalJson([
-      "expectedPublicationHash",
-      "ownerToken",
-      "previousDirectory",
-      "schemaVersion",
-      "stageDirectory",
-      "state",
-    ])
-  ) {
-    throw new Error("Generated publication journal has unexpected fields");
-  }
-  const expected = Reflect.get(value, "expectedPublicationHash");
-  const ownerToken = Reflect.get(value, "ownerToken");
-  const previousDirectory = Reflect.get(value, "previousDirectory");
-  const schemaVersion = Reflect.get(value, "schemaVersion");
-  const stageDirectory = Reflect.get(value, "stageDirectory");
-  const state = Reflect.get(value, "state");
-  if (
-    typeof expected !== "string" ||
-    typeof ownerToken !== "string" ||
-    !/^[\da-f-]{36}$/u.test(ownerToken) ||
-    (previousDirectory !== null && typeof previousDirectory !== "string") ||
-    schemaVersion !== 1 ||
-    typeof stageDirectory !== "string" ||
-    stageDirectory !== `stage-${ownerToken}` ||
-    typeof state !== "string" ||
-    !publicationStates.includes(state as PublicationState)
-  ) {
-    throw new Error("Generated publication journal has invalid fields");
-  }
-  assertSha256(expected, "Publication journal expected hash");
-  const journal: PublicationJournal = {
-    expectedPublicationHash: expected,
-    ownerToken,
-    previousDirectory,
-    schemaVersion,
-    stageDirectory,
-    state: state as PublicationState,
-  };
-  if (source !== journalContent(journal)) {
-    throw new Error("Generated publication journal is noncanonical");
-  }
-  return journal;
 }
 
 async function assertPublicationArea(
@@ -1289,33 +1179,22 @@ async function advanceJournal(
   return next;
 }
 
-function receiptFromSource(source: string): CatalogGenerationReceiptV1 {
-  let value: unknown;
+function receiptFromSource(
+  source: string
+): CatalogGenerationSnapshot["generationReceipt"] {
   try {
-    value = JSON.parse(source) as unknown;
+    return parseCanonicalCatalogGenerationReceipt(source);
   } catch (error) {
     throw new Error("Catalog generation receipt is malformed", {
       cause: error,
     });
   }
-  if (source !== `${canonicalJson(value)}\n`) {
-    throw new Error("Catalog generation receipt is noncanonical");
-  }
-  if (
-    !value ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    Reflect.get(value, "schemaVersion") !== 1
-  ) {
-    throw new Error("Catalog generation receipt has an unsupported schema");
-  }
-  return value as CatalogGenerationReceiptV1;
 }
 
 async function assertPayloadManifest(
   outputRoot: string,
   destination: string,
-  manifest: ReadonlyArray<PayloadManifestEntry>,
+  manifest: ReadonlyArray<CatalogPayloadManifestEntryV1>,
   label: string
 ): Promise<void> {
   await assertConfinedDirectory(outputRoot, destination, label);
@@ -1340,7 +1219,13 @@ async function assertPayloadManifest(
       join(destination, expected.path),
       `${label} file ${expected.path}`
     );
-    if (source === undefined || sha256(source) !== expected.hash) {
+    const fileStats = await lstat(join(destination, expected.path));
+    if (
+      source === undefined ||
+      sha256(source) !== expected.hash ||
+      Buffer.byteLength(source) !== expected.size ||
+      (expected.mode !== null && (fileStats.mode & 0o777) !== expected.mode)
+    ) {
       throw new Error(
         `${label} does not match its destination files: ${expected.path} is corrupt`
       );
@@ -1461,7 +1346,12 @@ async function assertPreviousCommittedState(
   current: CurrentPointer
 ): Promise<void> {
   const selector = await readSelector(root, outputRoot);
-  if (canonicalJson(selector) !== canonicalJson(current)) {
+  const currentBase: CatalogCurrentPointerBaseV2 = {
+    contentHash: current.contentHash,
+    directory: current.directory,
+    schemaVersion: 2,
+  };
+  if (canonicalJson(selector) !== canonicalJson(currentBase)) {
     throw new Error("Generated selector and current pointer disagree");
   }
   const lockSource = await readManagedTextFile(
@@ -1469,7 +1359,7 @@ async function assertPreviousCommittedState(
     join(root, "catalog.lock.json"),
     "Generated catalog lock"
   );
-  if (lockSource !== `${canonicalJson(current)}\n`) {
+  if (lockSource !== `${canonicalJson(currentBase)}\n`) {
     throw new Error("Generated catalog lock and current pointer disagree");
   }
   const receiptSource = await readManagedTextFile(
@@ -1486,17 +1376,20 @@ async function assertPreviousCommittedState(
     );
   }
   const receipt = receiptFromSource(receiptSource);
+  const facadeSource = await readManagedTextFile(
+    outputRoot,
+    join(root, "index.ts"),
+    "Generated stable facade"
+  );
   if (
-    canonicalJson(receipt.pointerBase) !==
-      canonicalJson({
-        contentHash: current.contentHash,
-        directory: current.directory,
-        schemaVersion: 2,
-      }) ||
+    canonicalJson(receipt.pointerBase) !== canonicalJson(currentBase) ||
+    canonicalJson(receipt.selectorBase) !== canonicalJson(currentBase) ||
     receipt.payload.contentHash !== current.contentHash ||
     receipt.payload.directory !== current.directory ||
-    receipt.payload.manifestHash !==
-      sha256(canonicalJson(receipt.payload.manifest))
+    receipt.payload.manifestHash !== receipt.payload.manifest.hash ||
+    facadeSource === undefined ||
+    sha256(facadeSource) !== receipt.stableFacadeHash ||
+    sha256(lockSource) !== receipt.catalogLockHash
   ) {
     throw new Error("Selected catalog receipt identities disagree");
   }
@@ -1504,7 +1397,7 @@ async function assertPreviousCommittedState(
   await assertPayloadManifest(
     outputRoot,
     destination,
-    receipt.payload.manifest,
+    receipt.payload.manifest.entries,
     "Selected generated artifact directory"
   );
   await assertKnownBuilds(root, [basename(current.directory)]);
@@ -1751,21 +1644,54 @@ async function removePreviousPayload(
   if (!previousDirectory || previousDirectory === selectedDirectory) {
     return;
   }
-  if (
-    !previousDirectory.startsWith("builds/") ||
-    basename(previousDirectory) === ""
-  ) {
+  if (!/^builds\/[\da-f]{64}$/u.test(previousDirectory)) {
     throw new Error("Publication journal previous payload identity is invalid");
   }
-  const previous = join(outputRoot, previousDirectory);
-  if (!isWithin(outputRoot, previous)) {
+  const previous = resolve(outputRoot, previousDirectory);
+  if (
+    !isWithin(outputRoot, previous) ||
+    !isSamePath(previous, join(outputRoot, previousDirectory))
+  ) {
     throw new Error("Previous generated payload escapes the output root");
   }
-  await assertConfinedDirectory(
-    outputRoot,
-    previous,
-    "Previous generated artifact directory"
-  );
+  if (
+    !(await assertConfinedDirectory(
+      outputRoot,
+      previous,
+      "Previous generated artifact directory",
+      true
+    ))
+  ) {
+    return;
+  }
+  const canonicalPrevious = await realpath(previous);
+  const previousEntries = (
+    await readdir(previous, { withFileTypes: true })
+  ).toSorted((left, right) => compareStrings(left.name, right.name));
+  const previousArtifacts: Record<string, string> = {};
+  for (const entry of previousEntries) {
+    if (!entry.isFile() || !flatArtifactName.test(entry.name)) {
+      throw new Error("Previous generated payload identity changed");
+    }
+    const content = await readManagedTextFile(
+      outputRoot,
+      join(previous, entry.name),
+      `Previous generated artifact ${entry.name}`
+    );
+    if (content === undefined) {
+      throw new Error("Previous generated payload identity changed");
+    }
+    previousArtifacts[entry.name] = content;
+  }
+  const expectedPreviousHash =
+    `sha256:${previousDirectory.slice("builds/".length)}` as Sha256;
+  if (
+    !isSamePath(canonicalPrevious, previous) ||
+    basename(canonicalPrevious) !== previousDirectory.slice("builds/".length) ||
+    artifactContentHash(previousArtifacts) !== expectedPreviousHash
+  ) {
+    throw new Error("Previous generated payload identity changed");
+  }
   await rm(previous, { recursive: true });
   await syncDirectory(join(root, "builds"));
 }
@@ -1856,6 +1782,16 @@ async function runPublication(
       plan.manifest,
       "Staged generated artifact directory"
     );
+    const reconstructed = await options.beforePayloadInstall?.(plan.snapshot);
+    if (
+      reconstructed !== undefined &&
+      canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
+        canonicalJson(plan.snapshot)
+    ) {
+      throw new Error(
+        "Catalog generation inputs changed before payload installation"
+      );
+    }
     await installPayload(root, outputRoot, stageRoot, plan);
     journal = await advanceJournal(
       publicationRoot,
@@ -1967,6 +1903,7 @@ async function runPublication(
       journal.previousDirectory,
       plan.relativeDirectory
     );
+    await options.publicationHooks?.afterPreviousPayloadRemoval?.();
     await assertKnownBuilds(root, [plan.directoryName]);
     await rm(stageRoot, { force: true, recursive: true });
     await rm(join(publicationRoot, journalFileName));
