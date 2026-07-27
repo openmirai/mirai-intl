@@ -181,7 +181,7 @@ async function childAction(action: Action, root: string): Promise<void> {
       const proofStarted = performance.now();
       const receipt = await proveConventionCatalog(root);
       proofMilliseconds = performance.now() - proofStarted;
-      receiptHash = sha256(canonicalJson(receipt));
+      receiptHash = sha256(canonicalJson(normalizeRoot(receipt, root)));
     }
   }
 
@@ -272,6 +272,7 @@ async function createFixture(
       "lockfileVersion: '9.0'\n",
       "utf8"
     ),
+    writeFile(join(directory, "pnpm-workspace.yaml"), "packages: []\n", "utf8"),
     writeJson(join(directory, "src/locales/global/en.json"), {
       greeting: "Hello",
     }),
