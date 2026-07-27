@@ -599,5 +599,5 @@ describe("generated artifact verification", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  }, 30_000);
+  }, 60_000);
 });

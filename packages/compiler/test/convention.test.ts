@@ -409,6 +409,19 @@ describe("convention-first catalog discovery", () => {
       await writeJson(join(root, "src/locales/global/th.json"), {
         greeting: "ยินดีต้อนรับ {name}",
       });
+      await expect(
+        generateConventionCatalog(root, {
+          collectEnvironment: false,
+        })
+      ).rejects.toThrow(/no journal ownership proof/u);
+      await expect(readdir(join(root, "src/i18n"))).resolves.toContain(
+        ".generated.abandoned.tmp"
+      );
+      await expect(
+        readdir(join(root, "src/i18n/generated/builds"))
+      ).resolves.toEqual([first.write.contentHash.slice(7)]);
+
+      await rm(abandonedTemporary, { recursive: true });
       const second = await generateConventionCatalog(root, {
         collectEnvironment: false,
       });
@@ -423,10 +436,6 @@ describe("convention-first catalog discovery", () => {
       await expect(
         readdir(join(root, "src/i18n/generated/builds"))
       ).resolves.toEqual([second.write.contentHash.slice(7)]);
-      await expect(readdir(join(root, "src/i18n"))).resolves.not.toContain(
-        ".generated.abandoned.tmp"
-      );
-
       const unchanged = await generateConventionCatalog(root, {
         collectEnvironment: false,
       });

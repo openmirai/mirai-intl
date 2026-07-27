@@ -2055,6 +2055,7 @@ async function runPublication(
   plan: PublicationPlan,
   options: ArtifactWriterOptions
 ): Promise<WriteResult> {
+  await assertNoLegacySiblingStages(outputRoot);
   const publicationRoot = join(outputRoot, publicationDirectoryName);
   if (
     !(await assertConfinedDirectory(
