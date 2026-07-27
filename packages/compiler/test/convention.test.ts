@@ -924,7 +924,7 @@ describe("convention-first catalog discovery", () => {
     ).toMatch(/^message_[A-Za-z0-9_$]+_[a-f0-9]{16}$/u);
   });
 
-  it("rejects catalogs that do not match requiredLocales", async () => {
+  it("points required-locale omissions to the locale file that must be created", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-required-locales-"));
     try {
       await writeJson(join(root, "package.json"), {
@@ -940,8 +940,12 @@ describe("convention-first catalog discovery", () => {
         sourceLocale: "en",
       });
       await expect(loadConventionCatalog(root)).rejects.toThrow(
-        /Convention locales must be exactly en,th/u
+        /global is missing configured locale th/u
       );
+      await expect(loadConventionCatalog(root)).rejects.toMatchObject({
+        file: "src/locales/global/th.json",
+        locale: "th",
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

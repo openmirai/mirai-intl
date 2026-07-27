@@ -532,6 +532,70 @@ type LocaleDirectory = Readonly<{
   mount: ReadonlyArray<string>;
 }>;
 
+/**
+ * A catalog error that can be rendered as an actionable CLI diagnostic.
+ *
+ * Catalog discovery deliberately uses relative paths so the same error is
+ * useful from a package root, a workspace check, and CI annotations.  Keep
+ * this small data shape at the compiler boundary; the reporter decides how
+ * it should appear to a human or a machine.
+ */
+export class CatalogValidationError extends Error {
+  override readonly name = "CatalogValidationError";
+
+  readonly file: string | undefined;
+  readonly locale: string | undefined;
+  readonly path: string | undefined;
+
+  constructor(
+    message: string,
+    location: Readonly<{
+      file?: string;
+      locale?: string;
+      path?: string;
+    }> = {}
+  ) {
+    super(message);
+    this.file = location.file;
+    this.locale = location.locale;
+    this.path = location.path;
+  }
+}
+
+function localeFilePath(
+  source: ResolvedCatalogConfig["sources"][number],
+  logicalParts: ReadonlyArray<string>,
+  locale: string,
+  suffix: ".json" | ".value.json"
+): string {
+  return [source.root, ...logicalParts, `${locale}${suffix}`].join("/");
+}
+
+function catalogLocation(
+  directory: LocaleDirectory,
+  locale: string,
+  path: string
+): Readonly<{ file?: string; locale: string; path?: string }> {
+  const file = directory.localeFiles[locale]?.relativePath;
+  return {
+    ...(file ? { file } : {}),
+    locale,
+    ...(path ? { path } : {}),
+  };
+}
+
+function catalogError(
+  message: string,
+  directory: LocaleDirectory,
+  locale: string,
+  path: string
+): CatalogValidationError {
+  return new CatalogValidationError(
+    message,
+    catalogLocation(directory, locale, path)
+  );
+}
+
 function assertMessagePathSegment(segment: string, context: string): void {
   if (
     segment.length === 0 ||
@@ -615,8 +679,10 @@ async function discoverSource(
       );
       for (const locale of locales) {
         if (!byLocale.has(locale)) {
-          throw new Error(
-            `${logicalParts.join("/") || source.root} is missing configured locale ${locale}`
+          const file = localeFilePath(source, logicalParts, locale, suffix);
+          throw new CatalogValidationError(
+            `${logicalParts.join("/") || source.root} is missing configured locale ${locale}`,
+            { file, locale }
           );
         }
       }
@@ -639,10 +705,13 @@ async function discoverSource(
         let parsed: unknown;
         try {
           parsed = JSON.parse(content) as unknown;
-        } catch (error) {
-          throw new Error(
+        } catch {
+          throw new CatalogValidationError(
             `Malformed JSON in ${[source.root, ...logicalParts, entry.name].join("/")}`,
-            { cause: error }
+            {
+              file: localeFilePath(source, logicalParts, locale, suffix),
+              locale,
+            }
           );
         }
         const relativePath = [source.root, ...logicalParts, entry.name].join(
@@ -960,20 +1029,35 @@ function messagesFromDirectory(
     if (sourceValue === undefined) {
       throw new Error(`Missing source locale ${sourceLocale}`);
     }
-    const resultSchema = inferValueSchema(
-      sourceValue,
-      `${path} ${sourceLocale}`
-    );
-    const translations = Object.fromEntries(
-      locales.map((locale) => {
-        const file = directory.localeFiles[locale];
-        if (!file) {
-          throw new Error(`Missing locale ${locale}`);
-        }
+    let resultSchema: ValueSchema;
+    try {
+      resultSchema = inferValueSchema(sourceValue, `${path} ${sourceLocale}`);
+    } catch (error) {
+      throw catalogError(
+        error instanceof Error ? error.message : String(error),
+        directory,
+        sourceLocale,
+        path
+      );
+    }
+    const translations: Record<string, JsonValue> = {};
+    for (const locale of locales) {
+      const file = directory.localeFiles[locale];
+      if (!file) {
+        throw new Error(`Missing locale ${locale}`);
+      }
+      try {
         validateInferredValue(file.value, resultSchema, `${path} ${locale}`);
-        return [locale, file.value];
-      })
-    );
+      } catch (error) {
+        throw catalogError(
+          error instanceof Error ? error.message : String(error),
+          directory,
+          locale,
+          path
+        );
+      }
+      translations[locale] = file.value;
+    }
     messages.push({
       kind: "value",
       path,
@@ -996,12 +1080,22 @@ function messagesFromDirectory(
     const declaration = path ? schema.messages[path] : undefined;
     if (declaration?.kind === "value") {
       usedDeclarations.add(path);
-      const translations = Object.fromEntries(
-        locales.map((locale) => [
-          locale,
-          toJsonValue(values[locale], `${path} ${locale}`),
-        ])
-      );
+      const translations: Record<string, JsonValue> = {};
+      for (const locale of locales) {
+        try {
+          translations[locale] = toJsonValue(
+            values[locale],
+            `${path} ${locale}`
+          );
+        } catch (error) {
+          throw catalogError(
+            error instanceof Error ? error.message : String(error),
+            directory,
+            locale,
+            path
+          );
+        }
+      }
       messages.push({
         kind: "value",
         path,
@@ -1022,10 +1116,18 @@ function messagesFromDirectory(
       locales.map((locale) => jsonValueKind(values[locale]))
     );
     if (kinds.size !== 1) {
-      throw new Error(
+      const sourceKind = jsonValueKind(values[sourceLocale]);
+      const invalidLocale =
+        locales.find(
+          (locale) => jsonValueKind(values[locale]) !== sourceKind
+        ) ?? sourceLocale;
+      throw catalogError(
         `${path || "<root>"} has cross-locale kind mismatch: ${locales
           .map((locale) => `${locale}=${jsonValueKind(values[locale])}`)
-          .join(", ")}`
+          .join(", ")}`,
+        directory,
+        invalidLocale,
+        path
       );
     }
     const kind = kinds.values().next().value;
@@ -1033,8 +1135,11 @@ function messagesFromDirectory(
       for (const locale of locales) {
         const value = values[locale];
         if (typeof value !== "string" || value.trim().length === 0) {
-          throw new Error(
-            `${path || "<root>"} ${locale} must be a non-empty translation string`
+          throw catalogError(
+            `${path || "<root>"} ${locale} must be a non-empty translation string`,
+            directory,
+            locale,
+            path
           );
         }
       }
@@ -1060,8 +1165,11 @@ function messagesFromDirectory(
       return;
     }
     if (kind !== "object") {
-      throw new Error(
-        `Translation path ${path || "<root>"} has invalid message kind ${kind}; declare the exact path as a value message`
+      throw catalogError(
+        `Translation path ${path || "<root>"} has invalid message kind ${kind}; declare the exact path as a value message`,
+        directory,
+        sourceLocale,
+        path
       );
     }
     const objects = Object.fromEntries(
@@ -1082,8 +1190,21 @@ function messagesFromDirectory(
         compareCanonicalStrings
       );
       if (canonicalJson(currentKeys) !== canonicalJson(expectedKeys)) {
-        throw new Error(
-          `${path || "<root>"} locale keys differ between ${sourceLocale} and ${locale}`
+        const missingKey = expectedKeys.find(
+          (key) => !currentKeys.includes(key)
+        );
+        const extraKey = currentKeys.find((key) => !expectedKeys.includes(key));
+        const key = missingKey ?? extraKey;
+        const keyPath = key ? [...pathParts, key].join(".") : path;
+        throw catalogError(
+          `${path || "<root>"} locale keys differ between ${sourceLocale} and ${locale}${
+            key
+              ? `: ${locale} ${missingKey ? "is missing" : "contains unexpected"} key ${key}`
+              : ""
+          }`,
+          directory,
+          locale,
+          keyPath
         );
       }
     }
@@ -1696,25 +1817,40 @@ async function createReport(
 }
 
 async function conventionalLocales(
-  sourceRoot: string
+  sourceRoot: string,
+  sourceRootLabel: string
 ): Promise<ReadonlyArray<string>> {
-  const localeSets: Array<ReadonlyArray<string>> = [];
+  const localeSets: Array<
+    Readonly<{
+      directory: string;
+      entries: ReadonlyArray<
+        Readonly<{ locale: string; suffix: ".json" | ".value.json" }>
+      >;
+    }>
+  > = [];
   const excluded = new Set(["combined", "generated", "node_modules"]);
   const walk = async (directory: string): Promise<void> => {
     const entries = await readdir(directory, { withFileTypes: true });
-    const locales = entries
+    const localeEntries = entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => {
-        const suffix = entry.name.endsWith(".value.json")
+        const suffix: ".json" | ".value.json" = entry.name.endsWith(
+          ".value.json"
+        )
           ? ".value.json"
           : ".json";
         const locale = entry.name.slice(0, -suffix.length);
         assertMessagePathSegment(locale, `Locale file ${entry.name}`);
-        return locale;
+        return { locale, suffix };
       })
-      .toSorted(compareCanonicalStrings);
-    if (locales.length > 0) {
-      localeSets.push(locales);
+      .toSorted((left, right) =>
+        compareCanonicalStrings(left.locale, right.locale)
+      );
+    if (localeEntries.length > 0) {
+      localeSets.push({
+        directory: relative(sourceRoot, directory).split("\\").join("/"),
+        entries: localeEntries,
+      });
     }
     for (const entry of entries) {
       if (excluded.has(entry.name) || entry.name.startsWith(".")) {
@@ -1733,17 +1869,37 @@ async function conventionalLocales(
   };
   await walk(sourceRoot);
   const baseline = localeSets[0];
-  if (!baseline || baseline.length === 0) {
+  if (!baseline || baseline.entries.length === 0) {
     throw new Error("Convention locale discovery found no paired locale files");
   }
   for (const current of localeSets) {
-    if (canonicalJson(current) !== canonicalJson(baseline)) {
-      throw new Error(
-        `Convention locale directories disagree: expected ${baseline.join(",")}, found ${current.join(",")}`
+    const baselineLocales = baseline.entries.map((entry) => entry.locale);
+    const currentLocales = current.entries.map((entry) => entry.locale);
+    if (canonicalJson(currentLocales) !== canonicalJson(baselineLocales)) {
+      const missingLocale = baseline.entries.find(
+        (entry) => !currentLocales.includes(entry.locale)
+      );
+      const unexpectedLocale = current.entries.find(
+        (entry) => !baselineLocales.includes(entry.locale)
+      );
+      const selected = missingLocale ?? unexpectedLocale;
+      const file = selected
+        ? [
+            sourceRootLabel,
+            ...(current.directory ? [current.directory] : []),
+            `${selected.locale}${selected.suffix}`,
+          ].join("/")
+        : undefined;
+      throw new CatalogValidationError(
+        `Convention locale directories disagree: expected ${baselineLocales.join(",")}, found ${currentLocales.join(",")}`,
+        {
+          ...(file ? { file } : {}),
+          ...(selected ? { locale: selected.locale } : {}),
+        }
       );
     }
   }
-  return baseline;
+  return baseline.entries.map((entry) => entry.locale);
 }
 
 function packageDependencies(packageJson: JsonObject): ReadonlySet<string> {
@@ -2329,14 +2485,14 @@ export async function loadConventionCatalog(
   if (!sourceRoot) {
     throw new Error("Convention locale root is missing");
   }
-  const locales = await conventionalLocales(join(repositoryRoot, sourceRoot));
-  if (exceptions.requiredLocales !== undefined) {
-    if (canonicalJson(locales) !== canonicalJson(exceptions.requiredLocales)) {
-      throw new Error(
-        `Convention locales must be exactly ${exceptions.requiredLocales.join(",")}; found ${locales.join(",")}`
-      );
-    }
-  }
+  const discoveredLocales = await conventionalLocales(
+    join(repositoryRoot, sourceRoot),
+    sourceRoot
+  );
+  // An explicit locale set is the source contract.  Let discovery validate
+  // every locale directory against it so a missing translation can identify
+  // the exact JSON file to create instead of only reporting the aggregate set.
+  const locales = exceptions.requiredLocales ?? discoveredLocales;
   let inferredSourceLocale: string | undefined;
   if (locales.includes("en")) {
     inferredSourceLocale = "en";

@@ -253,17 +253,71 @@ describe("convention-only CLI", () => {
         "--report-file",
         report
       );
-      expect(checked.status).toBe(1);
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(1);
       expect(checked.stderr).toBe("");
       expect(checked.stdout).toContain(
         "greeting th must be a non-empty translation string"
       );
+      expect(checked.stdout).toContain(
+        "src/locales/global/th.json · ERROR · INTL_CATALOG_INVALID · locale th · path greeting"
+      );
+      expect(checked.stdout).toContain(
+        "Fix: Correct greeting in src/locales/global/th.json for locale th, then rerun mirai-intl catalog-check."
+      );
       expect(checked.stdout).toMatch(/mirai-intl catalog-check ✗ 1 error\n$/u);
       expect(JSON.parse(await readFile(report, "utf8"))).toMatchObject({
         command: "catalog-check",
-        diagnostics: [{ code: "INTL_CATALOG_INVALID", severity: "error" }],
+        diagnostics: [
+          {
+            code: "INTL_CATALOG_INVALID",
+            file: "src/locales/global/th.json",
+            locale: "th",
+            path: "greeting",
+            severity: "error",
+          },
+        ],
         success: false,
       });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("points missing locale files to the exact file that must be created", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        requiredLocales: ["en", "th"],
+      });
+      await rm(join(root, "src/locales/global/th.json"));
+      const checked = runCli(root, "catalog-check", "--no-color");
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(1);
+      expect(checked.stderr).toBe("");
+      expect(checked.stdout).toContain(
+        "src/locales/global/th.json · ERROR · INTL_CATALOG_INVALID · locale th"
+      );
+      expect(checked.stdout).toContain(
+        "Fix: Create or correct src/locales/global/th.json for locale th, then rerun mirai-intl catalog-check."
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("points missing translation keys to the affected locale JSON path", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "src/locales/global/th.json"), {});
+      const checked = runCli(root, "catalog-check", "--no-color");
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(1);
+      expect(checked.stderr).toBe("");
+      expect(checked.stdout).toContain(
+        "src/locales/global/th.json · ERROR · INTL_CATALOG_INVALID · locale th · path greeting"
+      );
+      expect(checked.stdout).toContain("th is missing key greeting");
+      expect(checked.stdout).toContain(
+        "Fix: Correct greeting in src/locales/global/th.json for locale th, then rerun mirai-intl catalog-check."
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { loadConventionCatalog } from "../src/catalog";
+import { CatalogValidationError, loadConventionCatalog } from "../src/catalog";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -51,6 +51,12 @@ describe("required locale message values", () => {
     );
     try {
       await expect(loadConventionCatalog(root)).rejects.toThrow(message);
+      await expect(loadConventionCatalog(root)).rejects.toMatchObject({
+        file: "src/locales/global/th.json",
+        locale: "th",
+        name: CatalogValidationError.name,
+        path: "greeting",
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -62,6 +68,12 @@ describe("required locale message values", () => {
       await expect(loadConventionCatalog(root)).rejects.toThrow(
         /<root> locale keys differ between en and th/u
       );
+      await expect(loadConventionCatalog(root)).rejects.toMatchObject({
+        file: "src/locales/global/th.json",
+        locale: "th",
+        name: CatalogValidationError.name,
+        path: "greeting",
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -79,6 +91,12 @@ describe("required locale message values", () => {
           "u"
         )
       );
+      await expect(loadConventionCatalog(root)).rejects.toMatchObject({
+        file: "src/locales/global/en.json",
+        locale: "en",
+        name: CatalogValidationError.name,
+        path: "greeting",
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

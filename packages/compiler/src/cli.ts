@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { analyzeConventionSources } from "./analyze-sources";
 import { compileCatalog } from "./compile";
 import {
+  CatalogValidationError,
   generateConventionCatalog,
   loadConventionCatalog,
   verifyConventionCatalog,
@@ -316,6 +317,62 @@ async function discoverWorkspaceCatalogs(root: string): Promise<Array<string>> {
   return catalogs.toSorted((left, right) => left.localeCompare(right));
 }
 
+function catalogRepairHint(
+  location: Readonly<{
+    file?: string;
+    locale?: string;
+    path?: string;
+  }>,
+  command: string
+): string {
+  const locale = location.locale ? ` for locale ${location.locale}` : "";
+  if (location.file && location.path) {
+    return `Correct ${location.path} in ${location.file}${locale}, then rerun mirai-intl ${command}.`;
+  }
+  if (location.file) {
+    return `Create or correct ${location.file}${locale}, then rerun mirai-intl ${command}.`;
+  }
+  return `Fix the catalog or proof finding, then rerun mirai-intl ${command}.`;
+}
+
+function catalogDiagnostic(
+  error: unknown,
+  command: string,
+  workspacePath?: string
+): CliDiagnostic {
+  const location: {
+    file?: string;
+    locale?: string;
+    path?: string;
+  } = {};
+  if (error instanceof CatalogValidationError) {
+    const file =
+      error.file && workspacePath && workspacePath !== "."
+        ? `${workspacePath}/${error.file}`
+        : (error.file ?? workspacePath);
+    if (file) {
+      location.file = file;
+    }
+    if (error.locale) {
+      location.locale = error.locale;
+    }
+    if (error.path) {
+      location.path = error.path;
+    }
+  } else if (workspacePath) {
+    location.file = workspacePath;
+  }
+  return {
+    code: "INTL_CATALOG_INVALID",
+    ...(location.file ? { file: location.file } : {}),
+    hint: catalogRepairHint(location, command),
+    ...(location.locale ? { locale: location.locale } : {}),
+    message: error instanceof Error ? error.message : String(error),
+    ...(location.path ? { path: location.path } : {}),
+    severity: "error",
+  };
+}
+
 async function checkWorkspace(output: ReporterOptions): Promise<void> {
   const workspaceRoot = await nearestWorkspaceRoot(process.cwd());
   const roots = await discoverWorkspaceCatalogs(workspaceRoot);
@@ -362,13 +419,9 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
       } catch {
         // Keep the authorization error below when the catalog cannot load.
       }
-      diagnostics.push({
-        code: "INTL_CATALOG_INVALID",
-        file: workspacePath,
-        hint: "Fix this catalog, then rerun mirai-intl check --workspace.",
-        message: error instanceof Error ? error.message : String(error),
-        severity: "error",
-      });
+      diagnostics.push(
+        catalogDiagnostic(error, "check --workspace", workspacePath)
+      );
       catalogs.push({ root: workspacePath });
     }
   }
@@ -696,14 +749,10 @@ await main().catch(async (error: unknown) => {
     activeCommand &&
     activeReporter &&
     !(error instanceof CliUsageError) &&
-    validationFailure(activeCommand, message)
+    (error instanceof CatalogValidationError ||
+      validationFailure(activeCommand, message))
   ) {
-    const diagnostic: CliDiagnostic = {
-      code: "INTL_CATALOG_INVALID",
-      hint: "Fix the catalog or proof finding, then rerun this command.",
-      message,
-      severity: "error",
-    };
+    const diagnostic = catalogDiagnostic(error, activeCommand);
     const failure: CliReport = {
       command: activeCommand,
       diagnostics: [diagnostic],
