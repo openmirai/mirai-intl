@@ -167,6 +167,46 @@ async function ensureInstrumentation(
   return { hook, report };
 }
 
+async function workspaceAnalysisInstrumentation(
+  directory: string
+): Promise<Readonly<{ hook: string; report: string }>> {
+  const report = join(directory, "workspace-analysis-instrumentation.json");
+  await writeFile(
+    join(directory, "workspace-analysis-loader.mjs"),
+    [
+      "export async function load(url, context, nextLoad) {",
+      "  const loaded = await nextLoad(url, context);",
+      '  if (loaded.format !== "module" || !url.includes("/packages/compiler/dist/analyze-sources-")) return loaded;',
+      '  const source = typeof loaded.source === "string" ? loaded.source : Buffer.from(loaded.source).toString("utf8");',
+      '  const transformed = source.replace("async function analyzeConventionSourceFiles(packageRoot, sourceFiles, workspaceRoot, options = {}) {", "async function analyzeConventionSourceFiles(packageRoot, sourceFiles, workspaceRoot, options = {}) {\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;");',
+      '  if (source.includes("async function analyzeConventionSourceFiles(") && transformed === source) throw new Error("Failed to instrument workspace source analysis");',
+      "  return { ...loaded, source: transformed === source ? source : `${transformed}\\nglobalThis.__miraiWorkspaceAnalysisInstrumented = true;\\n` };",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const hook = join(directory, "workspace-analysis-hook.mjs");
+  await writeFile(
+    hook,
+    [
+      'import { writeFileSync } from "node:fs";',
+      'import { register } from "node:module";',
+      "globalThis.__miraiWorkspaceAnalysisCalls = 0;",
+      "globalThis.__miraiWorkspaceAnalysisInstrumented = false;",
+      `const report = ${JSON.stringify(report)};`,
+      'process.on("exit", () => writeFileSync(report, JSON.stringify({',
+      "  analysisCalls: globalThis.__miraiWorkspaceAnalysisCalls,",
+      "  instrumented: globalThis.__miraiWorkspaceAnalysisInstrumented,",
+      "})));",
+      'register(new URL("./workspace-analysis-loader.mjs", import.meta.url), import.meta.url);',
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  return { hook, report };
+}
+
 describe("convention-only CLI", () => {
   it("uses Node-compatible color environment precedence", () => {
     expect(colorEnabled(undefined, {}, false)).toBe(false);
@@ -290,6 +330,123 @@ describe("convention-only CLI", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 90_000);
+
+  it("preserves workspace authorization failures without repeating source analysis", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const app = join(workspace, "apps/auth");
+    const instrumentationRoot = await mkdtemp(
+      join(tmpdir(), "mirai-intl-workspace-instrumentation-")
+    );
+    const report = join(workspace, "workspace-check-report.json");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - apps/*\n"
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        [
+          "lockfileVersion: '9.0'",
+          "importers:",
+          "",
+          "  apps/auth:",
+          "    dependencies: {}",
+          "",
+        ].join("\n")
+      );
+      await writeConventionApp(app);
+      await writeJson(join(app, "tsconfig.json"), {
+        include: ["src/**/*.ts", "src/**/*.tsx"],
+      });
+      await writeJson(join(app, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+      });
+
+      const built = spawnSync("corepack", ["pnpm", "build"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: process.env,
+        shell: false,
+        timeout: 120_000,
+      });
+      expect(built.status, `${built.stdout}${built.stderr}`).toBe(0);
+      const builtCli = join(repositoryRoot, "packages/compiler/dist/cli.js");
+      const generated = spawnSync(process.execPath, [builtCli, "generate"], {
+        cwd: app,
+        encoding: "utf8",
+        env: process.env,
+        shell: false,
+        timeout: 60_000,
+      });
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      await writeFile(
+        join(app, "src/page.tsx"),
+        [
+          'import { useTranslations } from "x";',
+          "const { t } = useTranslations();",
+          't("missing");',
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const instrumentation =
+        await workspaceAnalysisInstrumentation(instrumentationRoot);
+      const checked = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          instrumentation.hook,
+          builtCli,
+          "check",
+          "--workspace",
+          "--format=json",
+          "--report-file",
+          report,
+        ],
+        {
+          cwd: workspace,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(1);
+      expect(checked.stderr).toBe("");
+      const failureReport = JSON.parse(await readFile(report, "utf8"));
+      expect(
+        JSON.parse(await readFile(instrumentation.report, "utf8"))
+      ).toEqual({ analysisCalls: 1, instrumented: true });
+      expect(failureReport).toMatchObject({
+        diagnostics: [
+          {
+            code: "INTL_CATALOG_INVALID",
+            message: expect.stringContaining(
+              "Mirai Intl source analysis failed with 1 diagnostic(s)"
+            ),
+            severity: "error",
+          },
+        ],
+        result: {
+          catalogs: [{ root: "apps/auth" }],
+          valid: false,
+        },
+        success: false,
+      });
+      expect(JSON.stringify(failureReport)).toContain(
+        "Unknown translation path missing"
+      );
+    } finally {
+      await Promise.all([
+        rm(workspace, { force: true, recursive: true }),
+        rm(instrumentationRoot, { force: true, recursive: true }),
+      ]);
+    }
+  }, 180_000);
 
   it("finalizes repeated named artifact targets in one CLI invocation", async () => {
     const root = await createConventionApp();

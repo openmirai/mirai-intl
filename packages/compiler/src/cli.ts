@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { lstat, readFile, readdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { compileCatalog } from "./compile";
 import {
@@ -420,7 +420,6 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
     receipt?: unknown;
     report?: unknown;
     root: string;
-    sourceAnalysis?: unknown;
   }> = [];
   let messageCount = 0;
 
@@ -436,28 +435,6 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
         root: workspacePath,
       });
     } catch (error) {
-      try {
-        const { analyzeConventionSources } = await import("./analyze-sources");
-        const analysis = await analyzeConventionSources(root);
-        const sourceFindings = sourceDiagnostics(analysis.diagnostics).map(
-          (diagnostic) => {
-            if (!diagnostic.file) {
-              return diagnostic;
-            }
-            const file = isAbsolute(diagnostic.file)
-              ? relative(workspaceRoot, diagnostic.file).split("\\").join("/")
-              : `${workspacePath}/${diagnostic.file}`;
-            return { ...diagnostic, file };
-          }
-        );
-        if (sourceFindings.length > 0) {
-          diagnostics.push(...sourceFindings);
-          catalogs.push({ root: workspacePath, sourceAnalysis: analysis });
-          continue;
-        }
-      } catch {
-        // Keep the authorization error below when the catalog cannot load.
-      }
       diagnostics.push(
         catalogDiagnostic(error, "check --workspace", workspacePath)
       );
