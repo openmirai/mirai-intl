@@ -248,7 +248,6 @@ export async function verifyConventionBuildReceipt(
   }
   const workspace = await workspaceRoot(root);
   const loaded = await loadConventionCatalog(root);
-  await verifyLoadedConventionCatalog(loaded, { collectEnvironment: false });
   await Promise.all([
     verifyFiles(
       workspace,
@@ -280,6 +279,7 @@ export async function verifyConventionBuildReceipt(
       "Mirai Intl loaded TypeScript lib"
     ),
   ]);
+  await verifyLoadedConventionCatalog(loaded, { collectEnvironment: false });
   const reconstructedProjects = await Promise.all(
     receipt.projects.map(async (project) => ({
       project,
