@@ -12,6 +12,7 @@
   "type": "module",
   "scripts": {
     "benchmark": "tsx benchmarks/run.ts",
+    "benchmark:authorization": "tsx benchmarks/authorization.ts",
     "build": "tsdown",
     "check:generated": "tsx scripts/check-generated.ts",
     "clean": "rimraf packages/*/dist packages/*/tsconfig.tsbuildinfo *.tsbuildinfo coverage .tmp",
