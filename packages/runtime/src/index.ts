@@ -2,6 +2,7 @@ export * from "./backend";
 export * from "./catalog";
 export * from "./dynamic";
 export * from "./i18next";
+export * from "./otel";
 export * from "./precompiled";
 export * from "./recovering";
 export * from "./representations";

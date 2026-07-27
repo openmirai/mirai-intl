@@ -2,6 +2,8 @@ import { logs, SeverityNumber } from "@opentelemetry/api-logs";
 import { formatIntlDiagnosticForDeveloper } from "@openmirai/intl-abi";
 import type { IntlDiagnostic, IntlDiagnosticCode } from "@openmirai/intl-abi";
 
+import type { IntlRecoveryDiagnostic } from "./recovering";
+
 const DEFAULT_LOGGER_NAME = "openmirai.i18n";
 const DEFAULT_CODES = [
   "INTL_MISSING_RESOURCE",
@@ -20,6 +22,11 @@ export type CreateOtelDiagnosticSinkOptions = Readonly<{
   /**
    * OTel logger name. Defaults to `openmirai.i18n`.
    */
+  loggerName?: string;
+}>;
+
+export type CreateOtelRecoveryDiagnosticSinkOptions = Readonly<{
+  /** OTel logger name. Defaults to `openmirai.i18n`. */
   loggerName?: string;
 }>;
 
@@ -139,6 +146,52 @@ export function createOtelDiagnosticSink(
       getLogger()?.emit({
         attributes,
         body: "Missing translation",
+        severityNumber: SeverityNumber.WARN,
+        severityText: "WARN",
+      });
+    } catch {
+      // Exporter/provider failures must not affect translation rendering.
+    }
+  };
+}
+
+/**
+ * OTel Logs sink for terminal translation recovery.
+ *
+ * Recovery diagnostics are already deduplicated by `RecoveringIntlRuntime`.
+ * This sink therefore only serializes bounded, privacy-safe metadata and
+ * fail-opens when no LoggerProvider is configured.
+ */
+export function createOtelRecoveryDiagnosticSink(
+  options: CreateOtelRecoveryDiagnosticSinkOptions = {}
+): (diagnostic: IntlRecoveryDiagnostic) => void {
+  const loggerName = options.loggerName ?? DEFAULT_LOGGER_NAME;
+  let otelLogger: ReturnType<typeof logs.getLogger> | null = null;
+
+  const getLogger = (): ReturnType<typeof logs.getLogger> | null => {
+    if (otelLogger !== null) {
+      return otelLogger;
+    }
+    try {
+      otelLogger = logs.getLogger(loggerName);
+    } catch {
+      // Logging must remain optional when the provider is unavailable.
+    }
+    return otelLogger;
+  };
+
+  return (diagnostic): void => {
+    try {
+      getLogger()?.emit({
+        attributes: {
+          "i18n.locale": diagnostic.locale,
+          "i18n.operation": diagnostic.operation,
+          "i18n.proof_identity": diagnostic.proofIdentity,
+          "i18n.recovery": diagnostic.recovery,
+          "i18n.release": diagnostic.release,
+          "i18n.stage": diagnostic.stage,
+        },
+        body: "Translation recovery rendered safe fallback",
         severityNumber: SeverityNumber.WARN,
         severityText: "WARN",
       });

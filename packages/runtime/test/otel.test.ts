@@ -2,7 +2,10 @@ import { SeverityNumber } from "@opentelemetry/api-logs";
 import type { IntlDiagnostic } from "@openmirai/intl-abi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createOtelDiagnosticSink } from "../src/otel";
+import {
+  createOtelDiagnosticSink,
+  createOtelRecoveryDiagnosticSink,
+} from "../src/otel";
 
 const { emit, getLogger } = vi.hoisted(() => {
   const emitMock = vi.fn();
@@ -29,6 +32,15 @@ const missingResource = (
   message: "Missing resource",
   path: "pages.home.title",
   ...overrides,
+});
+
+const terminalRecovery = () => ({
+  locale: "th",
+  operation: "text" as const,
+  proofIdentity: "proof-123",
+  recovery: "terminal" as const,
+  release: "release-123",
+  stage: "runtime" as const,
 });
 
 describe("createOtelDiagnosticSink", () => {
@@ -151,5 +163,37 @@ describe("createOtelDiagnosticSink", () => {
         }),
       })
     );
+  });
+});
+
+describe("createOtelRecoveryDiagnosticSink", () => {
+  afterEach(() => {
+    emit.mockReset();
+    getLogger.mockClear();
+    getLogger.mockImplementation(() => ({ emit }));
+    vi.restoreAllMocks();
+  });
+
+  it("emits a privacy-safe WARN event for terminal recovery", () => {
+    const sink = createOtelRecoveryDiagnosticSink({
+      loggerName: "openmirai.test.i18n",
+    });
+
+    sink(terminalRecovery());
+
+    expect(getLogger).toHaveBeenCalledWith("openmirai.test.i18n");
+    expect(emit).toHaveBeenCalledWith({
+      attributes: {
+        "i18n.locale": "th",
+        "i18n.operation": "text",
+        "i18n.proof_identity": "proof-123",
+        "i18n.recovery": "terminal",
+        "i18n.release": "release-123",
+        "i18n.stage": "runtime",
+      },
+      body: "Translation recovery rendered safe fallback",
+      severityNumber: SeverityNumber.WARN,
+      severityText: "WARN",
+    });
   });
 });

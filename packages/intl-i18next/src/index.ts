@@ -4,16 +4,22 @@ import type { ComponentType, ReactNode } from "react";
 import { createElement, useEffect, useState } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 
+import type { IntlDiagnostic } from "@openmirai/intl-abi";
 import type { BoundUseTranslations } from "@openmirai/intl-runtime/react-i18next";
 
 import type {
   CatalogContractOf,
   CatalogLocaleOf,
   I18nextCatalogResource,
+  IntlRecoveryDiagnostic,
   RecoveringI18nextRuntimeOptions,
   TypedCatalogManifest,
 } from "@openmirai/intl-runtime";
-import { createI18nextCatalogBackend } from "@openmirai/intl-runtime";
+import {
+  createI18nextCatalogBackend,
+  createOtelDiagnosticSink,
+  createOtelRecoveryDiagnosticSink,
+} from "@openmirai/intl-runtime";
 import {
   createRecoveringUseTranslations,
   createUseTranslations,
@@ -88,6 +94,41 @@ function productionEnvironment(): boolean {
   );
 }
 
+function createUnavailableTranslationWarning(): (locale: string) => void {
+  const warnedLocales = new Set<string>();
+  return (locale): void => {
+    if (warnedLocales.has(locale)) {
+      return;
+    }
+    warnedLocales.add(locale);
+    try {
+      globalThis.console.warn(
+        `[mirai-intl] WARNING Translation unavailable for locale "${locale}"; rendered safe fallback.`
+      );
+    } catch {
+      // Console failures must not affect translation rendering.
+    }
+  };
+}
+
+function composeSinks<Diagnostic>(
+  first: (diagnostic: Diagnostic) => void,
+  second: ((diagnostic: Diagnostic) => void) | undefined
+): (diagnostic: Diagnostic) => void {
+  return (diagnostic): void => {
+    try {
+      first(diagnostic);
+    } catch {
+      // Built-in telemetry must not affect translation rendering.
+    }
+    try {
+      second?.(diagnostic);
+    } catch {
+      // Consumer observability must not affect translation rendering.
+    }
+  };
+}
+
 export function createMiraiI18next<
   Manifest extends TypedCatalogManifest<object>,
   Resource extends I18nextCatalogResource,
@@ -98,6 +139,19 @@ export function createMiraiI18next<
   const defaultLocale =
     options.defaultLocale ?? options.catalogManifest.sourceLocale;
   const resourceNamespace = options.resourceNamespace ?? "translation";
+  const warnUnavailableTranslation = createUnavailableTranslationWarning();
+  const otelDiagnosticSink = createOtelDiagnosticSink();
+  const otelRecoveryDiagnosticSink = createOtelRecoveryDiagnosticSink();
+  const diagnosticSink = (diagnostic: IntlDiagnostic): void => {
+    if (diagnostic.code === "INTL_MISSING_RESOURCE") {
+      warnUnavailableTranslation(diagnostic.locale ?? defaultLocale);
+    }
+    otelDiagnosticSink(diagnostic);
+  };
+  const recoveryDiagnosticSink = (diagnostic: IntlRecoveryDiagnostic): void => {
+    warnUnavailableTranslation(diagnostic.locale);
+    otelRecoveryDiagnosticSink(diagnostic);
+  };
   const backend = createI18nextCatalogBackend({
     isCatalogLocale: options.isCatalogLocale,
     loadCatalogResource: options.loadCatalogResource,
@@ -243,6 +297,14 @@ export function createMiraiI18next<
           injectedUseTranslation,
           {
             ...options.recovery,
+            diagnosticSink: composeSinks(
+              diagnosticSink,
+              options.recovery?.diagnosticSink
+            ),
+            recoveryDiagnosticSink: composeSinks(
+              recoveryDiagnosticSink,
+              options.recovery?.recoveryDiagnosticSink
+            ),
             resourceNamespace,
             strictValidation: options.recovery?.strictValidation ?? false,
           }

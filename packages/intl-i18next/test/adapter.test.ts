@@ -273,4 +273,43 @@ describe("createMiraiI18next", () => {
     expect(output).not.toContain("greeting");
     expect(diagnostics).toHaveLength(1);
   });
+
+  it("warns once with a human-readable, key-free production recovery message", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const warning = vi
+      .spyOn(globalThis.console, "warn")
+      .mockImplementation(() => undefined);
+    try {
+      const adapter = createMiraiI18next({
+        catalogManifest,
+        isCatalogLocale,
+        loadCatalogResource: () => ({ translation: {} }),
+        recovery: { missingMessageFallback: "Translation unavailable" },
+      });
+      const controller = adapter.createRequestController("en");
+      await controller.activateLocale("en");
+      const Greeting = () => {
+        const { t } = adapter.useTranslations();
+        return createElement(
+          "span",
+          null,
+          Reflect.apply(t, undefined, [greeting])
+        );
+      };
+
+      renderToString(
+        createElement(adapter.Provider, { controller }, createElement(Greeting))
+      );
+      renderToString(
+        createElement(adapter.Provider, { controller }, createElement(Greeting))
+      );
+
+      expect(warning).toHaveBeenCalledTimes(1);
+      expect(warning).toHaveBeenCalledWith(
+        '[mirai-intl] WARNING Translation unavailable for locale "en"; rendered safe fallback.'
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
