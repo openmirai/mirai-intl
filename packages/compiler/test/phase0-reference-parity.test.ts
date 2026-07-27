@@ -128,7 +128,7 @@ async function snapshotFiles(directory: string): Promise<FileSnapshot> {
 }
 
 describe("Phase 0 reference-engine parity", () => {
-  it("records exact Program construction separately from eligible source coverage", async () => {
+  it("constructs one semantic Program and evidence record for every eligible source", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
     const root = join(container, "app");
     try {
@@ -138,12 +138,14 @@ describe("Phase 0 reference-engine parity", () => {
       const started = performance.now();
       const before = process.memoryUsage().rss;
       const first = await analyzeConventionSources(root);
+      const firstProgramCount = programInstrumentation.count;
+      programInstrumentation.count = 0;
       const second = await analyzeConventionSources(root);
+      const secondProgramCount = programInstrumentation.count;
       const measurement = {
         elapsedMilliseconds: performance.now() - started,
         filesAnalyzed: first.filesAnalyzed,
         maxRssKilobytes: process.resourceUsage().maxRSS,
-        programCount: programInstrumentation.count,
         rssDeltaBytes: process.memoryUsage().rss - before,
       };
 
@@ -169,11 +171,18 @@ describe("Phase 0 reference-engine parity", () => {
             ),
           },
         ],
+        evidence: expect.arrayContaining([
+          expect.objectContaining({ source: "src/source-000.ts" }),
+          expect.objectContaining({ source: "src/source-017.ts" }),
+        ]),
         filesAnalyzed: 18,
       });
+      expect(first.evidence).toHaveLength(first.filesAnalyzed);
+      expect(second.evidence).toHaveLength(second.filesAnalyzed);
+      expect(firstProgramCount).toBe(first.filesAnalyzed);
+      expect(secondProgramCount).toBe(second.filesAnalyzed);
       expect(measurement).toMatchObject({
         filesAnalyzed: 18,
-        programCount: 2,
       });
       expect(measurement.elapsedMilliseconds).toBeGreaterThan(0);
       expect(measurement.maxRssKilobytes).toBeGreaterThan(0);

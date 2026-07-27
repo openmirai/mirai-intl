@@ -234,8 +234,8 @@ async function analyzeLoadedConventionSourceFiles(
     // Transform every eligible first-party source instead; it returns null for
     // unrelated modules without changing the source.
     candidates += 1;
+    let semanticEvidence: MiraiIntlSemanticEvidence | undefined;
     try {
-      let semanticEvidence: MiraiIntlSemanticEvidence | undefined;
       await transformMiraiIntlSource(source, file, {
         authorizationEvidence: {
           record(value) {
@@ -246,20 +246,15 @@ async function analyzeLoadedConventionSourceFiles(
         generatedDirectory,
         root,
       });
-      evidence.push(
-        semanticEvidence ?? {
-          ambientTypeFileLimit: 16,
-          declarations: [],
-          libs: [],
-          providerBudgetExceeded: false,
-          providerRootLimit: 64,
-          providers: [],
-          source: relative(workspaceRoot, file).split(sep).join("/"),
-        }
-      );
     } catch (error) {
       exceptionDiagnostics.push(parseTransformDiagnostic(error, file, source));
     }
+    if (!semanticEvidence) {
+      throw new Error(
+        `Mirai Intl source analysis did not record semantic evidence for ${relative(workspaceRoot, file).split(sep).join("/")}`
+      );
+    }
+    evidence.push(semanticEvidence);
   }
 
   return {

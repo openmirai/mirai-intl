@@ -1450,6 +1450,17 @@ function analyzeSource(
     providerRoots,
     sourceFile,
   } = createProgram(source, id, root, catalog, generatedImports.facadeModules);
+  authorizationEvidence?.record(
+    semanticEvidence(
+      program,
+      providerBudgetExceeded,
+      providerRoots,
+      sourceFile,
+      generatedImports.facadeModules,
+      catalog,
+      authorizationEvidence.workspaceRoot
+    )
+  );
   const factorySymbols = new Map<ts.Symbol, FactoryKind>();
   const objectSymbols = new Map<ts.Symbol, string>();
   const translationKeyFactorySymbols = new Set<ts.Symbol>();
@@ -2987,17 +2998,6 @@ function analyzeSource(
   };
   validateTranslatorReferences(sourceFile);
 
-  authorizationEvidence?.record(
-    semanticEvidence(
-      program,
-      providerBudgetExceeded,
-      providerRoots,
-      sourceFile,
-      generatedImports.facadeModules,
-      catalog,
-      authorizationEvidence.workspaceRoot
-    )
-  );
   return {
     dynamicHelpers,
     dynamicRegistries: [...dynamicRegistries.entries()]
@@ -3444,7 +3444,10 @@ export async function transformMiraiIntlSource(
   if (!isMiraiIntlTransformCandidate(source, cleanId)) {
     return null;
   }
-  if (!requiresMiraiIntlAnalysis(source, cleanId)) {
+  if (
+    !options.authorizationEvidence &&
+    !requiresMiraiIntlAnalysis(source, cleanId)
+  ) {
     return null;
   }
   const catalog = await loadCurrentCatalog(options);
