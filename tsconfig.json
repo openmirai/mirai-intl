@@ -3,6 +3,8 @@
   "references": [
     { "path": "./packages/abi" },
     { "path": "./packages/compiler" },
-    { "path": "./packages/runtime" }
+    { "path": "./packages/runtime" },
+    { "path": "./packages/intl" },
+    { "path": "./packages/intl-i18next" }
   ]
 }

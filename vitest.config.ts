@@ -20,8 +20,16 @@ export default defineConfig({
         replacement: `${root}packages/abi/src/index.ts`,
       },
       {
+        find: "@openmirai/intl-runtime/react-i18next",
+        replacement: `${root}packages/runtime/src/react-i18next.ts`,
+      },
+      {
         find: "@openmirai/intl-runtime",
         replacement: `${root}packages/runtime/src/index.ts`,
+      },
+      {
+        find: "@openmirai/intl-i18next",
+        replacement: `${root}packages/intl-i18next/src/index.ts`,
       },
     ],
   },

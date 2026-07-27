@@ -446,10 +446,9 @@ function emitPrivateMessagesModule(
   const imports =
     representation === "precompiled"
       ? [
-          'import { defineMessageDescriptor } from "@openmirai/intl-abi";',
-          'import { createPrecompiledDescriptor, createPrecompiledLocaleRenderer, createPrecompiledRuntimeMessage, renderPrecompiledArgument, renderPrecompiledComponent, renderPrecompiledDate, renderPrecompiledNumber, renderPrecompiledPlural, renderPrecompiledPound, renderPrecompiledSelect, renderPrecompiledTime } from "@openmirai/intl-runtime";',
+          'import { createPrecompiledDescriptor, createPrecompiledLocaleRenderer, createPrecompiledRuntimeMessage, defineMessageDescriptor, renderPrecompiledArgument, renderPrecompiledComponent, renderPrecompiledDate, renderPrecompiledNumber, renderPrecompiledPlural, renderPrecompiledPound, renderPrecompiledSelect, renderPrecompiledTime } from "@openmirai/intl/runtime";',
         ]
-      : ['import { defineMessageDescriptor } from "@openmirai/intl-abi";'];
+      : ['import { defineMessageDescriptor } from "@openmirai/intl/runtime";'];
   return [
     ...imports,
     "",
@@ -475,8 +474,7 @@ function emitDescriptorModule(
   const root = rootEntries(tree);
   if (representation === "proxy") {
     return [
-      'import { defineMessageDescriptor } from "@openmirai/intl-abi";',
-      'import { createDescriptorProxy } from "@openmirai/intl-runtime";',
+      'import { createDescriptorProxy, defineMessageDescriptor } from "@openmirai/intl/runtime";',
       "",
       `export const catalogManifest = ${canonicalJson(output.catalog.manifest)};`,
       ...emitMessageExports(output, representation, compact).flatMap(
@@ -495,10 +493,9 @@ function emitDescriptorModule(
   const precompiled = representation === "precompiled";
   const imports = precompiled
     ? [
-        'import { defineMessageDescriptor } from "@openmirai/intl-abi";',
-        'import { createPrecompiledDescriptor, createPrecompiledLocaleRenderer, createPrecompiledRuntimeMessage, renderPrecompiledArgument, renderPrecompiledComponent, renderPrecompiledDate, renderPrecompiledNumber, renderPrecompiledPlural, renderPrecompiledPound, renderPrecompiledSelect, renderPrecompiledTime } from "@openmirai/intl-runtime";',
+        'import { createPrecompiledDescriptor, createPrecompiledLocaleRenderer, createPrecompiledRuntimeMessage, defineMessageDescriptor, renderPrecompiledArgument, renderPrecompiledComponent, renderPrecompiledDate, renderPrecompiledNumber, renderPrecompiledPlural, renderPrecompiledPound, renderPrecompiledSelect, renderPrecompiledTime } from "@openmirai/intl/runtime";',
       ]
-    : ['import { defineMessageDescriptor } from "@openmirai/intl-abi";'];
+    : ['import { defineMessageDescriptor } from "@openmirai/intl/runtime";'];
   const namespaceExports = root.map(
     ([key, node]) =>
       `export const ${namespaceExportName(key)} = ${emitReferenceTree(
@@ -652,7 +649,7 @@ function emitCompactContractDeclaration(
 ): string {
   const schema = emitCompactSchemaTree(tree, output.catalog.messages, "");
   return [
-    'import type { RichDescriptor, TextDescriptor, ValueDescriptor } from "@openmirai/intl-abi";',
+    'import type { RichDescriptor, TextDescriptor, ValueDescriptor } from "@openmirai/intl/types";',
     "",
     "type _L=readonly[number,0]|readonly[number,0,object]|readonly[number,1,object,string]|readonly[number,2,object,unknown];",
     'type _J<P extends string,K extends string>=P extends ""?K:`${P}.${K}`;',
@@ -709,7 +706,7 @@ function emitDescriptorDeclaration(
       `export declare const ${namespaceExportName(key)}:CatalogContract[${JSON.stringify(key)}];`
   );
   return [
-    'import type { CatalogManifest, RuntimeMessage } from "@openmirai/intl-abi";',
+    'import type { CatalogManifest, RuntimeMessage } from "@openmirai/intl/types";',
     'import type { CatalogContract } from "./catalog.schema.gen.js";',
     "",
     'export type { CatalogContract } from "./catalog.schema.gen.js";',
@@ -736,7 +733,7 @@ function emitContractDeclaration(
     return emitCompactContractDeclaration(output, tree);
   }
   return [
-    'import type { RichDescriptor, TextDescriptor, ValueDescriptor } from "@openmirai/intl-abi";',
+    'import type { RichDescriptor, TextDescriptor, ValueDescriptor } from "@openmirai/intl/types";',
     "",
     `export type CatalogContract = ${emitTypeTree(tree, output.catalog.messages, output.catalog.manifest.catalogId, "")};`,
     "",
@@ -819,7 +816,7 @@ function emitResourceLoaderDeclaration(output: CompileOutput): string {
     .map((locale) => JSON.stringify(locale))
     .join(" | ");
   return [
-    'import type { JsonObject } from "@openmirai/intl-abi";',
+    'import type { JsonObject } from "@openmirai/intl/types";',
     "",
     `export type CatalogLocale=${locales || "never"};`,
     "export type CatalogResource=Readonly<{readonly translation:JsonObject}>;",
@@ -834,7 +831,7 @@ function emitManifestDeclaration(output: CompileOutput): string {
     .map((locale) => JSON.stringify(locale))
     .join(",")}]`;
   return [
-    'import type { TypedCatalogManifest } from "@openmirai/intl-runtime";',
+    'import type { TypedCatalogManifest } from "@openmirai/intl/types";',
     'import type { CatalogContract } from "./catalog.schema.gen.js";',
     "",
     `export declare const catalogManifest:TypedCatalogManifest<CatalogContract,${locales},${JSON.stringify(output.catalog.manifest.sourceLocale)}>;`,

@@ -19,13 +19,13 @@ import type {
 import ts from "typescript";
 
 import {
-  analyzeConventionSources,
+  analyzeConventionSourceFiles,
   collectConventionSourceFiles,
 } from "./analyze-sources";
 import { canonicalHash, canonicalJson, sha256 } from "./canonical";
 import { loadConventionCatalog, verifyConventionCatalog } from "./catalog";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
-import { resolveSourceOwnership } from "./ownership";
+import { resolveConventionSourceUniverse } from "./ownership";
 
 const receiptDirectory = ".mirai-intl";
 const receiptName = "check-receipt.v1.json";
@@ -37,6 +37,12 @@ export type IntlEmittedModuleV1 = Readonly<{
   path: string;
   /** Required emitted source-map path, relative to the deployed artifact root. */
   mapPath?: string;
+}>;
+
+export type IntlBuildProofFinalizationTarget = Readonly<{
+  artifactRoot: string;
+  mapRoot?: string;
+  target: IntlBuildProofTargetV1;
 }>;
 
 /** Enumerate the actual mapped JavaScript files for an independent postbuild audit. */
@@ -84,6 +90,64 @@ export async function discoverEmittedModules(
 
 function receiptPath(root: string): string {
   return join(root, receiptDirectory, receiptName);
+}
+
+type BuildProofReceipts = Readonly<{
+  authorityHash: `sha256:${string}`;
+  deploymentReceiptHash: `sha256:${string}`;
+}>;
+
+/**
+ * Mounted catalogs retain their own source authority. Compose dependency
+ * receipts into the application artifact proof without transferring semantic
+ * verification authority to the consumer.
+ */
+async function buildProofReceipts(
+  root: string,
+  receipt: IntlCheckReceiptV1
+): Promise<BuildProofReceipts> {
+  const loaded = await loadConventionCatalog(root);
+  const dependencies = new Map<string, string>();
+  for (const source of loaded.config.sources) {
+    if (!source.dependency) {
+      continue;
+    }
+    const existing = dependencies.get(source.dependency);
+    if (existing && existing !== source.withinRoot) {
+      throw new Error(
+        `Mirai Intl dependency ${source.dependency} resolved to multiple package roots`
+      );
+    }
+    dependencies.set(source.dependency, source.withinRoot);
+  }
+  const receipts = await Promise.all(
+    [...dependencies]
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(async ([dependency, dependencyRoot]) => ({
+        dependency,
+        receipt: await verifyConventionCheckReceipt(dependencyRoot),
+      }))
+  );
+  return {
+    authorityHash: canonicalHash({
+      dependencies: receipts.map(
+        ({ dependency, receipt: dependencyReceipt }) => ({
+          dependency,
+          receipt: dependencyReceipt.authorityHash,
+        })
+      ),
+      receipt: receipt.authorityHash,
+    }),
+    deploymentReceiptHash: canonicalHash({
+      dependencies: receipts.map(
+        ({ dependency, receipt: dependencyReceipt }) => ({
+          dependency,
+          receipt: dependencyReceipt,
+        })
+      ),
+      receipt,
+    }),
+  };
 }
 
 function proofPath(
@@ -266,63 +330,56 @@ async function writeReceipt(
   }
 }
 
-async function createConventionCheckReceipt(
+type ConventionReceiptInputs = Readonly<{
+  receipt: IntlCheckReceiptV1;
+  root: string;
+  sourceFiles: ReadonlyArray<string>;
+  snapshot: ReadonlyArray<readonly [string, `sha256:${string}`]>;
+}>;
+
+/**
+ * Reconstruct the immutable inputs represented by a receipt without running
+ * TypeScript semantic analysis. This is deliberately the build-time path:
+ * builds may reject stale authority, but only `prove` is allowed to issue
+ * authority by running the full source checker.
+ */
+async function conventionReceiptInputs(
   packageRoot: string
-): Promise<IntlCheckReceiptV1> {
+): Promise<ConventionReceiptInputs> {
   const loaded = await loadConventionCatalog(packageRoot);
   const root = resolve(loaded.repositoryRoot);
   const verification = await verifyConventionCatalog(root, {
     collectEnvironment: false,
   });
-  const sourceFiles = await collectConventionSourceFiles(
+  const discoveredFiles = await collectConventionSourceFiles(
     root,
     loaded.discovery.output
   );
+  const sourceUniverse = await resolveConventionSourceUniverse(
+    root,
+    loaded.checkProjects,
+    loaded.discovery.output,
+    discoveredFiles
+  );
+  const sourceFiles = sourceUniverse.files.map(({ absolute }) => absolute);
   const snapshot = await Promise.all(
     sourceFiles.map(
       async (file) => [file, sha256(await readFile(file, "utf8"))] as const
     )
   );
-  const analysis = await analyzeConventionSources(root);
-  if (analysis.diagnostics.length > 0) {
-    throw new Error(
-      `Mirai Intl source analysis failed with ${analysis.diagnostics.length} diagnostic(s)`
-    );
-  }
-  const afterAnalysisFiles = await collectConventionSourceFiles(
-    root,
-    loaded.discovery.output
-  );
-  const afterAnalysisSnapshot = await Promise.all(
-    afterAnalysisFiles.map(
-      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
-    )
-  );
-  if (canonicalJson(snapshot) !== canonicalJson(afterAnalysisSnapshot)) {
-    throw new Error(
-      "Mirai Intl source inputs changed while source analysis ran"
-    );
-  }
-  const ownership = await resolveSourceOwnership(
-    root,
-    loaded.checkProjects,
-    sourceFiles
-  );
   const sourceHashes = new Map(snapshot);
-  const sources = await Promise.all(
-    ownership.map((entry) => {
-      const hash = sourceHashes.get(resolve(root, entry.file));
-      if (!hash) {
-        throw new Error(`Missing source snapshot for ${entry.file}`);
-      }
-      return {
-        file: entry.file,
-        hash,
-        owner: entry.owner,
-        verdict: "accepted" as const,
-      };
-    })
-  );
+  const sources = sourceUniverse.files.map((entry) => {
+    const hash = sourceHashes.get(entry.absolute);
+    if (!hash) {
+      throw new Error(`Missing source snapshot for ${entry.file}`);
+    }
+    return {
+      file: entry.file,
+      hash,
+      owner: entry.owner,
+      verdict: "accepted" as const,
+    };
+  });
   const exceptions = loaded.checkExceptions;
   const implementationHash = await compilerHash();
   const receipt = {
@@ -347,21 +404,32 @@ async function createConventionCheckReceipt(
     sources,
     typescriptHash: sha256(ts.version),
   } satisfies IntlCheckReceiptV1;
-  const finalVerification = await verifyConventionCatalog(root, {
-    collectEnvironment: false,
-  });
-  const finalSnapshot = await Promise.all(
-    sourceFiles.map(
-      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
-    )
+  return { receipt, root, snapshot, sourceFiles };
+}
+
+async function createConventionCheckReceipt(
+  packageRoot: string
+): Promise<IntlCheckReceiptV1> {
+  const before = await conventionReceiptInputs(packageRoot);
+  const analysis = await analyzeConventionSourceFiles(
+    before.root,
+    before.sourceFiles
   );
-  if (
-    finalVerification.write.contentHash !== verification.write.contentHash ||
-    canonicalJson(finalSnapshot) !== canonicalJson(snapshot)
-  ) {
+  if (analysis.diagnostics.length > 0) {
+    throw new Error(
+      `Mirai Intl source analysis failed with ${analysis.diagnostics.length} diagnostic(s)`
+    );
+  }
+  const after = await conventionReceiptInputs(packageRoot);
+  if (canonicalJson(before.snapshot) !== canonicalJson(after.snapshot)) {
+    throw new Error(
+      "Mirai Intl source inputs changed while source analysis ran"
+    );
+  }
+  if (canonicalJson(before.receipt) !== canonicalJson(after.receipt)) {
     throw new Error("Mirai Intl inputs changed before receipt authorization");
   }
-  return receipt;
+  return after.receipt;
 }
 
 /** Materialize, verify and atomically persist deterministic source authority. */
@@ -404,8 +472,8 @@ export async function verifyConventionCheckReceipt(
   if (`${canonicalJson(receipt)}\n` !== source) {
     throw new Error("Mirai Intl check receipt must use canonical JSON");
   }
-  const expected = await createConventionCheckReceipt(root);
-  if (canonicalJson(receipt) !== canonicalJson(expected)) {
+  const expected = await conventionReceiptInputs(root);
+  if (canonicalJson(receipt) !== canonicalJson(expected.receipt)) {
     throw new Error(
       "Mirai Intl production build rejected a stale check receipt"
     );
@@ -423,14 +491,15 @@ export async function writeProvisionalBuildProof(
 ): Promise<IntlBuildProofV1> {
   const root = resolve(packageRoot);
   const receipt = await verifyConventionCheckReceipt(root);
+  const receipts = await buildProofReceipts(root, receipt);
   const emitted = await emittedEvidence(
     resolve(artifactRoot),
     modules,
     resolve(mapRoot)
   );
   const proof = {
-    authorityHash: receipt.authorityHash,
-    deploymentReceiptHash: canonicalHash(receipt),
+    authorityHash: receipts.authorityHash,
+    deploymentReceiptHash: receipts.deploymentReceiptHash,
     emitted,
     graphHash: canonicalHash({ emitted, target }),
     schemaVersion: 1 as const,
@@ -455,14 +524,15 @@ export async function finalizeBuildProof(
     throw new Error(`Expected a provisional ${target} Mirai Intl build proof`);
   }
   const receipt = await verifyConventionCheckReceipt(root);
+  const receipts = await buildProofReceipts(root, receipt);
   const emitted = await emittedEvidence(
     resolve(artifactRoot),
     modules,
     resolve(mapRoot)
   );
   if (
-    provisional.authorityHash !== receipt.authorityHash ||
-    provisional.deploymentReceiptHash !== canonicalHash(receipt) ||
+    provisional.authorityHash !== receipts.authorityHash ||
+    provisional.deploymentReceiptHash !== receipts.deploymentReceiptHash ||
     provisional.graphHash !== canonicalHash({ emitted, target }) ||
     canonicalJson(provisional.emitted) !== canonicalJson(emitted)
   ) {
@@ -474,6 +544,59 @@ export async function finalizeBuildProof(
   } satisfies IntlBuildProofV1;
   await writeProof(proofPath(root, target, "finalized"), finalized);
   return finalized;
+}
+
+/**
+ * Finalizes multiple already-built deployment targets without provisional
+ * proofs. Source authority is verified once, every target is discovered and
+ * hashed once, and no proof is written until all target scans succeed.
+ */
+export async function finalizeBuildProofTargets(
+  packageRoot: string,
+  targets: ReadonlyArray<IntlBuildProofFinalizationTarget>
+): Promise<ReadonlyArray<IntlBuildProofV1>> {
+  if (targets.length === 0) {
+    throw new Error("Build proof finalization requires at least one target");
+  }
+  const targetNames = targets.map(({ target }) => target);
+  if (new Set(targetNames).size !== targetNames.length) {
+    throw new Error("Build proof finalization targets must be unique");
+  }
+
+  const root = resolve(packageRoot);
+  const receipt = await verifyConventionCheckReceipt(root);
+  const receipts = await buildProofReceipts(root, receipt);
+  const proofs = await Promise.all(
+    targets.map(async ({ artifactRoot, mapRoot = artifactRoot, target }) => {
+      const resolvedArtifactRoot = resolve(artifactRoot);
+      const resolvedMapRoot = resolve(mapRoot);
+      const modules = await discoverEmittedModules(
+        resolvedArtifactRoot,
+        resolvedMapRoot
+      );
+      const emitted = await emittedEvidence(
+        resolvedArtifactRoot,
+        modules,
+        resolvedMapRoot
+      );
+      return {
+        authorityHash: receipts.authorityHash,
+        deploymentReceiptHash: receipts.deploymentReceiptHash,
+        emitted,
+        graphHash: canonicalHash({ emitted, target }),
+        schemaVersion: 1 as const,
+        state: "finalized" as const,
+        target,
+      } satisfies IntlBuildProofV1;
+    })
+  );
+
+  await Promise.all(
+    proofs.map((proof) =>
+      writeProof(proofPath(root, proof.target, "finalized"), proof)
+    )
+  );
+  return proofs;
 }
 
 /** Independently validates finalized proof files against deployed bytes. */
@@ -490,14 +613,15 @@ export async function verifyFinalizedBuildProof(
     throw new Error(`Mirai Intl ${target} proof must be finalized`);
   }
   const receipt = await verifyConventionCheckReceipt(root);
+  const receipts = await buildProofReceipts(root, receipt);
   const emitted = await emittedEvidence(
     resolve(artifactRoot),
     modules,
     resolve(mapRoot)
   );
   if (
-    proof.authorityHash !== receipt.authorityHash ||
-    proof.deploymentReceiptHash !== canonicalHash(receipt) ||
+    proof.authorityHash !== receipts.authorityHash ||
+    proof.deploymentReceiptHash !== receipts.deploymentReceiptHash ||
     proof.graphHash !== canonicalHash({ emitted, target }) ||
     canonicalJson(proof.emitted) !== canonicalJson(emitted)
   ) {

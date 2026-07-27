@@ -173,6 +173,36 @@ export async function analyzeConventionSources(
     root,
     generatedDirectory
   );
+  return analyzeLoadedConventionSourceFiles(
+    loaded,
+    root,
+    generatedDirectory,
+    sourceFiles
+  );
+}
+
+/** Analyze an already-authorized exact source universe without rediscovery. */
+export async function analyzeConventionSourceFiles(
+  packageRoot: string,
+  sourceFiles: ReadonlyArray<string>,
+  options: AnalyzeConventionSourcesOptions = {}
+): Promise<ConventionSourceAnalysis> {
+  const loaded = await loadConventionCatalog(packageRoot);
+  const root = resolve(options.root ?? loaded.repositoryRoot);
+  return analyzeLoadedConventionSourceFiles(
+    loaded,
+    root,
+    options.generatedDirectory ?? loaded.discovery.output,
+    sourceFiles
+  );
+}
+
+async function analyzeLoadedConventionSourceFiles(
+  loaded: Awaited<ReturnType<typeof loadConventionCatalog>>,
+  root: string,
+  generatedDirectory: string,
+  sourceFiles: ReadonlyArray<string>
+): Promise<ConventionSourceAnalysis> {
   const diagnostics: Array<ConventionSourceDiagnostic> = [];
   const exceptionDiagnostics: Array<ExceptionDiagnostic> = [];
   let candidates = 0;

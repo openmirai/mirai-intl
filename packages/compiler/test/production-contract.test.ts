@@ -145,8 +145,21 @@ describe("generated named-key contract", () => {
         join(generated.write.directory, titleExport?.module ?? "missing"),
         "utf8"
       );
+      const generatedImports = [
+        facade,
+        declaration,
+        titleModule,
+        await readFile(
+          join(generated.write.directory, "catalog.manifest.gen.d.mts"),
+          "utf8"
+        ),
+      ].join("\n");
 
       expect(declaration).toMatch(/export type CatalogContract\b/u);
+      expect(generatedImports).toContain('"@openmirai/intl/runtime"');
+      expect(generatedImports).toContain('"@openmirai/intl/types"');
+      expect(generatedImports).not.toContain("@openmirai/intl-abi");
+      expect(generatedImports).not.toContain("@openmirai/intl-runtime");
       expect(
         await readFile(
           join(generated.write.directory, "catalog.manifest.gen.d.mts"),
@@ -330,6 +343,12 @@ describe("generated named-key contract", () => {
                   import.meta.dirname,
                   "../../runtime/src/react-i18next.ts"
                 ),
+              ],
+              "@openmirai/intl/runtime": [
+                join(typeFixtureRoot, "runtime-shim.d.ts"),
+              ],
+              "@openmirai/intl/types": [
+                resolve(import.meta.dirname, "../../intl/src/types.ts"),
               ],
             },
             skipLibCheck: false,

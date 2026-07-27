@@ -1,0 +1,46 @@
+{
+  "name": "@openmirai/intl-i18next",
+  "version": "0.3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmirai/mirai-intl.git",
+    "directory": "packages/intl-i18next"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@openmirai/intl-runtime": "workspace:*",
+    "i18next": "26.3.6",
+    "react-i18next": "17.0.9"
+  },
+  "peerDependencies": {
+    "i18next-icu": "2.4.4",
+    "react": "19.2.7"
+  },
+  "peerDependenciesMeta": {
+    "i18next-icu": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

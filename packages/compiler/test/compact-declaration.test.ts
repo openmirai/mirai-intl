@@ -89,6 +89,12 @@ describe("compact catalog contracts", () => {
               "@openmirai/intl-abi": [
                 resolve(import.meta.dirname, "../../abi/src/index.ts"),
               ],
+              "@openmirai/intl-runtime": [
+                resolve(import.meta.dirname, "../../runtime/src/index.ts"),
+              ],
+              "@openmirai/intl/types": [
+                resolve(import.meta.dirname, "../../intl/src/types.ts"),
+              ],
             },
             skipLibCheck: false,
             strict: true,

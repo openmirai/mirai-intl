@@ -33,7 +33,7 @@ export type UseTranslationHook<Instance extends I18nextLike> = (
 export type CreateUseTranslationsOptions<Instance extends I18nextLike> =
   I18nextRuntimeOptions<Instance>;
 
-type BoundUseTranslations<Contract extends object, Instance> = <
+export type BoundUseTranslations<Contract extends object, Instance> = <
   const Namespace extends NamespacePaths<Contract> | undefined = undefined,
 >(
   namespace?: Namespace

@@ -445,8 +445,8 @@ function stableFacadeModule(
   return [
     `${selectorPrefix}${canonicalJson({ contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
     generatedSourceHeader,
-    'import { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl-runtime";',
-    'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl-runtime";',
+    'import { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl/runtime";',
+    'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl/types";',
     `import type { CatalogContract as BoundCatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
     `export type { CatalogContract } from "./${relativeDirectory}/catalog.schema.gen.js";`,
     `export type { CatalogLocale } from "./${relativeDirectory}/catalog.resources.gen.mjs";`,

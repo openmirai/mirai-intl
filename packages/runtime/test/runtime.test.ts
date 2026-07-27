@@ -1,5 +1,5 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -158,6 +158,13 @@ async function loadGeneratedModule(
   const root = await mkdtemp(join(import.meta.dirname, ".generated-"));
   const modulePath = join(root, "catalog.descriptors.gen.mjs");
   const artifacts = emitArtifacts(output, representation);
+  const packageDirectory = join(root, "node_modules", "@openmirai");
+  await mkdir(packageDirectory, { recursive: true });
+  await symlink(
+    resolve(import.meta.dirname, "../../intl"),
+    join(packageDirectory, "intl"),
+    "dir"
+  );
   await writeFile(modulePath, artifacts["catalog.descriptors.gen.mjs"], "utf8");
   try {
     const generated: unknown = await import(pathToFileURL(modulePath).href);

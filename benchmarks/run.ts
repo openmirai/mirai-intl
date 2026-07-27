@@ -6,6 +6,7 @@ import {
   readdir,
   rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
@@ -97,6 +98,12 @@ function run(
     );
   }
   return { durationMilliseconds, status: result.status };
+}
+
+async function linkPublicIntlPackage(directory: string): Promise<void> {
+  const scope = resolve(directory, "node_modules", "@openmirai");
+  await mkdir(scope, { recursive: true });
+  await symlink(resolve(root, "packages", "intl"), join(scope, "intl"), "dir");
 }
 
 async function writeText(path: string, value: string): Promise<void> {
@@ -229,6 +236,7 @@ async function createViteProject(
         resolve(directory, "src/useTranslations.mjs"),
         fakeUseTranslationsSource
       ),
+      linkPublicIntlPackage(directory),
       writeConventionMessages(directory),
     ]);
   }
@@ -277,6 +285,7 @@ async function createNextProject(
         resolve(directory, "app/useTranslations.mjs"),
         fakeUseTranslationsSource
       ),
+      linkPublicIntlPackage(directory),
       writeConventionMessages(directory),
     ]);
   }
@@ -337,7 +346,7 @@ async function typecheckContract(
       resolve(directory, "consumer.ts"),
       [
         'import type { CatalogContract } from "./catalog";',
-        'import type { UseTranslations } from "@openmirai/intl-runtime/react";',
+        'import type { UseTranslations } from "@openmirai/intl/react";',
         "declare const useTranslations: UseTranslations<CatalogContract>;",
         'const { t } = useTranslations("used");',
         't("greeting") satisfies string;',
@@ -360,6 +369,15 @@ async function typecheckContract(
               ],
               "@openmirai/intl-runtime/react": [
                 resolve(root, "packages/runtime/src/react.ts"),
+              ],
+              "@openmirai/intl-runtime": [
+                resolve(root, "packages/runtime/src/index.ts"),
+              ],
+              "@openmirai/intl/react": [
+                resolve(root, "packages/intl/src/react.ts"),
+              ],
+              "@openmirai/intl/types": [
+                resolve(root, "packages/intl/src/types.ts"),
               ],
             },
             skipLibCheck: false,

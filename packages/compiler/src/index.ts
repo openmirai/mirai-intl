@@ -1,11 +1,13 @@
 export { analyzeConventionSources } from "./analyze-sources";
 export {
   finalizeBuildProof,
+  finalizeBuildProofTargets,
   proveConventionCatalog,
   verifyConventionCheckReceipt,
   verifyFinalizedBuildProof,
   writeProvisionalBuildProof,
 } from "./proof";
+export type { IntlBuildProofFinalizationTarget } from "./proof";
 export type {
   AnalyzeConventionSourcesOptions,
   ConventionSourceAnalysis,

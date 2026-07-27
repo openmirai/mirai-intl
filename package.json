@@ -26,10 +26,11 @@
     "release": "release-it",
     "release:prerelease": "release-it --preRelease=beta",
     "release:packages:dry-run": "node scripts/publish-packages.mjs --dry-run",
-    "test": "vitest run",
+    "test": "vitest run --exclude packages/runtime/test/perf.test.ts",
     "typecheck": "tsc -b --force --pretty false && tsc -p tsconfig.tools.json --pretty false",
     "typecheck:fixtures": "tsx scripts/type-fixtures.ts",
-    "verify": "corepack pnpm format && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm typecheck:fixtures && corepack pnpm test && corepack pnpm check:generated && corepack pnpm benchmark && corepack pnpm pack:smoke"
+    "verify": "corepack pnpm format && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm typecheck:fixtures && corepack pnpm test && corepack pnpm test:perf && corepack pnpm check:generated && corepack pnpm benchmark && corepack pnpm pack:smoke",
+    "test:perf": "vitest run packages/runtime/test/perf.test.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.1",

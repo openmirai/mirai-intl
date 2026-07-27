@@ -13,6 +13,8 @@
       "@openmirai/intl-compiler/internal": [
         "./packages/compiler/src/internal.ts"
       ],
+      "@openmirai/intl/runtime": ["./packages/intl/src/runtime.ts"],
+      "@openmirai/intl/types": ["./packages/intl/src/types.ts"],
       "@openmirai/intl-runtime": ["./packages/runtime/src/index.ts"]
     },
     "strict": true,

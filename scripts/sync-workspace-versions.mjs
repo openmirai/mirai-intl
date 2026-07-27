@@ -11,6 +11,8 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageFiles = [
   "packages/abi/package.json",
   "packages/compiler/package.json",
+  "packages/intl/package.json",
+  "packages/intl-i18next/package.json",
   "packages/runtime/package.json",
 ];
 

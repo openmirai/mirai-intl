@@ -8,11 +8,15 @@ const packageDirectories = [
   "packages/abi",
   "packages/compiler",
   "packages/runtime",
+  "packages/intl",
+  "packages/intl-i18next",
 ];
 const expectedNames = [
   "@openmirai/intl-abi",
   "@openmirai/intl-compiler",
   "@openmirai/intl-runtime",
+  "@openmirai/intl",
+  "@openmirai/intl-i18next",
 ];
 const cliArguments = process.argv.slice(2);
 const dryRun = cliArguments.includes("--dry-run");

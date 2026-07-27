@@ -31,8 +31,8 @@ mirai-intl check
 (same diagnostics as the Vite/Next transform) so unknown keys, widened strings,
 and translator escapes fail in CI/build without visiting every lazy route. Pass
 `--skip-sources` only for fixture packages that intentionally have no app
-sources. Default output is a one-line human summary; pass `--json` for the full
-machine report.
+sources. Commands emit concise, human-readable diagnostics by default; use
+`--format=json` (or the compatible `--json`) for one machine-readable report.
 
 The compiler derives the locale root, paired locales, source locale, framework,
 package/catalog identity, generated output, and semantic paths. ICU ASTs infer
@@ -127,9 +127,33 @@ release/debug work.
 
 ## Runtime
 
-`@openmirai/intl-runtime` supplies the generic client/server bindings and an
-i18next bridge. i18next remains responsible for resource loading, fallback,
-locale selection, readiness, and language-change events.
+Install `@openmirai/intl` for the CLI/compiler/runtime entrypoints and
+`@openmirai/intl-i18next` for the supported React/i18next integration. The
+adapter owns its compatible i18next and react-i18next versions; React remains a
+peer and `i18next-icu` is an optional peer enabled once per adapter instance.
+
+```ts
+import { createMiraiI18next } from "@openmirai/intl-i18next";
+import {
+  catalogManifest,
+  isCatalogLocale,
+  loadCatalogResource,
+} from "./i18n/generated";
+
+export const intl = createMiraiI18next({
+  catalogManifest,
+  isCatalogLocale,
+  loadCatalogResource,
+  defaultLocale: "en",
+  icu: false,
+});
+```
+
+`intl.Provider`, `intl.useTranslations`, `intl.getBrowserController`, and
+`intl.createRequestController` are the supported integration surface. The app
+keeps only route/cookie locale policy and provider placement. For Vite, add
+`miraiIntlVite()` from `@openmirai/intl/vite`; generated code imports only
+`@openmirai/intl/runtime` and `@openmirai/intl/types`.
 
 In development and test, the strict boundary rejects missing, extra, inherited,
 accessor-backed, nullish, non-scalar, and otherwise unsafe translation inputs
@@ -146,9 +170,13 @@ validation message literals. Production UI prose must come from the catalog.
 
 ## Packages
 
-- `@openmirai/intl-abi`: framework-free catalog, schema, diagnostic, and wire contracts.
-- `@openmirai/intl-compiler`: configless discovery, AST contract generation, private lowering, and atomic emission.
-- `@openmirai/intl-runtime`: exact text/rich/value validation plus client and server bindings.
+- `@openmirai/intl`: normal consumer package: CLI, compiler, Vite/Next
+  adapters, runtime, and public type entrypoints.
+- `@openmirai/intl-i18next`: React/i18next adapter with typed hooks and
+  isolated browser/request controllers.
+- `@openmirai/intl-abi`, `@openmirai/intl-compiler`, and
+  `@openmirai/intl-runtime`: implementation packages for advanced/internal
+  integrations; normal application packages do not pin them directly.
 
 ## Verification
 

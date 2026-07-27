@@ -1030,6 +1030,14 @@ function messagesFromDirectory(
     }
     const kind = kinds.values().next().value;
     if (kind === "string") {
+      for (const locale of locales) {
+        const value = values[locale];
+        if (typeof value !== "string" || value.trim().length === 0) {
+          throw new Error(
+            `${path || "<root>"} ${locale} must be a non-empty translation string`
+          );
+        }
+      }
       const translations = Object.fromEntries(
         locales.map((locale) => [locale, values[locale] as string])
       );
@@ -1053,7 +1061,7 @@ function messagesFromDirectory(
     }
     if (kind !== "object") {
       throw new Error(
-        `${path || "<root>"} is ${kind}; declare the exact path as a value message`
+        `Translation path ${path || "<root>"} has invalid message kind ${kind}; declare the exact path as a value message`
       );
     }
     const objects = Object.fromEntries(

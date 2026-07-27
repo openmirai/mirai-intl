@@ -96,10 +96,18 @@ await rm(temporaryRoot, { force: true, recursive: true });
 await mkdir(packsRoot, { recursive: true });
 runPnpm(["build"], root, 120_000);
 
-const [abiPackage, compilerPackage, runtimePackage] = await Promise.all([
+const [
+  abiPackage,
+  compilerPackage,
+  runtimePackage,
+  intlPackage,
+  intlI18nextPackage,
+] = await Promise.all([
   readPackageManifest(join(root, "packages/abi/package.json")),
   readPackageManifest(join(root, "packages/compiler/package.json")),
   readPackageManifest(join(root, "packages/runtime/package.json")),
+  readPackageManifest(join(root, "packages/intl/package.json")),
+  readPackageManifest(join(root, "packages/intl-i18next/package.json")),
 ]);
 
 const catalogOutput = compileCatalog({
@@ -180,6 +188,8 @@ for (const packageName of [
   "@openmirai/intl-abi",
   "@openmirai/intl-compiler",
   "@openmirai/intl-runtime",
+  "@openmirai/intl",
+  "@openmirai/intl-i18next",
 ]) {
   runPnpm(
     ["--filter", packageName, "pack", "--pack-destination", packsRoot],
@@ -192,18 +202,22 @@ runPnpm(["pack", "--pack-destination", packsRoot], catalogPackageRoot, 60_000);
 const tarballs = (await readdir(packsRoot))
   .filter((name) => name.endsWith(".tgz"))
   .toSorted();
-if (tarballs.length !== 4) {
-  throw new Error(`Expected four package tarballs, found ${tarballs.length}`);
+if (tarballs.length !== 6) {
+  throw new Error(`Expected six package tarballs, found ${tarballs.length}`);
 }
 const byPackage = Object.fromEntries(
   tarballs.map((name) => {
     let packageName = "@openmirai/intl-abi";
     if (name.includes("catalog-smoke")) {
       packageName = catalogPackageName;
+    } else if (name.includes("intl-i18next")) {
+      packageName = intlI18nextPackage.name;
     } else if (name.includes("compiler")) {
       packageName = "@openmirai/intl-compiler";
     } else if (name.includes("runtime")) {
       packageName = "@openmirai/intl-runtime";
+    } else if (/^openmirai-intl-\d/u.test(name)) {
+      packageName = intlPackage.name;
     }
     return [packageName, `file:${join(packsRoot, name)}`];
   })
@@ -217,6 +231,8 @@ await writeFile(
       dependencies: byPackage,
       devDependencies: {
         "@tsconfig/node24": "24.0.4",
+        "@types/react": "19.2.17",
+        react: "19.2.7",
         typescript: "7.0.2",
       },
       name: "mirai-intl-isolated-pack-smoke",
@@ -246,6 +262,10 @@ await writeFile(
   join(installRoot, "consumer.ts"),
   [
     'import { RUNTIME_ABI } from "@openmirai/intl-abi";',
+    'import { COMPILER_VERSION as UMBRELLA_COMPILER_VERSION } from "@openmirai/intl";',
+    'import type { TextDescriptor } from "@openmirai/intl/types";',
+    'import { miraiIntlVite } from "@openmirai/intl/vite";',
+    'import { createMiraiI18next } from "@openmirai/intl-i18next";',
     'import * as compilerPackage from "@openmirai/intl-compiler";',
     'import { COMPILER_VERSION } from "@openmirai/intl-compiler";',
     'import type { UseTranslations } from "@openmirai/intl-runtime";',
@@ -256,7 +276,12 @@ await writeFile(
     `import { catalogManifest, isCatalogLocale, loadCatalogResource } from "${catalogPackageName}";`,
     `import type { CatalogContract } from "${catalogPackageName}";`,
     'RUNTIME_ABI satisfies "1.0.0";',
+    "UMBRELLA_COMPILER_VERSION satisfies string;",
     "COMPILER_VERSION satisfies string;",
+    "void createMiraiI18next;",
+    "void miraiIntlVite;",
+    "declare const descriptor: TextDescriptor;",
+    "void descriptor;",
     "createPrecompiledBackend satisfies () => unknown;",
     "void createUseIntl;",
     "void createServerIntl;",
@@ -325,7 +350,7 @@ await writeFile(
     'import { getServerTranslations } from "./translations.mjs";',
     'if (RUNTIME_ABI !== "1.0.0") throw new Error("Unexpected ABI");',
     `if (COMPILER_VERSION !== ${JSON.stringify(compilerPackage.version)}) throw new Error("Unexpected compiler");`,
-    'if (JSON.stringify(Object.keys(compilerPackage).sort()) !== JSON.stringify(["COMPILER_VERSION", "analyzeConventionSources", "finalizeBuildProof", "generateConventionCatalog", "loadConventionCatalog", "proveConventionCatalog", "verifyConventionCatalog", "verifyConventionCheckReceipt", "verifyFinalizedBuildProof", "writeProvisionalBuildProof"])) throw new Error("Unexpected compiler public API");',
+    'if (JSON.stringify(Object.keys(compilerPackage).sort()) !== JSON.stringify(["COMPILER_VERSION", "analyzeConventionSources", "finalizeBuildProof", "finalizeBuildProofTargets", "generateConventionCatalog", "loadConventionCatalog", "proveConventionCatalog", "verifyConventionCatalog", "verifyConventionCheckReceipt", "verifyFinalizedBuildProof", "writeProvisionalBuildProof"])) throw new Error("Unexpected compiler public API");',
     'const { t } = await getServerTranslations({ locale: "en", namespace: "greeting" });',
     'const renderedTranslation = t("morning", { name: "Mali" });',
     'if (renderedTranslation !== "Good morning, Mali") throw new Error("Unexpected translation");',

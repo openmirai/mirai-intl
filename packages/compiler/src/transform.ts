@@ -2947,7 +2947,7 @@ function transformSource(
                     undefined,
                     factory.createNamedImports(runtimeSpecifiers)
                   ),
-                  factory.createStringLiteral("@openmirai/intl-runtime")
+                  factory.createStringLiteral("@openmirai/intl/runtime")
                 )
               );
             }

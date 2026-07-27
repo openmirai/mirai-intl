@@ -7,6 +7,7 @@ describe("published compiler root", () => {
       "COMPILER_VERSION",
       "analyzeConventionSources",
       "finalizeBuildProof",
+      "finalizeBuildProofTargets",
       "generateConventionCatalog",
       "loadConventionCatalog",
       "proveConventionCatalog",

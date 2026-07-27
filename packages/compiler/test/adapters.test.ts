@@ -261,7 +261,7 @@ describe("Vite adapter", () => {
         build: {
           minify: false,
           rollupOptions: {
-            external: ["@openmirai/intl-abi", "@openmirai/intl-runtime"],
+            external: ["@openmirai/intl/runtime"],
             input: join(root, "src/main.ts"),
           },
           write: false,
@@ -407,6 +407,14 @@ describe("Vite adapter", () => {
           "@openmirai/intl-runtime": resolve(
             import.meta.dirname,
             "../../runtime/src/index.ts"
+          ),
+          "@openmirai/intl/runtime": resolve(
+            import.meta.dirname,
+            "../../intl/src/runtime.ts"
+          ),
+          "@openmirai/intl/types": resolve(
+            import.meta.dirname,
+            "../../intl/src/types.ts"
           ),
         },
       },

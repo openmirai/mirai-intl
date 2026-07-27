@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -13,6 +21,7 @@ import {
   verifyFinalizedBuildProof,
   writeProvisionalBuildProof,
 } from "../src/proof";
+import { colorEnabled } from "../src/reporter";
 
 const cli = resolve(import.meta.dirname, "../src/cli.ts");
 const tsx = resolve(
@@ -71,10 +80,367 @@ function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
 }
 
 describe("convention-only CLI", () => {
+  it("uses Node-compatible color environment precedence", () => {
+    expect(colorEnabled(undefined, {}, false)).toBe(false);
+    expect(colorEnabled(undefined, {}, true)).toBe(true);
+    expect(colorEnabled(undefined, { NO_COLOR: "1" }, true)).toBe(false);
+    expect(colorEnabled(undefined, { NODE_DISABLE_COLORS: "1" }, true)).toBe(
+      false
+    );
+    expect(
+      colorEnabled(undefined, { FORCE_COLOR: "1", NO_COLOR: "1" }, false)
+    ).toBe(true);
+    expect(colorEnabled(undefined, { FORCE_COLOR: "0" }, true)).toBe(false);
+    expect(colorEnabled(true, { FORCE_COLOR: "0" }, false)).toBe(true);
+    expect(colorEnabled(false, { FORCE_COLOR: "1" }, true)).toBe(false);
+  });
+
+  it("uses concise stylish lifecycle output by default", async () => {
+    const root = await createConventionApp();
+    try {
+      const generated = runCli(root, "generate", "--no-color");
+      expect(generated.status).toBe(0);
+      expect(generated.stderr).toBe("");
+      expect(generated.stdout).toMatch(
+        /^mirai-intl generate ✓ @example\/cli-app · en\+th · 1 message\n$/u
+      );
+      expect(generated.stdout).not.toContain('"report"');
+
+      const checked = runCli(root, "check", "--no-color");
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
+      expect(checked.stderr).toBe("");
+      expect(checked.stdout).toMatch(
+        /^mirai-intl check ✓ @example\/cli-app · en\+th · 1 message\n$/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("checks and authorizes every convention catalog in a pnpm workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const shared = join(workspace, "packages/i18n");
+    const app = join(workspace, "apps/auth");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - packages/*\n  - apps/*\n"
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        [
+          "lockfileVersion: '9.0'",
+          "importers:",
+          "",
+          "  packages/i18n:",
+          "    dependencies: {}",
+          "",
+          "  apps/auth:",
+          "    dependencies: {}",
+          "",
+        ].join("\n")
+      );
+      await writeConventionApp(shared);
+      await writeConventionApp(app);
+      await writeJson(join(shared, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@example/shared-i18n",
+        version: "1.0.0",
+      });
+      await writeJson(join(app, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@example/auth",
+        version: "1.0.0",
+      });
+      for (const root of [shared, app]) {
+        await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
+        await writeJson(join(root, "tsconfig.json"), {
+          include: ["src/**/*.ts"],
+        });
+        await writeJson(join(root, "mirai-intl.config.json"), {
+          checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+        });
+      }
+      expect(runCli(shared, "generate").status).toBe(0);
+      expect(runCli(app, "generate").status).toBe(0);
+
+      const checked = runCli(
+        workspace,
+        "check",
+        "--workspace",
+        "--format=json"
+      );
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
+      expect(checked.stderr).toBe("");
+      expect(JSON.parse(checked.stdout)).toMatchObject({
+        catalogs: [
+          { receipt: { schemaVersion: 1 }, root: "apps/auth" },
+          { receipt: { schemaVersion: 1 }, root: "packages/i18n" },
+        ],
+        valid: true,
+      });
+      await expect(
+        readFile(join(app, ".mirai-intl/check-receipt.v1.json"), "utf8")
+      ).resolves.toContain('"schemaVersion":1');
+      await expect(
+        readFile(join(shared, ".mirai-intl/check-receipt.v1.json"), "utf8")
+      ).resolves.toContain('"schemaVersion":1');
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 90_000);
+
+  it("finalizes repeated named artifact targets in one CLI invocation", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["src/**/*.ts"],
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+      });
+      const generated = runCli(root, "generate");
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      expect(runCli(root, "prove").status).toBe(0);
+
+      const client = join(root, "dist/client");
+      const worker = join(root, "dist/worker");
+      for (const directory of [client, worker]) {
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "entry.js"), "export {};\n");
+        await writeFile(
+          join(directory, "entry.js.map"),
+          '{"sources":["entry.ts"],"sourcesContent":["export {};"],"version":3}\n'
+        );
+      }
+
+      const finalized = runCli(
+        root,
+        "finalize-proof",
+        "--target",
+        `client=${client}`,
+        "--target",
+        `worker=${worker}`,
+        "--map-root",
+        `client=${client}`,
+        "--format=json"
+      );
+      expect(finalized.status).toBe(0);
+      expect(finalized.stderr).toBe("");
+      expect(JSON.parse(finalized.stdout)).toMatchObject([
+        { state: "finalized", target: "client" },
+        { state: "finalized", target: "worker" },
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("reports thrown catalog findings as validation exit code 1", async () => {
+    const root = await createConventionApp();
+    const report = join(root, "reports/catalog-check.json");
+    try {
+      await writeJson(join(root, "src/locales/global/th.json"), {
+        greeting: " \n\t",
+      });
+      const checked = runCli(
+        root,
+        "catalog-check",
+        "--no-color",
+        "--report-file",
+        report
+      );
+      expect(checked.status).toBe(1);
+      expect(checked.stderr).toBe("");
+      expect(checked.stdout).toContain(
+        "greeting th must be a non-empty translation string"
+      );
+      expect(checked.stdout).toMatch(/mirai-intl catalog-check ✗ 1 error\n$/u);
+      expect(JSON.parse(await readFile(report, "utf8"))).toMatchObject({
+        command: "catalog-check",
+        diagnostics: [{ code: "INTL_CATALOG_INVALID", severity: "error" }],
+        success: false,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps JSON output machine-only through --format and --json", async () => {
+    const root = await createConventionApp();
+    try {
+      const generated = runCli(root, "generate", "--format=json", "--color");
+      expect(generated.status).toBe(0);
+      expect(generated.stderr).toBe("");
+      expect(generated.stdout).not.toContain("\u001b[");
+      expect(JSON.parse(generated.stdout)).toMatchObject({
+        report: { discovery: { catalogId: "@example/cli-app" } },
+      });
+
+      const ensured = runCli(root, "ensure", "--json");
+      expect(ensured.status).toBe(0);
+      expect(ensured.stderr).toBe("");
+      expect(JSON.parse(ensured.stdout)).toMatchObject({ changed: false });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("writes an atomic ANSI-free report without logging the full result", async () => {
+    const root = await createConventionApp();
+    const report = join(root, "reports/generate.json");
+    try {
+      const generated = runCli(
+        root,
+        "generate",
+        "--color",
+        "--report-file",
+        report
+      );
+      expect(generated.status).toBe(0);
+      expect(generated.stdout).toContain("\u001b[32m✓\u001b[0m");
+      expect(generated.stdout).not.toContain('"sourceFiles"');
+
+      const source = await readFile(report, "utf8");
+      expect(source).not.toContain("\u001b[");
+      expect(JSON.parse(source)).toMatchObject({
+        command: "generate",
+        diagnostics: [],
+        result: {
+          report: { discovery: { catalogId: "@example/cli-app" } },
+        },
+        schemaVersion: 1,
+        success: true,
+      });
+      expect(await readdir(join(root, "reports"))).toEqual(["generate.json"]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("emits actionable stylish findings and escaped GitHub annotations", async () => {
+    const root = await createConventionApp();
+    const report = join(root, "reports/check.json");
+    try {
+      const generated = runCli(root, "generate");
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      await writeFile(
+        join(root, "src/problem,percent%.tsx"),
+        [
+          'import { useTranslations } from "x";',
+          "const { t } = useTranslations();",
+          't("missing,%");',
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const checked = runCli(
+        root,
+        "check",
+        "--no-color",
+        "--annotations=github",
+        "--report-file",
+        report
+      );
+      expect(checked.status).toBe(1);
+      expect(checked.stderr).toBe("");
+      expect(checked.stdout).toContain("ERROR · INTL_SOURCE_INVALID");
+      expect(checked.stdout).toContain("Fix: Fix the source usage");
+      expect(checked.stdout).toContain("::error file=");
+      expect(checked.stdout).toContain("%2Cpercent%25.tsx");
+      expect(checked.stdout).toContain("missing,%25");
+      expect(checked.stdout).toMatch(/mirai-intl check ✗ 1 error\n$/u);
+
+      expect(JSON.parse(await readFile(report, "utf8"))).toMatchObject({
+        command: "check",
+        diagnostics: [
+          {
+            code: "INTL_SOURCE_INVALID",
+            severity: "error",
+          },
+        ],
+        success: false,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("uses exit code 2 and stderr for invalid reporting options", async () => {
+    const root = await createConventionApp();
+    const report = join(root, "reports/failure.json");
+    try {
+      const incompatible = runCli(
+        root,
+        "check",
+        "--json",
+        "--annotations=github"
+      );
+      expect(incompatible.status).toBe(2);
+      expect(incompatible.stdout).toBe("");
+      expect(incompatible.stderr).toContain(
+        "--annotations=github can only be used with stylish output"
+      );
+
+      const invalid = runCli(
+        root,
+        "check",
+        "--format",
+        "sarif",
+        "--report-file",
+        report
+      );
+      expect(invalid.status).toBe(2);
+      expect(invalid.stdout).toBe("");
+      expect(invalid.stderr).toContain("--format must be stylish or json");
+      expect(JSON.parse(await readFile(report, "utf8"))).toMatchObject({
+        command: "check",
+        diagnostics: [{ code: "INTL_CLI_FAILURE", severity: "error" }],
+        success: false,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps contract JSON-first and explain stylish-first", async () => {
+    const root = await createConventionApp();
+    try {
+      expect(runCli(root, "generate").status).toBe(0);
+      const contract = runCli(root, "contract");
+      expect(contract.status).toBe(0);
+      expect(contract.stderr).toBe("");
+      expect(JSON.parse(contract.stdout)).toMatchObject({
+        catalogId: "@example/cli-app",
+      });
+
+      const explained = runCli(
+        root,
+        "explain",
+        "--path",
+        "greeting",
+        "--no-color"
+      );
+      expect(explained.status).toBe(0);
+      expect(explained.stderr).toBe("");
+      expect(explained.stdout).toMatch(
+        /^mirai-intl explain ✓ greeting · text\n$/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("generates and verifies a convention catalog without configuration", async () => {
     const root = await createConventionApp();
     try {
-      const generated = runCli(root, "generate");
+      const generated = runCli(root, "generate", "--json");
       expect(generated.error).toBeUndefined();
       expect(generated.signal).toBeNull();
       expect(generated.stderr).toBe("");
@@ -122,7 +488,7 @@ describe("convention-only CLI", () => {
       await writeFile(join(workspaceRoot, "pnpm-lock.yaml"), lockfile);
       await writeConventionApp(packageRoot);
 
-      const generated = runCli(packageRoot, "generate");
+      const generated = runCli(packageRoot, "generate", "--json");
       expect(generated.error).toBeUndefined();
       expect(generated.signal).toBeNull();
       expect(generated.stderr).toBe("");
@@ -199,7 +565,8 @@ describe("convention-only CLI", () => {
           ...process.env,
           PATH: `${binRoot}${delimiter}${process.env.PATH ?? ""}`,
         },
-        "generate"
+        "generate",
+        "--json"
       );
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
@@ -242,7 +609,7 @@ describe("convention-only CLI", () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-no-lockfile-"));
     try {
       await writeConventionApp(root);
-      const generated = runCli(root, "generate");
+      const generated = runCli(root, "generate", "--json");
       expect(generated.error).toBeUndefined();
       expect(generated.status).not.toBe(0);
       expect(`${generated.stdout}${generated.stderr}`).toContain(
@@ -284,7 +651,7 @@ describe("convention-only CLI", () => {
         ],
       });
 
-      const generated = runCli(root, "generate");
+      const generated = runCli(root, "generate", "--json");
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
         report: {
@@ -306,7 +673,7 @@ describe("convention-only CLI", () => {
   it("ensures missing and stale catalogs while leaving a current catalog unchanged", async () => {
     const root = await createConventionApp();
     try {
-      const missing = runCli(root, "ensure");
+      const missing = runCli(root, "ensure", "--json");
       expect(missing.status).toBe(0);
       expect(JSON.parse(missing.stdout)).toMatchObject({
         changed: true,
@@ -314,7 +681,7 @@ describe("convention-only CLI", () => {
         directory: expect.stringContaining("src/i18n/generated/builds/"),
       });
 
-      const current = runCli(root, "ensure");
+      const current = runCli(root, "ensure", "--json");
       expect(current.status).toBe(0);
       expect(JSON.parse(current.stdout)).toMatchObject({
         changed: false,
@@ -326,7 +693,7 @@ describe("convention-only CLI", () => {
       await writeJson(join(root, "src/locales/global/th.json"), {
         greeting: "ยินดีต้อนรับ {name}",
       });
-      const stale = runCli(root, "ensure");
+      const stale = runCli(root, "ensure", "--json");
       expect(stale.status).toBe(0);
       expect(JSON.parse(stale.stdout)).toMatchObject({
         changed: true,
@@ -438,7 +805,10 @@ describe("convention-only CLI", () => {
       await writeJson(join(root, "mirai-intl.config.json"), {
         checkProjects: [{ path: "tsconfig.json", role: "owner" }],
       });
-      expect(runCli(root, "generate").status).toBe(0);
+      const generated = runCli(root, "generate");
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
       expect(runCli(root, "prove").status).toBe(0);
       const output = join(root, "dist");
       await mkdir(output, { recursive: true });
@@ -515,7 +885,10 @@ describe("convention-only CLI", () => {
           },
         ],
       });
-      expect(runCli(root, "generate").status).toBe(0);
+      const generated = runCli(root, "generate");
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
       const result = runCli(root, "check");
       expect(result.status).not.toBe(0);
       expect(`${result.stdout}${result.stderr}`).toContain(
@@ -524,7 +897,7 @@ describe("convention-only CLI", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("fails check when source analysis finds unknown translation keys", async () => {
     const root = await createConventionApp();
@@ -617,7 +990,10 @@ describe("convention-only CLI", () => {
   it("passes check for valid source calls and reports sourceAnalysis", async () => {
     const root = await createConventionApp();
     try {
-      expect(runCli(root, "generate").status).toBe(0);
+      const generated = runCli(root, "generate");
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
       await mkdir(join(root, "src"), { recursive: true });
       await writeFile(
         join(root, "src/page.tsx"),
