@@ -10,7 +10,9 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { delimiter, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -24,6 +26,7 @@ import {
 import { colorEnabled } from "../src/reporter";
 
 const cli = resolve(import.meta.dirname, "../src/cli.ts");
+const repositoryRoot = resolve(import.meta.dirname, "../../..");
 const tsx = resolve(
   import.meta.dirname,
   "../../../node_modules/tsx/dist/cli.mjs"
@@ -77,6 +80,78 @@ function runCliWithEnvironment(
 
 function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
   return runCliWithEnvironment(root, process.env, ...arguments_);
+}
+
+async function ensureInstrumentation(
+  directory: string
+): Promise<Readonly<{ hook: string; report: string }>> {
+  const report = join(directory, "ensure-instrumentation.json");
+  const actualTypeScript = createRequire(
+    join(repositoryRoot, "packages/compiler/package.json")
+  ).resolve("typescript");
+  await writeFile(
+    join(directory, "typescript-proxy.mjs"),
+    [
+      `import actual from ${JSON.stringify(pathToFileURL(actualTypeScript).href)};`,
+      "const wrapped = Object.create(actual);",
+      'Object.defineProperty(wrapped, "createProgram", {',
+      "  value(...args) {",
+      "    globalThis.__miraiEnsurePrograms += 1;",
+      "    return Reflect.apply(actual.createProgram, actual, args);",
+      "  },",
+      "});",
+      "globalThis.__miraiEnsureTypeScriptLoaded = true;",
+      "export default wrapped;",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    join(directory, "ensure-loader.mjs"),
+    [
+      'const proxy = new URL("./typescript-proxy.mjs", import.meta.url).href;',
+      "export async function resolve(specifier, context, nextResolve) {",
+      '  if (specifier === "typescript") return { shortCircuit: true, url: proxy };',
+      "  return nextResolve(specifier, context);",
+      "}",
+      "export async function load(url, context, nextLoad) {",
+      "  const loaded = await nextLoad(url, context);",
+      '  if (!url.includes("/packages/compiler/dist/catalog-") || loaded.format !== "module") return loaded;',
+      '  let source = Buffer.isBuffer(loaded.source) ? loaded.source.toString("utf8") : String(loaded.source);',
+      '  source = source.replace("function compileCatalog(source) {", "function compileCatalog(source) {\\n globalThis.__miraiEnsureCompileCalls += 1;");',
+      '  source = source.replace("function emitArtifacts(output, representation, options = {}) {", "function emitArtifacts(output, representation, options = {}) {\\n globalThis.__miraiEnsureEmitCalls += 1;");',
+      '  source += "\\nglobalThis.__miraiEnsureCompilerBundleInstrumented = true;\\n";',
+      "  return { ...loaded, source };",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const hook = join(directory, "ensure-hook.mjs");
+  await writeFile(
+    hook,
+    [
+      'import { writeFileSync } from "node:fs";',
+      'import { register } from "node:module";',
+      "globalThis.__miraiEnsureCompileCalls = 0;",
+      "globalThis.__miraiEnsureEmitCalls = 0;",
+      "globalThis.__miraiEnsurePrograms = 0;",
+      "globalThis.__miraiEnsureTypeScriptLoaded = false;",
+      "globalThis.__miraiEnsureCompilerBundleInstrumented = false;",
+      `const report = ${JSON.stringify(report)};`,
+      'process.on("exit", () => writeFileSync(report, JSON.stringify({',
+      "  compileCalls: globalThis.__miraiEnsureCompileCalls,",
+      "  compilerBundleInstrumented: globalThis.__miraiEnsureCompilerBundleInstrumented,",
+      "  emitCalls: globalThis.__miraiEnsureEmitCalls,",
+      "  programs: globalThis.__miraiEnsurePrograms,",
+      "  typescriptLoaded: globalThis.__miraiEnsureTypeScriptLoaded,",
+      "})));",
+      'register(new URL("./ensure-loader.mjs", import.meta.url), import.meta.url);',
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  return { hook, report };
 }
 
 describe("convention-only CLI", () => {
@@ -781,6 +856,62 @@ describe("convention-only CLI", () => {
       await rm(root, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("uses the receipt-first unchanged ensure path without Program, compile, or emit work", async () => {
+    const root = await createConventionApp();
+    const instrumentationRoot = await mkdtemp(
+      join(tmpdir(), "mirai-intl-ensure-instrumentation-")
+    );
+    try {
+      const built = spawnSync("corepack", ["pnpm", "build"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        env: process.env,
+        shell: false,
+        timeout: 120_000,
+      });
+      expect(built.status, `${built.stdout}${built.stderr}`).toBe(0);
+      const builtCli = join(repositoryRoot, "packages/compiler/dist/cli.js");
+      const generated = spawnSync(process.execPath, [builtCli, "generate"], {
+        cwd: root,
+        encoding: "utf8",
+        env: process.env,
+        shell: false,
+        timeout: 60_000,
+      });
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      const instrumentation = await ensureInstrumentation(instrumentationRoot);
+      const ensured = spawnSync(
+        process.execPath,
+        ["--import", instrumentation.hook, builtCli, "ensure", "--json"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+      expect(ensured.status, `${ensured.stdout}${ensured.stderr}`).toBe(0);
+      expect(JSON.parse(ensured.stdout)).toMatchObject({ changed: false });
+      expect(
+        JSON.parse(await readFile(instrumentation.report, "utf8"))
+      ).toEqual({
+        compileCalls: 0,
+        compilerBundleInstrumented: true,
+        emitCalls: 0,
+        programs: 0,
+        typescriptLoaded: true,
+      });
+    } finally {
+      await Promise.all([
+        rm(root, { force: true, recursive: true }),
+        rm(instrumentationRoot, { force: true, recursive: true }),
+      ]);
+    }
+  }, 180_000);
 
   it.each([
     ["--config", "intl.config.json"],

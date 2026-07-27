@@ -32,6 +32,7 @@ export default defineConfig([
       next: "src/next.ts",
       "next-loader": "src/next-loader.ts",
       transform: "src/transform.ts",
+      verify: "src/verify.ts",
       vite: "src/vite.ts",
     },
     name: "@openmirai/intl-compiler",

@@ -1,15 +1,19 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  cp,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
+  realpath,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 
 import {
   compileCatalog,
@@ -95,6 +99,82 @@ function runPnpm(
   timeoutMilliseconds: number
 ): string {
   return run("corepack", ["pnpm", ...args], cwd, timeoutMilliseconds);
+}
+
+function runFailure(
+  command: string,
+  args: ReadonlyArray<string>,
+  cwd: string,
+  expected: RegExp
+): void {
+  const result = spawnSync(command, [...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, CI: "1" },
+    killSignal: "SIGKILL",
+    maxBuffer: commandOutputLimit,
+    shell: false,
+    timeout: 60_000,
+    windowsHide: true,
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (
+    result.error ||
+    result.status === 0 ||
+    result.signal ||
+    !expected.test(output)
+  ) {
+    throw new Error(
+      [
+        `Expected bounded command failure matching ${expected}`,
+        `command=${JSON.stringify([command, ...args])}`,
+        `status=${String(result.status)}`,
+        `signal=${String(result.signal)}`,
+        `error=${result.error?.message ?? "(none)"}`,
+        `output=${output.slice(0, commandOutputLimit) || "(empty)"}`,
+      ].join("\n")
+    );
+  }
+}
+
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalValue(entry)])
+    );
+  }
+  return value;
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(canonicalValue(value));
+}
+
+async function importedModuleGraph(entry: string): Promise<Array<string>> {
+  const visited = new Set<string>();
+  const visit = async (path: string): Promise<void> => {
+    const resolved = await realpath(path);
+    if (visited.has(resolved)) {
+      return;
+    }
+    visited.add(resolved);
+    const source = await readFile(resolved, "utf8");
+    for (const match of source.matchAll(
+      /(?:from\s+|import\s*\()\s*["'](\.[^"']+)["']/gu
+    )) {
+      const specifier = match[1];
+      if (specifier && !specifier.includes("${")) {
+        await visit(resolve(join(resolved, ".."), specifier));
+      }
+    }
+  };
+  await visit(entry);
+  return [...visited].toSorted();
 }
 
 async function digest(path: string): Promise<string> {
@@ -417,7 +497,12 @@ runPnpm(
   installRoot,
   120_000
 );
-await mkdir(join(receiptAppRoot, "src/locales/global"), { recursive: true });
+await Promise.all([
+  mkdir(join(receiptAppRoot, "node_modules/receipt-provider"), {
+    recursive: true,
+  }),
+  mkdir(join(receiptAppRoot, "src/locales/receipt"), { recursive: true }),
+]);
 await Promise.all([
   writeFile(
     join(receiptAppRoot, "package.json"),
@@ -451,17 +536,41 @@ await Promise.all([
   ),
   writeFile(
     join(receiptAppRoot, "tsconfig.json"),
-    `${JSON.stringify({ include: ["src/**/*.ts"] }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        compilerOptions: { lib: ["ES2024"] },
+        include: ["src/**/*.ts"],
+      },
+      null,
+      2
+    )}\n`,
     "utf8"
   ),
   writeFile(
-    join(receiptAppRoot, "src/locales/global/en.json"),
+    join(receiptAppRoot, "src/locales/receipt/en.json"),
     '{"greeting":"Hello"}\n',
     "utf8"
   ),
   writeFile(
     join(receiptAppRoot, "src/page.ts"),
-    "export const page = 1;\n",
+    [
+      'import { GREETING_KEY } from "receipt-provider";',
+      'import { useTranslations } from "x";',
+      'const { t } = useTranslations("receipt");',
+      "export const page = t(GREETING_KEY);",
+      "export type PagePromise = Promise<string>;",
+      "",
+    ].join("\n"),
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "node_modules/receipt-provider/index.d.ts"),
+    'export declare const GREETING_KEY: "greeting";\n',
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "node_modules/receipt-provider/package.json"),
+    '{"name":"receipt-provider","types":"index.d.ts","version":"1.0.0"}\n',
     "utf8"
   ),
 ]);
@@ -499,17 +608,37 @@ if (
 await writeFile(
   join(installRoot, "verify-receipt.mjs"),
   [
-    'import { verifyConventionBuildReceipt } from "@openmirai/intl-compiler";',
-    `const verification = await verifyConventionBuildReceipt(${JSON.stringify(
-      receiptAppRoot
-    )});`,
+    'import { verifyConventionBuildReceipt } from "@openmirai/intl-compiler/verify";',
+    "const verification = await verifyConventionBuildReceipt(process.argv[2]);",
     "process.stdout.write(JSON.stringify(verification));",
     "",
   ].join("\n"),
   "utf8"
 );
+const verifyEntry = join(
+  installRoot,
+  "node_modules/@openmirai/intl-compiler/dist/verify.js"
+);
+const verifyGraph = await importedModuleGraph(verifyEntry);
+for (const modulePath of verifyGraph) {
+  const normalized = modulePath.split("\\").join("/");
+  const source = await readFile(modulePath, "utf8");
+  if (
+    /\/(?:analyze-sources|transform)(?:[-.])/u.test(normalized) ||
+    /(?:from\s+|import\s*\()\s*["']typescript["']/u.test(source)
+  ) {
+    throw new Error(
+      `Standalone packed verifier imports semantic code: ${normalized}`
+    );
+  }
+}
 const buildVerification = JSON.parse(
-  run(process.execPath, ["verify-receipt.mjs"], installRoot, 60_000)
+  run(
+    process.execPath,
+    ["verify-receipt.mjs", receiptAppRoot],
+    installRoot,
+    60_000
+  )
 ) as {
   buildReceiptVerifications: number;
   buildSemanticAnalysisRuns: number;
@@ -521,6 +650,220 @@ if (
   buildVerification.buildSemanticAnalysisRuns !== 0
 ) {
   throw new Error("Packed build verifier did not consume V2 without semantics");
+}
+type PackedReceipt = Readonly<{
+  providerClosures: ReadonlyArray<
+    Readonly<{ declarations: ReadonlyArray<Readonly<{ path: string }>> }>
+  >;
+  sources: ReadonlyArray<Readonly<{ file: string; hash: string }>>;
+  typescript: Readonly<{
+    libs: ReadonlyArray<Readonly<{ path: string }>>;
+  }>;
+}>;
+type PackedGenerationReceipt = Readonly<{
+  payload: Readonly<{
+    directory: string;
+    manifest: Readonly<{
+      entries: ReadonlyArray<Readonly<{ path: string }>>;
+    }>;
+  }>;
+}>;
+const receiptPath = join(receiptAppRoot, ".mirai-intl/check-receipt.v2.json");
+const receiptSource = await readFile(receiptPath, "utf8");
+const packedReceipt = JSON.parse(receiptSource) as PackedReceipt;
+const generationReceiptPath = join(
+  receiptAppRoot,
+  "src/i18n/generated/catalog-generation-receipt.v1.json"
+);
+const generationReceiptSource = await readFile(generationReceiptPath, "utf8");
+const packedGenerationReceipt = JSON.parse(
+  generationReceiptSource
+) as PackedGenerationReceipt;
+const mutationRoot = join(temporaryRoot, "receipt-mutations");
+const receiptNegativeMatrix = [
+  "v1",
+  "malformed-v2",
+  "noncanonical-v2",
+  "tampered-v2",
+  "stale-source",
+  "stale-config",
+  "stale-provider",
+  "stale-generation-receipt",
+  "stale-payload",
+  "stale-control",
+  "stale-typescript-lib",
+] as const;
+await mkdir(mutationRoot, { recursive: true });
+const expectReceiptRejection = async (
+  name: string,
+  mutate: (root: string) => Promise<void>,
+  expected: RegExp
+): Promise<void> => {
+  const app = join(mutationRoot, name);
+  await cp(receiptAppRoot, app, { recursive: true });
+  await mutate(app);
+  runFailure(
+    process.execPath,
+    ["verify-receipt.mjs", app],
+    installRoot,
+    expected
+  );
+};
+await expectReceiptRejection(
+  "v1",
+  async (app) => {
+    await rm(join(app, ".mirai-intl/check-receipt.v2.json"));
+    await writeFile(
+      join(app, ".mirai-intl/check-receipt.v1.json"),
+      '{"schemaVersion":1}\n',
+      "utf8"
+    );
+  },
+  /V1 is unsupported/u
+);
+await expectReceiptRejection(
+  "malformed-v2",
+  (app) =>
+    writeFile(join(app, ".mirai-intl/check-receipt.v2.json"), "{\n", "utf8"),
+  /V2 must contain valid JSON/u
+);
+await expectReceiptRejection(
+  "noncanonical-v2",
+  (app) =>
+    writeFile(
+      join(app, ".mirai-intl/check-receipt.v2.json"),
+      `${JSON.stringify(packedReceipt, null, 2)}\n`,
+      "utf8"
+    ),
+  /must use canonical JSON/u
+);
+await expectReceiptRejection(
+  "tampered-v2",
+  async (app) => {
+    const tampered = structuredClone(packedReceipt) as unknown as {
+      sources: Array<{ file: string; hash: string }>;
+    };
+    const source = tampered.sources[0];
+    if (!source) {
+      throw new Error("Packed V2 receipt has no bound source");
+    }
+    source.hash = `sha256:${"0".repeat(64)}`;
+    await writeFile(
+      join(app, ".mirai-intl/check-receipt.v2.json"),
+      `${canonicalJson(tampered)}\n`,
+      "utf8"
+    );
+  },
+  /does not bind|authorization hash|source is stale or corrupt/iu
+);
+await expectReceiptRejection(
+  "stale-source",
+  (app) =>
+    writeFile(
+      join(app, packedReceipt.sources[0]?.file ?? "missing-source"),
+      "export const stale = true;\n",
+      "utf8"
+    ),
+  /source is stale or corrupt/u
+);
+await expectReceiptRejection(
+  "stale-config",
+  (app) =>
+    writeFile(
+      join(app, "tsconfig.json"),
+      '{"compilerOptions":{"strict":true},"include":["src/**/*.ts"]}\n',
+      "utf8"
+    ),
+  /TypeScript config is stale or corrupt/u
+);
+const providerDeclaration = packedReceipt.providerClosures.flatMap(
+  ({ declarations }) => declarations
+)[0];
+if (!providerDeclaration) {
+  throw new Error("Packed V2 receipt has no bound provider declaration");
+}
+await expectReceiptRejection(
+  "stale-provider",
+  (app) =>
+    writeFile(
+      join(app, providerDeclaration.path),
+      "export interface ReceiptProvider { readonly changed: true; }\n",
+      "utf8"
+    ),
+  /provider declaration is stale or corrupt/u
+);
+await expectReceiptRejection(
+  "stale-generation-receipt",
+  (app) =>
+    writeFile(
+      join(app, "src/i18n/generated/catalog-generation-receipt.v1.json"),
+      `${generationReceiptSource} `,
+      "utf8"
+    ),
+  /generation receipt is stale or (?:corrupt|tampered)/iu
+);
+const payloadEntry = packedGenerationReceipt.payload.manifest.entries[0];
+if (!payloadEntry) {
+  throw new Error("Packed generation receipt has no payload entry");
+}
+await expectReceiptRejection(
+  "stale-payload",
+  (app) =>
+    writeFile(
+      join(
+        app,
+        "src/i18n/generated",
+        packedGenerationReceipt.payload.directory,
+        payloadEntry.path
+      ),
+      "tampered payload\n",
+      "utf8"
+    ),
+  /Generated artifact directory.*corrupt|generated payload is corrupt/iu
+);
+await expectReceiptRejection(
+  "stale-control",
+  (app) =>
+    writeFile(
+      join(app, "src/i18n/generated/index.ts"),
+      "// tampered selector\n",
+      "utf8"
+    ),
+  /stable facade.*catalog lock is stale or tampered|generated facade or catalog lock is corrupt/iu
+);
+const typescriptLib = packedReceipt.typescript.libs[0];
+if (!typescriptLib) {
+  throw new Error("Packed V2 receipt has no bound TypeScript lib");
+}
+const packedCompilerRequire = createRequire(
+  await realpath(
+    join(installRoot, "node_modules/@openmirai/intl-compiler/package.json")
+  )
+);
+const installedTypeScriptLib = await realpath(
+  join(
+    dirname(packedCompilerRequire.resolve("typescript/package.json")),
+    "lib",
+    typescriptLib.path.split("/").at(-1) ?? ""
+  )
+);
+const installedTypeScriptLibBackup = `${installedTypeScriptLib}.pack-smoke`;
+await rename(installedTypeScriptLib, installedTypeScriptLibBackup);
+try {
+  await writeFile(
+    installedTypeScriptLib,
+    `${await readFile(installedTypeScriptLibBackup, "utf8")}\n// tampered\n`,
+    "utf8"
+  );
+  runFailure(
+    process.execPath,
+    ["verify-receipt.mjs", receiptAppRoot],
+    installRoot,
+    /compiler dependency identity is stale|current pointer is stale or tampered|TypeScript lib identity is stale/u
+  );
+} finally {
+  await rm(installedTypeScriptLib, { force: true });
+  await rename(installedTypeScriptLibBackup, installedTypeScriptLib);
 }
 runPnpm(
   ["exec", "tsc", "--project", "tsconfig.json", "--pretty", "false"],
@@ -578,6 +921,8 @@ await writeFile(
           buildSemanticAnalysisRuns:
             buildVerification.buildSemanticAnalysisRuns,
         },
+        negativeMatrix: receiptNegativeMatrix,
+        standaloneVerifierModuleCount: verifyGraph.length,
       },
       installed: true,
       privateDescriptorLowering: true,
@@ -613,6 +958,8 @@ process.stdout.write(
         buildReceiptVerifications: buildVerification.buildReceiptVerifications,
         buildSemanticAnalysisRuns: buildVerification.buildSemanticAnalysisRuns,
       },
+      negativeMatrix: receiptNegativeMatrix,
+      standaloneVerifierModuleCount: verifyGraph.length,
     },
     renderedTranslation: runtimeEvidence.renderedTranslation,
   })}\n`

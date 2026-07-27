@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { analyzeConventionSources } from "./analyze-sources";
@@ -11,6 +11,8 @@ import {
   loadConventionCatalog,
   verifyConventionCatalog,
 } from "./catalog";
+import { parseCanonicalCatalogCurrentPointer } from "./generation-snapshot";
+import { ensureMiraiIntlCatalog } from "./lifecycle";
 import {
   authorizeConventionCatalog,
   discoverEmittedModules,
@@ -583,19 +585,20 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "ensure") {
-    const result = await generateConventionCatalog(process.cwd(), {
-      collectEnvironment: false,
-    });
+    const result = await ensureMiraiIntlCatalog({ root: process.cwd() });
+    const pointer = parseCanonicalCatalogCurrentPointer(
+      await readFile(join(result.loaded.outputRoot, "current.json"), "utf8")
+    );
     const payload = {
-      changed: result.write.changed,
-      contentHash: result.write.contentHash,
-      directory: result.write.directory,
+      changed: result.changed,
+      contentHash: pointer.contentHash,
+      directory: join(result.loaded.outputRoot, pointer.directory),
     };
     await report(
       command,
       payload,
       reporter,
-      result.write.changed ? "catalog updated" : "catalog current"
+      result.changed ? "catalog updated" : "catalog current"
     );
     return;
   }

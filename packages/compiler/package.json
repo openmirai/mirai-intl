@@ -35,6 +35,11 @@
       "import": "./dist/transform.js",
       "default": "./dist/transform.js"
     },
+    "./verify": {
+      "types": "./dist/verify.d.ts",
+      "import": "./dist/verify.js",
+      "default": "./dist/verify.js"
+    },
     "./vite": {
       "types": "./dist/vite.d.ts",
       "import": "./dist/vite.js",
