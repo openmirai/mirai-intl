@@ -2119,6 +2119,19 @@ type ConventionExceptions = Readonly<{
   sourceLocale?: string;
 }>;
 
+type ConventionWorkspacePreset = Readonly<{
+  content: string;
+  path: string;
+  requiredLocales?: ReadonlyArray<string>;
+  sourceLocale?: string;
+}>;
+
+type ConventionWorkspace = Readonly<{
+  preset?: ConventionWorkspacePreset;
+  presetCandidates: ReadonlyArray<string>;
+  root: string;
+}>;
+
 function emptyConventionExceptions(): ConventionExceptions {
   return {
     checkExceptions: [],
@@ -2128,6 +2141,336 @@ function emptyConventionExceptions(): ConventionExceptions {
     schema: { messages: {} },
     sources: [],
   };
+}
+
+async function loadConventionWorkspacePreset(
+  repositoryRoot: string
+): Promise<ConventionWorkspace> {
+  let workspaceRoot: string | undefined;
+  let directory = repositoryRoot;
+  while (true) {
+    const workspaceManifestPath = join(directory, "pnpm-workspace.yaml");
+    if (await regularFileExists(workspaceManifestPath, "pnpm-workspace.yaml")) {
+      workspaceRoot = directory;
+      break;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      break;
+    }
+    directory = parent;
+  }
+  workspaceRoot ??= repositoryRoot;
+  let nestedDirectory = repositoryRoot;
+  while (nestedDirectory !== workspaceRoot) {
+    const nestedPreset = join(nestedDirectory, "mirai-intl.workspace.json");
+    if (
+      await regularFileExists(nestedPreset, "nested mirai-intl.workspace.json")
+    ) {
+      throw new Error(
+        `Convention workspace preset ${nestedPreset} is nested below the authoritative workspace root ${workspaceRoot}`
+      );
+    }
+    const parent = dirname(nestedDirectory);
+    if (parent === nestedDirectory || !within(workspaceRoot, parent)) {
+      throw new Error(
+        "Unable to resolve the package path within its authoritative pnpm workspace root"
+      );
+    }
+    nestedDirectory = parent;
+  }
+  const presetCandidates =
+    workspaceRoot === repositoryRoot &&
+    !(await regularFileExists(
+      join(workspaceRoot, "pnpm-workspace.yaml"),
+      "pnpm-workspace.yaml"
+    ))
+      ? []
+      : [join(workspaceRoot, "mirai-intl.workspace.json")];
+  const presetPath = presetCandidates[0];
+  if (
+    presetPath === undefined ||
+    !(await regularFileExists(presetPath, "mirai-intl.workspace.json"))
+  ) {
+    return { presetCandidates, root: workspaceRoot };
+  }
+  const canonicalRoot = await realpath(workspaceRoot);
+  const canonicalPath = await realpath(presetPath);
+  if (!within(canonicalRoot, canonicalPath)) {
+    throw new Error(
+      "mirai-intl.workspace.json must stay inside its pnpm workspace root"
+    );
+  }
+  const content = await readFile(canonicalPath, "utf8");
+  let value: unknown;
+  try {
+    value = JSON.parse(content) as unknown;
+  } catch (error) {
+    throw new Error("mirai-intl.workspace.json must contain valid JSON", {
+      cause: error,
+    });
+  }
+  const root = assertObject(value, "mirai-intl.workspace.json");
+  assertExactKeys(
+    root,
+    ["requiredLocales", "sourceLocale"],
+    "mirai-intl.workspace.json"
+  );
+  const requiredLocales = parseRequiredLocales(
+    root.requiredLocales,
+    "mirai-intl.workspace.json"
+  );
+  const sourceLocaleValue = root.sourceLocale;
+  if (
+    sourceLocaleValue !== undefined &&
+    (typeof sourceLocaleValue !== "string" ||
+      sourceLocaleValue.length === 0 ||
+      sourceLocaleValue.normalize("NFC") !== sourceLocaleValue)
+  ) {
+    throw new TypeError(
+      "mirai-intl.workspace.json.sourceLocale must be a non-empty NFC locale"
+    );
+  }
+  if (
+    requiredLocales !== undefined &&
+    sourceLocaleValue !== undefined &&
+    !requiredLocales.includes(sourceLocaleValue)
+  ) {
+    throw new TypeError(
+      `mirai-intl.workspace.json.sourceLocale ${sourceLocaleValue} is not one of ${requiredLocales.join(",")}`
+    );
+  }
+  return {
+    preset: {
+      content,
+      path: canonicalPath,
+      ...(requiredLocales === undefined ? {} : { requiredLocales }),
+      ...(sourceLocaleValue === undefined
+        ? {}
+        : { sourceLocale: sourceLocaleValue }),
+    },
+    presetCandidates,
+    root: canonicalRoot,
+  };
+}
+
+async function inferredCheckProjects(
+  repositoryRoot: string
+): Promise<ReadonlyArray<IntlCheckProjectV1>> {
+  for (const path of ["tsconfig.intl.json", "tsconfig.json"] as const) {
+    if (
+      await regularFileExists(
+        join(repositoryRoot, path),
+        `inferred check project ${path}`
+      )
+    ) {
+      return [{ path, role: "owner" }];
+    }
+  }
+  throw new Error(
+    "Convention check project discovery found neither tsconfig.intl.json nor tsconfig.json; add one or configure checkProjects explicitly"
+  );
+}
+
+function parseConfigJsonc(source: string, context: string): JsonObject {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const current = source[index] as string;
+    const next = source[index + 1];
+    if (inString) {
+      output += current;
+      if (escaped) {
+        escaped = false;
+      } else if (current === "\\") {
+        escaped = true;
+      } else if (current === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (current === '"') {
+      inString = true;
+      output += current;
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      while (index < source.length && source[index] !== "\n") {
+        index += 1;
+      }
+      output += "\n";
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      index += 2;
+      while (
+        index < source.length &&
+        !(source[index] === "*" && source[index + 1] === "/")
+      ) {
+        output += source[index] === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      index += 1;
+      continue;
+    }
+    output += current;
+  }
+  try {
+    return assertObject(
+      JSON.parse(output.replace(/,\s*([}\]])/gu, "$1")) as unknown,
+      context
+    );
+  } catch (error) {
+    throw new Error(`${context} must contain valid JSONC`, { cause: error });
+  }
+}
+
+type CheckProjectConfigInput = Readonly<{
+  absolute: string;
+  hash: `sha256:${string}`;
+  path: string;
+}>;
+
+async function checkProjectConfigManifest(
+  repositoryRoot: string,
+  workspaceRoot: string,
+  project: IntlCheckProjectV1
+): Promise<ReadonlyArray<CheckProjectConfigInput>> {
+  const resolveConfig = async (
+    from: string,
+    specifier: string
+  ): Promise<string> => {
+    let direct: string;
+    if (
+      specifier.startsWith(".") ||
+      specifier.startsWith("/") ||
+      /^[A-Za-z]:[/\\]/u.test(specifier)
+    ) {
+      direct = resolve(dirname(from), specifier);
+    } else {
+      try {
+        direct = resolve(createRequire(from).resolve(specifier));
+      } catch (error) {
+        throw new Error(
+          `Check project ${project.path} has unresolved transitive config ${specifier}`,
+          { cause: error }
+        );
+      }
+    }
+    const candidates = [
+      direct,
+      ...(direct.endsWith(".json") ? [] : [`${direct}.json`]),
+      join(direct, "tsconfig.json"),
+    ];
+    for (const candidate of candidates) {
+      let entry;
+      try {
+        entry = await lstat(candidate);
+      } catch (error) {
+        if (fileSystemErrorCode(error) === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
+      if (entry.isSymbolicLink()) {
+        throw new Error(
+          `Check project ${project.path} transitive config ${candidate} must not be a symbolic link`
+        );
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const canonical = await realpath(candidate);
+      if (
+        !within(workspaceRoot, canonical) ||
+        canonical !== resolve(candidate)
+      ) {
+        throw new Error(
+          `Check project ${project.path} transitive config ${candidate} escapes its workspace root or traverses a symbolic link`
+        );
+      }
+      return canonical;
+    }
+    throw new Error(
+      `Check project ${project.path} has unresolved transitive config ${specifier}`
+    );
+  };
+
+  const rootConfig = resolve(repositoryRoot, project.path);
+  const pending = [rootConfig];
+  const visited = new Map<string, string>();
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (!path || visited.has(path)) {
+      continue;
+    }
+    const entry = await lstat(path).catch(() => undefined);
+    if (!entry || entry.isSymbolicLink() || !entry.isFile()) {
+      throw new Error(
+        `Check project ${project.path} transitive config must be a readable regular file`
+      );
+    }
+    const canonical = await realpath(path);
+    if (!within(workspaceRoot, canonical) || canonical !== resolve(path)) {
+      throw new Error(
+        `Check project ${project.path} transitive config escapes its workspace root or traverses a symbolic link`
+      );
+    }
+    const content = await readFile(canonical, "utf8");
+    visited.set(canonical, content);
+    const config = parseConfigJsonc(
+      content,
+      `Check project ${project.path} config ${relative(workspaceRoot, canonical)}`
+    );
+    const extendsValue = config.extends;
+    let extendsSpecifiers: ReadonlyArray<string> | undefined;
+    if (extendsValue === undefined) {
+      extendsSpecifiers = [];
+    } else if (typeof extendsValue === "string") {
+      extendsSpecifiers = [extendsValue];
+    } else if (
+      Array.isArray(extendsValue) &&
+      extendsValue.every((value) => typeof value === "string")
+    ) {
+      extendsSpecifiers = extendsValue;
+    }
+    if (!extendsSpecifiers) {
+      throw new Error(
+        `Check project ${project.path} extends must be a string or string array`
+      );
+    }
+    const referencesValue = config.references;
+    if (referencesValue !== undefined && !Array.isArray(referencesValue)) {
+      throw new Error(
+        `Check project ${project.path} references must be an array`
+      );
+    }
+    const referenceSpecifiers = (referencesValue ?? []).map(
+      (reference, index) => {
+        if (
+          !isPlainObject(reference) ||
+          typeof reference.path !== "string" ||
+          reference.path.length === 0
+        ) {
+          throw new Error(
+            `Check project ${project.path} references[${index}].path must be a non-empty string`
+          );
+        }
+        return reference.path;
+      }
+    );
+    for (const specifier of [...extendsSpecifiers, ...referenceSpecifiers]) {
+      pending.push(await resolveConfig(canonical, specifier));
+    }
+  }
+  return [...visited]
+    .map(([path, content]) => ({
+      absolute: path,
+      hash: sha256(content),
+      path: relative(workspaceRoot, path).split(sep).join("/"),
+    }))
+    .toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
 }
 
 function checkProjects(
@@ -2411,6 +2754,8 @@ async function loadConventionCatalogSnapshot(
   compile: boolean
 ): Promise<LoadedConventionCatalog> {
   const repositoryRoot = await realpath(resolve(packageRoot));
+  const workspace = await loadConventionWorkspacePreset(repositoryRoot);
+  const workspacePreset = workspace.preset;
   const packagePath = join(repositoryRoot, "package.json");
   const packageContent = await readFile(packagePath, "utf8");
   const packageJson = assertObject(
@@ -2454,6 +2799,21 @@ async function loadConventionCatalogSnapshot(
       "package.json miraiIntl"
     );
   }
+  if (
+    workspacePreset?.requiredLocales !== undefined &&
+    exceptions.requiredLocales !== undefined &&
+    workspacePreset.requiredLocales.some(
+      (locale) => !exceptions.requiredLocales?.includes(locale)
+    )
+  ) {
+    throw new TypeError(
+      "Package requiredLocales must include every mirai-intl.workspace.json.requiredLocales entry"
+    );
+  }
+  const requiredLocales =
+    exceptions.requiredLocales ?? workspacePreset?.requiredLocales;
+  const configuredSourceLocale =
+    exceptions.sourceLocale ?? workspacePreset?.sourceLocale;
   for (const project of exceptions.checkProjects) {
     const projectPath = resolve(repositoryRoot, project.path);
     if (
@@ -2528,14 +2888,14 @@ async function loadConventionCatalogSnapshot(
   // An explicit locale set is the source contract.  Let discovery validate
   // every locale directory against it so a missing translation can identify
   // the exact JSON file to create instead of only reporting the aggregate set.
-  const locales = exceptions.requiredLocales ?? discoveredLocales;
+  const locales = requiredLocales ?? discoveredLocales;
   let inferredSourceLocale: string | undefined;
   if (locales.includes("en")) {
     inferredSourceLocale = "en";
   } else if (locales.length === 1) {
     inferredSourceLocale = locales[0];
   }
-  const sourceLocale = exceptions.sourceLocale ?? inferredSourceLocale;
+  const sourceLocale = configuredSourceLocale ?? inferredSourceLocale;
   if (!sourceLocale) {
     throw new Error(
       `Convention source locale is ambiguous across ${locales.join(",")}; set sourceLocale in mirai-intl.config.json or package.json miraiIntl`
@@ -2557,7 +2917,7 @@ async function loadConventionCatalogSnapshot(
       resolveMountedSource(repositoryRoot, dependencies, source)
     )
   );
-  const config: ResolvedCatalogConfig = {
+  let config: ResolvedCatalogConfig = {
     catalog: {
       buildId: packageVersionValue,
       id: packageName,
@@ -2607,6 +2967,32 @@ async function loadConventionCatalogSnapshot(
       `Convention value declaration ${unusedDeclarations.toSorted(compareCanonicalStrings)[0]} has no matching source message`
     );
   }
+  const resolvedCheckProjects =
+    exceptions.checkProjects.length > 0
+      ? exceptions.checkProjects
+      : await inferredCheckProjects(repositoryRoot);
+  const checkProjectInputs = await Promise.all(
+    resolvedCheckProjects.map(async (project) => {
+      const projectPath = resolve(repositoryRoot, project.path);
+      if (
+        !within(repositoryRoot, projectPath) ||
+        !(await regularFileExists(projectPath, `check project ${project.path}`))
+      ) {
+        throw new Error(
+          `Check project ${project.path} must be a readable regular tsconfig within its package root`
+        );
+      }
+      return {
+        manifest: await checkProjectConfigManifest(
+          repositoryRoot,
+          workspace.root,
+          project
+        ),
+        project,
+      };
+    })
+  );
+  config = { ...config, checkProjects: resolvedCheckProjects };
   const source: CatalogSource = {
     buildId: config.catalog.buildId,
     catalogPackage: config.catalog.package,
@@ -2658,24 +3044,50 @@ async function loadConventionCatalogSnapshot(
     discovery,
     inputs: {
       discoveryPolicyHash: sha256(
-        canonicalJson({ discovery, sources: discoverySources })
+        canonicalJson({
+          checkProjects: checkProjectInputs.map(({ manifest, project }) => ({
+            configManifest: manifest.map(({ hash, path }) => ({ hash, path })),
+            project,
+          })),
+          discovery,
+          sources: discoverySources,
+          workspacePreset:
+            workspacePreset === undefined
+              ? null
+              : {
+                  contentHash: sha256(workspacePreset.content),
+                  path: relative(repositoryRoot, workspacePreset.path)
+                    .split(sep)
+                    .join("/"),
+                },
+        })
       ),
       exceptionsHash: sha256(
         canonicalJson({
           ...(hasJsonConfig ? { configFile: "mirai-intl.config.json" } : {}),
-          checkProjects: exceptions.checkProjects,
+          checkProjects: resolvedCheckProjects,
           checkExceptions: exceptions.checkExceptions,
           formatterVersions: exceptions.formatterVersions,
-          sourceLocale: exceptions.sourceLocale ?? null,
+          requiredLocales: requiredLocales ?? null,
+          sourceLocale: configuredSourceLocale ?? null,
           sources: exceptions.sources.map(({ from, mount, path }) => ({
             from,
             mount,
             path,
           })),
           values: exceptions.schema.messages,
+          workspacePreset:
+            workspacePreset === undefined
+              ? null
+              : {
+                  contentHash: sha256(workspacePreset.content),
+                  path: relative(repositoryRoot, workspacePreset.path)
+                    .split(sep)
+                    .join("/"),
+                },
         })
       ),
-      exceptionsPresent: exceptions.present,
+      exceptionsPresent: exceptions.present || workspacePreset !== undefined,
       messageContractHash: sha256(
         canonicalJson(messageContractIdentity(messages))
       ),
@@ -2690,9 +3102,18 @@ async function loadConventionCatalogSnapshot(
     source,
     watch: {
       files: [
-        ...(hasJsonConfig ? [configPath] : []),
+        packagePath,
+        jsonConfigPath,
+        ...workspace.presetCandidates,
+        join(repositoryRoot, "tsconfig.intl.json"),
+        join(repositoryRoot, "tsconfig.json"),
+        ...checkProjectInputs.flatMap(({ manifest }) =>
+          manifest.map(({ absolute }) => absolute)
+        ),
         ...discovered.flatMap((entry) => entry.watchFiles),
-      ].toSorted(compareCanonicalStrings),
+      ]
+        .filter((path, index, values) => values.indexOf(path) === index)
+        .toSorted(compareCanonicalStrings),
       roots: discovered
         .map((entry) => entry.root)
         .toSorted(compareCanonicalStrings),

@@ -88,7 +88,7 @@ function isPathInside(parent: string, file: string): boolean {
 }
 
 const restartMessage =
-  "Translation sources changed. Restart Vite so mirai-intl can publish one reader-safe catalog before compilation.";
+  "Translation configuration or sources changed. Restart Vite so mirai-intl can publish one reader-safe catalog before compilation.";
 
 const defaultGeneratedDirectory = "src/i18n/generated";
 
@@ -109,6 +109,7 @@ export function miraiIntlVite(
 ): MiraiIntlVitePlugin {
   let resolvedRoot = options.root;
   let localeRoots: ReadonlyArray<string> = [];
+  let identityFiles: ReadonlyArray<string> = [];
   let configuredLocaleRoot: string | undefined;
   let discoveryReady: Promise<void> = Promise.resolve();
   const currentOptions = (): MiraiIntlTransformOptions =>
@@ -120,22 +121,36 @@ export function miraiIntlVite(
     if (!discovery) {
       throw new Error("Vite intl adapter requires convention discovery");
     }
-    localeRoots = loaded.watch.roots.map(normalizedPath);
+    localeRoots = [
+      ...new Set(loaded.watch.roots.map(normalizedPath)),
+    ].toSorted();
+    identityFiles = [
+      ...new Set(
+        loaded.watch.files
+          .map(normalizedPath)
+          .filter(
+            (file) =>
+              !localeRoots.some(
+                (root) => file === root || isPathInside(root, file)
+              )
+          )
+      ),
+    ].toSorted();
     configuredLocaleRoot = normalizedPath(
       resolve(loaded.repositoryRoot, discovery.localeRoot)
     );
   };
-  const registerBuildWatches = (
-    registrar: WatchRegistrar,
-    loaded: LoadedConventionCatalog
-  ): void => {
-    // Watch config + locale roots only. Per-file watches are redundant with
-    // configureServer root watches and amplify Vite graph invalidation.
-    registrar.addWatchFile(loaded.configPath);
-    for (const root of loaded.watch.roots.map(normalizedPath)) {
-      registrar.addWatchFile(root);
+  const registerBuildWatches = (registrar: WatchRegistrar): void => {
+    // Locale roots cover every translation JSON without amplifying the Vite
+    // graph. Configuration identities live outside those roots and must be
+    // watched individually so a preset or tsconfig mutation invalidates the
+    // catalog/check receipt.
+    for (const file of [...identityFiles, ...localeRoots]) {
+      registrar.addWatchFile(file);
     }
   };
+  const isIdentityInput = async (file: string): Promise<boolean> =>
+    identityFiles.includes(await canonicalPath(file));
   const isLocaleJson = async (file: string): Promise<boolean> => {
     if (!file.endsWith(".json")) {
       return false;
@@ -190,7 +205,7 @@ export function miraiIntlVite(
         // Fresh fixtures / first boot without `intl:ensure`.
         const loaded = (await ensureMiraiIntlCatalogOnce(opts)).loaded;
         applyDiscovery(loaded);
-        registerBuildWatches(this, loaded);
+        registerBuildWatches(this);
         return;
       }
 
@@ -202,7 +217,7 @@ export function miraiIntlVite(
       if (options.root !== undefined) {
         const loaded = await loadConventionCatalog(root);
         applyDiscovery(loaded);
-        registerBuildWatches(this, loaded);
+        registerBuildWatches(this);
       }
     },
     async closeBundle() {
@@ -215,28 +230,30 @@ export function miraiIntlVite(
     },
     configureServer(server) {
       const requireRestart = (file: string): void => {
-        void isLocaleJson(file).then((matches) => {
-          if (!matches) {
-            return;
+        void Promise.all([isLocaleJson(file), isIdentityInput(file)]).then(
+          ([locale, identity]) => {
+            if (!locale && !identity) {
+              return;
+            }
+            server.config.logger.error(restartMessage);
           }
-          server.config.logger.error(restartMessage);
-        });
+        );
       };
-      const addLocaleWatchRoots = (): void => {
+      const addDevelopmentWatchInputs = (): void => {
         const roots =
           localeRoots.length > 0
             ? localeRoots
             : [resolve(packageRoot(), "src/locales")];
-        for (const root of roots) {
-          server.watcher.add(root);
+        for (const input of new Set([...identityFiles, ...roots])) {
+          server.watcher.add(input);
         }
       };
       // Discovery from buildStart is already available for fixtures; app boot
       // defers discovery and attaches watchers once it resolves.
       if (localeRoots.length > 0) {
-        addLocaleWatchRoots();
+        addDevelopmentWatchInputs();
       } else {
-        void ensureDiscovery().then(addLocaleWatchRoots);
+        void ensureDiscovery().then(addDevelopmentWatchInputs);
       }
       server.watcher.on("add", requireRestart);
       server.watcher.on("unlink", requireRestart);
@@ -248,7 +265,10 @@ export function miraiIntlVite(
     enforce: "pre",
     async handleHotUpdate(context) {
       await ensureDiscovery();
-      if (!(await isLocaleJson(context.file))) {
+      if (
+        !(await isLocaleJson(context.file)) &&
+        !(await isIdentityInput(context.file))
+      ) {
         return undefined;
       }
       context.server.config.logger.error(restartMessage);

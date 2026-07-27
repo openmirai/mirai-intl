@@ -74,6 +74,9 @@ async function createConventionViteFixture(): Promise<string> {
     name: "@example/vite-app",
     version: "1.0.0",
   });
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
+  });
   await writeJson(join(root, "src/locales/global/en.json"), {
     title: "Title",
   });
@@ -89,6 +92,9 @@ async function createConventionViteBundleFixture(): Promise<string> {
     dependencies: { vite: "7.3.6" },
     name: "@example/vite-bundle-app",
     version: "1.0.0",
+  });
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
   });
   await writeJson(join(root, "src/locales/global/en.json"), {
     components: {
@@ -557,6 +563,117 @@ describe("Vite adapter", () => {
       expect(result?.code).toContain("t(__miraiIntlMessage0)");
       cleanup();
       expect(watcher.off).toHaveBeenCalledTimes(2);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("watches workspace presets and inferred projects as unique restart inputs", async () => {
+    const root = await createConventionViteFixture();
+    const preset = join(root, "mirai-intl.workspace.json");
+    const project = join(root, "tsconfig.json");
+    const watched: Array<string> = [];
+    const logger = { error: vi.fn() };
+    const watcher = {
+      add: vi.fn(),
+      off: vi.fn(),
+      on: vi.fn(),
+    };
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        "packages: ['.']\n",
+        "utf8"
+      );
+      await writeJson(preset, {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
+      });
+      const plugin = miraiIntlVite({ root });
+      await plugin.buildStart.call({
+        addWatchFile(file: string) {
+          watched.push(file);
+        },
+      });
+
+      expect(watched).toContain(await realpath(preset));
+      expect(watched).toContain(await realpath(project));
+      expect(new Set(watched).size).toBe(watched.length);
+      expect(watched).not.toContain(join(root, "src/locales/global/en.json"));
+
+      await expect(
+        plugin.handleHotUpdate({
+          file: preset,
+          server: { config: { logger }, watcher },
+        })
+      ).resolves.toEqual([]);
+      await expect(
+        plugin.handleHotUpdate({
+          file: project,
+          server: { config: { logger }, watcher },
+        })
+      ).resolves.toEqual([]);
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Restart Vite/u)
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("registers prospective identity inputs after default-root published startup", async () => {
+    const root = await createConventionViteFixture();
+    const logger = { error: vi.fn() };
+    const watcher = {
+      add: vi.fn(),
+      off: vi.fn(),
+      on: vi.fn(),
+    };
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        "packages: ['.']\n",
+        "utf8"
+      );
+      const publisher = miraiIntlVite({ root });
+      await publisher.buildStart.call({ addWatchFile: vi.fn() });
+
+      const plugin = miraiIntlVite();
+      plugin.configResolved({ root });
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+      const cleanup = plugin.configureServer({
+        config: { logger },
+        watcher,
+      });
+      const canonicalRoot = await realpath(root);
+      const prospective = [
+        join(canonicalRoot, "mirai-intl.config.json"),
+        join(canonicalRoot, "mirai-intl.workspace.json"),
+        join(canonicalRoot, "tsconfig.intl.json"),
+      ];
+      await vi.waitFor(() => {
+        for (const path of prospective) {
+          expect(watcher.add).toHaveBeenCalledWith(path);
+        }
+        expect(watcher.add).toHaveBeenCalledWith(
+          join(canonicalRoot, "tsconfig.json")
+        );
+        expect(watcher.add).toHaveBeenCalledWith(
+          join(canonicalRoot, "src/locales")
+        );
+      });
+
+      for (const file of prospective) {
+        await expect(
+          plugin.handleHotUpdate({
+            file,
+            server: { config: { logger }, watcher },
+          })
+        ).resolves.toEqual([]);
+      }
+      expect(logger.error).toHaveBeenCalledTimes(prospective.length);
+      cleanup();
     } finally {
       await rm(root, { force: true, recursive: true });
     }
