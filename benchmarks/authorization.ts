@@ -218,8 +218,7 @@ function integerOption(
   const inline = args.find((argument) => argument.startsWith(prefix));
   const index = args.indexOf(name);
   const raw =
-    inline?.slice(prefix.length) ??
-    (index >= 0 ? args[index + 1] : undefined);
+    inline?.slice(prefix.length) ?? (index >= 0 ? args[index + 1] : undefined);
   const parsed = raw === undefined ? fallback : Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw new Error(`${name} must be a non-negative integer`);
