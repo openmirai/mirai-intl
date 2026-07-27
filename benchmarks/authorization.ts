@@ -499,32 +499,52 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
   const recorded = new Map<ScenarioName, Array<ChildEvidence>>(
     scenarios.map(({ name }) => [name, []])
   );
+  const discardedRuns: Array<
+    Readonly<{ attempt: number; reason: string; scenario: ScenarioName }>
+  > = [];
   let runIndex = 0;
   const execute = async (
     scenario: (typeof scenarios)[number],
     record: boolean
   ): Promise<void> => {
-    const destination = resolve(
-      fixtureRoot,
-      `run-${String(runIndex).padStart(5, "0")}-${scenario.name}`
-    );
+    const currentRun = runIndex;
     runIndex += 1;
-    await copyFixture(seeds.get(scenario.fileCount) as string, destination);
-    const evidence = runChild(scenario.action, destination);
-    if (scenario.action === "check") {
-      if (
-        evidence.filesAnalyzed !== scenario.fileCount ||
-        evidence.programCount !== scenario.fileCount
-      ) {
-        throw new Error(
-          `${scenario.name} expected ${scenario.fileCount} files/programs; received ${evidence.filesAnalyzed}/${evidence.programCount}`
-        );
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const destination = resolve(
+        fixtureRoot,
+        `run-${String(currentRun).padStart(5, "0")}-${scenario.name}-${attempt}`
+      );
+      await copyFixture(seeds.get(scenario.fileCount) as string, destination);
+      try {
+        const evidence = runChild(scenario.action, destination);
+        if (scenario.action === "check") {
+          if (
+            evidence.filesAnalyzed !== scenario.fileCount ||
+            evidence.programCount !== scenario.fileCount
+          ) {
+            throw new Error(
+              `${scenario.name} expected ${scenario.fileCount} files/programs; received ${evidence.filesAnalyzed}/${evidence.programCount}`
+            );
+          }
+        }
+        if (record) {
+          recorded.get(scenario.name)?.push(evidence);
+        }
+        await rm(destination, { force: true, recursive: true });
+        return;
+      } catch (error) {
+        await rm(destination, { force: true, recursive: true });
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt === 1 || !message.includes("ENOENT")) {
+          throw error;
+        }
+        discardedRuns.push({
+          attempt,
+          reason: "fixture disappeared during child execution (ENOENT)",
+          scenario: scenario.name,
+        });
       }
     }
-    if (record) {
-      recorded.get(scenario.name)?.push(evidence);
-    }
-    await rm(destination, { force: true, recursive: true });
   };
 
   for (let warmup = 0; warmup < configured.warmups; warmup += 1) {
@@ -600,6 +620,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     methodology: {
       bootstrapResamples: 10_000,
       cacheState: "process-cold/dependency-hot",
+      discardedRuns,
       interleaving: "deterministic randomized scenario order",
       samples: configured.samples,
       seed: configured.seed,
