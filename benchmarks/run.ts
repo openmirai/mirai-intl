@@ -14,8 +14,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
-  writeArtifactSet,
 } from "../packages/compiler/src/internal";
+import { writeArtifactSet } from "../packages/compiler/test/non-authoritative-writer";
 
 import {
   treeShakingCatalogSource,
