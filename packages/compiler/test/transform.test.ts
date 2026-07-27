@@ -1479,6 +1479,16 @@ describe("private named-key lowering", () => {
           'import { useTranslations } from "x"; const { t } = useTranslations("pages.home"); t("missing");',
       },
       {
+        error: /Unknown form error key pages\.home\.error\.form\.missing/u,
+        source:
+          'import { createFormSchema } from "@/i18n/generated"; createFormSchema("pages.home", ({ error }) => error("missing"));',
+      },
+      {
+        error: /Form schema error keys must be literal registered keys/u,
+        source:
+          'import { createFormSchema } from "@/i18n/generated"; declare const key: string; createFormSchema("pages.home", ({ error }) => error(key));',
+      },
+      {
         error: /requires t\.rich but description is a rich message/u,
         source:
           'import { useTranslations } from "x"; const { t } = useTranslations("pages.home"); t("description");',

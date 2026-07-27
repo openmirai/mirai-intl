@@ -1391,6 +1391,94 @@ function analyzeSource(
     throw new Error(`${id}:${line + 1}:${character + 1}: ${message}`);
   };
 
+  const validateInlineFormSchemaErrorKeys = (
+    build: ts.Expression,
+    namespace: string,
+    allowedKeys: ReadonlySet<string>
+  ): void => {
+    const builder = unwrapExpression(build);
+    if (!ts.isArrowFunction(builder) && !ts.isFunctionExpression(builder)) {
+      return;
+    }
+
+    const contextSymbols = new Set<ts.Symbol>();
+    const errorSymbols = new Set<ts.Symbol>();
+    for (const parameter of builder.parameters) {
+      if (ts.isIdentifier(parameter.name)) {
+        const symbol = symbolAt(parameter.name);
+        if (symbol) {
+          contextSymbols.add(symbol);
+        }
+        continue;
+      }
+      if (!ts.isObjectBindingPattern(parameter.name)) {
+        continue;
+      }
+      for (const element of parameter.name.elements) {
+        if (!ts.isIdentifier(element.name)) {
+          continue;
+        }
+        const property = element.propertyName
+          ? propertyNameText(element.propertyName)
+          : element.name.text;
+        if (property !== "error") {
+          continue;
+        }
+        const symbol = symbolAt(element.name);
+        if (symbol) {
+          errorSymbols.add(symbol);
+        }
+      }
+    }
+
+    const validateErrorKey = (node: ts.CallExpression): void => {
+      if (node.arguments.length !== 1) {
+        diagnostic(node, "Form schema error requires exactly one literal key");
+      }
+      const argument = node.arguments[0];
+      const key = argument ? literalString(argument) : undefined;
+      if (key === undefined) {
+        diagnostic(
+          argument ?? node,
+          "Form schema error keys must be literal registered keys"
+        );
+        return;
+      }
+      if (!allowedKeys.has(key)) {
+        diagnostic(
+          argument ?? node,
+          `Unknown form error key ${namespace}.error.form.${key}`
+        );
+      }
+    };
+
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const callee = unwrapExpression(node.expression);
+        if (ts.isIdentifier(callee)) {
+          const symbol = symbolAt(callee);
+          if (symbol && errorSymbols.has(symbol)) {
+            validateErrorKey(node);
+          }
+        }
+        if (
+          ts.isPropertyAccessExpression(callee) &&
+          callee.name.text === "error"
+        ) {
+          const context = unwrapExpression(callee.expression);
+          if (ts.isIdentifier(context)) {
+            const symbol = symbolAt(context);
+            if (symbol && contextSymbols.has(symbol)) {
+              validateErrorKey(node);
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(builder.body);
+  };
+
   const visitIdentifiers = (node: ts.Node): void => {
     if (ts.isIdentifier(node)) {
       declaredNames.add(node.text);
@@ -2513,6 +2601,14 @@ function analyzeSource(
         const build =
           node.arguments[1] ??
           diagnostic(node, "createFormSchema requires a schema builder");
+        const formPrefix = `${namespace}.error.form.`;
+        validateInlineFormSchemaErrorKeys(
+          build,
+          namespace,
+          new Set(
+            formMessages.map((message) => message.path.slice(formPrefix.length))
+          )
+        );
         const registry = dynamicRegistry(namespace, formMessages);
         formSchemaHelper ??= uniqueName("__miraiIntlCreateCompilerFormSchema");
         replacements.set(nodeKey(node), {
