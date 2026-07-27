@@ -172,13 +172,22 @@ describe("convention-only CLI", () => {
       );
       expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
       expect(checked.stderr).toBe("");
-      expect(JSON.parse(checked.stdout)).toMatchObject({
+      const result = JSON.parse(checked.stdout) as {
+        catalogs: Array<{ report: { report: { environment: unknown } } }>;
+      };
+      expect(result).toMatchObject({
         catalogs: [
           { receipt: { schemaVersion: 1 }, root: "apps/auth" },
           { receipt: { schemaVersion: 1 }, root: "packages/i18n" },
         ],
         valid: true,
       });
+      expect(
+        result.catalogs.every(
+          (catalog) => catalog.report.report.environment !== null
+        )
+      ).toBe(true);
+      expect(checked.stdout).not.toMatch(/"(?:compiled|loaded)":/u);
       await expect(
         readFile(join(app, ".mirai-intl/check-receipt.v1.json"), "utf8")
       ).resolves.toContain('"schemaVersion":1');

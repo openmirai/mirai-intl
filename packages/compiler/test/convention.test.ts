@@ -15,9 +15,11 @@ import { join } from "node:path";
 import {
   compileCatalog,
   generateConventionCatalog,
+  generateConventionCatalogWithSnapshot,
   loadConventionCatalog,
   semanticMessageExportName,
   verifyConventionCatalog,
+  verifyLoadedConventionCatalog,
 } from "@openmirai/intl-compiler/internal";
 import { describe, expect, it } from "vitest";
 
@@ -158,8 +160,19 @@ describe("convention-first catalog discovery", () => {
         type: "object",
       });
 
-      const generated = await generateConventionCatalog(root, {
+      const generation = await generateConventionCatalogWithSnapshot(root, {
         collectEnvironment: false,
+      });
+      const generated = generation.result;
+      expect(Object.keys(generated)).toEqual(["report", "write"]);
+      const snapshotVerification = await verifyLoadedConventionCatalog(
+        generation.loaded,
+        { collectEnvironment: false }
+      );
+      expect(snapshotVerification.report).toEqual(generated.report);
+      expect(snapshotVerification.write).toEqual({
+        ...generated.write,
+        changed: false,
       });
       expect(generated.report).toMatchObject({
         authoritative: false,

@@ -213,6 +213,23 @@ export type ConventionOptions = Readonly<{
   collectEnvironment?: boolean;
 }>;
 
+const compiledConventionCatalogs = new WeakMap<
+  LoadedConventionCatalog,
+  ReturnType<typeof compileCatalog>
+>();
+
+function compiledConventionCatalog(
+  loaded: LoadedConventionCatalog
+): ReturnType<typeof compileCatalog> {
+  const compiled = compiledConventionCatalogs.get(loaded);
+  if (!compiled) {
+    throw new Error(
+      "Convention catalog snapshot was not loaded by the compiler"
+    );
+  }
+  return compiled;
+}
+
 function isPlainObject(value: unknown): value is JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
@@ -1741,10 +1758,10 @@ function installedTupleComplete(
 
 async function createReport(
   loaded: LoadedConventionCatalog,
+  compiled: ReturnType<typeof compileCatalog>,
   artifacts: EmittedArtifacts,
   options: ConventionOptions
 ): Promise<ConventionReport> {
-  const compiled = compileCatalog(loaded.source);
   const environment =
     options.collectEnvironment === false
       ? null
@@ -2581,7 +2598,7 @@ export async function loadConventionCatalog(
     rendererCapabilityId: config.catalog.rendererCapabilityId,
     sourceLocale: config.catalog.sourceLocale,
   };
-  compileCatalog(source);
+  const compiled = compileCatalog(source);
   const outputRoot = await confinedProspectivePath(
     repositoryRoot,
     resolve(repositoryRoot, config.output),
@@ -2615,7 +2632,7 @@ export async function loadConventionCatalog(
         ) ||
         compareCanonicalStrings(left.root, right.root)
     );
-  return {
+  const loaded: LoadedConventionCatalog = {
     checkExceptions: exceptions.checkExceptions,
     checkProjects: config.checkProjects,
     config,
@@ -2663,23 +2680,58 @@ export async function loadConventionCatalog(
         .toSorted(compareCanonicalStrings),
     },
   };
+  compiledConventionCatalogs.set(loaded, compiled);
+  return loaded;
+}
+
+/** @internal Generate and retain the compiler-owned loaded snapshot. */
+export async function generateConventionCatalogWithSnapshot(
+  packageRoot: string,
+  options: ConventionOptions = {}
+): Promise<
+  Readonly<{
+    loaded: LoadedConventionCatalog;
+    result: ConventionGenerationResult;
+  }>
+> {
+  const loaded = await loadConventionCatalog(packageRoot);
+  const compiled = compiledConventionCatalog(loaded);
+  const artifacts = emitArtifacts(compiled, loaded.config.representation, {
+    compact: true,
+  });
+  const facade = stableFacadeOptions(loaded, compiled);
+  const report = await createReport(loaded, compiled, artifacts, options);
+  const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
+    expectedCanonicalRoot: loaded.outputRoot,
+  });
+  return { loaded, result: { report, write } };
 }
 
 export async function generateConventionCatalog(
   packageRoot: string,
   options: ConventionOptions = {}
 ): Promise<ConventionGenerationResult> {
-  const loaded = await loadConventionCatalog(packageRoot);
-  const compiled = compileCatalog(loaded.source);
+  return (await generateConventionCatalogWithSnapshot(packageRoot, options))
+    .result;
+}
+
+/** @internal Verify an already-loaded, compiler-owned catalog snapshot. */
+export async function verifyLoadedConventionCatalog(
+  loaded: LoadedConventionCatalog,
+  options: ConventionOptions = {}
+): Promise<
+  Readonly<{ report: ConventionReport; valid: true; write: WriteResult }>
+> {
+  const compiled = compiledConventionCatalog(loaded);
   const artifacts = emitArtifacts(compiled, loaded.config.representation, {
     compact: true,
   });
   const facade = stableFacadeOptions(loaded, compiled);
-  const report = await createReport(loaded, artifacts, options);
-  const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
+  const report = await createReport(loaded, compiled, artifacts, options);
+  const write = await verifyArtifactSet(loaded.outputRoot, artifacts, facade, {
     expectedCanonicalRoot: loaded.outputRoot,
   });
-  return { report, write };
+  return { report, valid: true, write };
 }
 
 export async function verifyConventionCatalog(
@@ -2688,15 +2740,8 @@ export async function verifyConventionCatalog(
 ): Promise<
   Readonly<{ report: ConventionReport; valid: true; write: WriteResult }>
 > {
-  const loaded = await loadConventionCatalog(packageRoot);
-  const compiled = compileCatalog(loaded.source);
-  const artifacts = emitArtifacts(compiled, loaded.config.representation, {
-    compact: true,
-  });
-  const facade = stableFacadeOptions(loaded, compiled);
-  const report = await createReport(loaded, artifacts, options);
-  const write = await verifyArtifactSet(loaded.outputRoot, artifacts, facade, {
-    expectedCanonicalRoot: loaded.outputRoot,
-  });
-  return { report, valid: true, write };
+  return verifyLoadedConventionCatalog(
+    await loadConventionCatalog(packageRoot),
+    options
+  );
 }

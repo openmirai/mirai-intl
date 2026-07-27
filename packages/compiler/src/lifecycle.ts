@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { generateConventionCatalog, loadConventionCatalog } from "./catalog";
+import { generateConventionCatalogWithSnapshot } from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
 import type { MiraiIntlTransformOptions } from "./transform";
 
@@ -36,12 +36,12 @@ function serializeGeneration(
   const { key, root } = resolvedOptions(options);
   const previous = generations.get(key);
   const run = (previous ?? Promise.resolve(undefined)).then(async () => {
-    const result = await generateConventionCatalog(root, {
+    const generation = await generateConventionCatalogWithSnapshot(root, {
       collectEnvironment: false,
     });
     return {
-      changed: result.write.changed,
-      loaded: await loadConventionCatalog(root),
+      changed: generation.result.write.changed,
+      loaded: generation.loaded,
     };
   });
   const tracked = run.finally(() => {

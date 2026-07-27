@@ -12,6 +12,7 @@ import {
   verifyConventionCatalog,
 } from "./catalog";
 import {
+  authorizeConventionCatalog,
   discoverEmittedModules,
   finalizeBuildProof,
   finalizeBuildProofTargets,
@@ -388,8 +389,7 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
   for (const root of roots) {
     const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
     try {
-      const receipt = await proveConventionCatalog(root);
-      const verification = await verifyConventionCatalog(root);
+      const { receipt, verification } = await authorizeConventionCatalog(root);
       const summary = catalogSummary(verification);
       messageCount += summary.messageCount ?? 0;
       catalogs.push({

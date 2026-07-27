@@ -23,7 +23,11 @@ import {
   collectConventionSourceFiles,
 } from "./analyze-sources";
 import { canonicalHash, canonicalJson, sha256 } from "./canonical";
-import { loadConventionCatalog, verifyConventionCatalog } from "./catalog";
+import {
+  loadConventionCatalog,
+  verifyLoadedConventionCatalog,
+} from "./catalog";
+import type { ConventionOptions, LoadedConventionCatalog } from "./catalog";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
 import { resolveConventionSourceUniverse } from "./ownership";
 
@@ -335,6 +339,7 @@ type ConventionReceiptInputs = Readonly<{
   root: string;
   sourceFiles: ReadonlyArray<string>;
   snapshot: ReadonlyArray<readonly [string, `sha256:${string}`]>;
+  verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
 }>;
 
 /**
@@ -344,13 +349,13 @@ type ConventionReceiptInputs = Readonly<{
  * authority by running the full source checker.
  */
 async function conventionReceiptInputs(
-  packageRoot: string
+  packageRoot: string,
+  loadedSnapshot?: LoadedConventionCatalog,
+  options: ConventionOptions = { collectEnvironment: false }
 ): Promise<ConventionReceiptInputs> {
-  const loaded = await loadConventionCatalog(packageRoot);
+  const loaded = loadedSnapshot ?? (await loadConventionCatalog(packageRoot));
   const root = resolve(loaded.repositoryRoot);
-  const verification = await verifyConventionCatalog(root, {
-    collectEnvironment: false,
-  });
+  const verification = await verifyLoadedConventionCatalog(loaded, options);
   const discoveredFiles = await collectConventionSourceFiles(
     root,
     loaded.discovery.output
@@ -404,13 +409,20 @@ async function conventionReceiptInputs(
     sources,
     typescriptHash: sha256(ts.version),
   } satisfies IntlCheckReceiptV1;
-  return { receipt, root, snapshot, sourceFiles };
+  return { receipt, root, snapshot, sourceFiles, verification };
 }
 
 async function createConventionCheckReceipt(
-  packageRoot: string
-): Promise<IntlCheckReceiptV1> {
-  const before = await conventionReceiptInputs(packageRoot);
+  packageRoot: string,
+  loaded: LoadedConventionCatalog,
+  finalVerificationOptions: ConventionOptions
+): Promise<
+  Readonly<{
+    receipt: IntlCheckReceiptV1;
+    verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
+  }>
+> {
+  const before = await conventionReceiptInputs(packageRoot, loaded);
   const analysis = await analyzeConventionSourceFiles(
     before.root,
     before.sourceFiles
@@ -420,7 +432,15 @@ async function createConventionCheckReceipt(
       `Mirai Intl source analysis failed with ${analysis.diagnostics.length} diagnostic(s)`
     );
   }
-  const after = await conventionReceiptInputs(packageRoot);
+  // Reload after semantic analysis so catalog/source mutations cannot inherit
+  // authority from the pre-analysis snapshot. Workspace authorization keeps
+  // the default environment-aware report; receipt-only prove skips that
+  // evidence exactly as it did before this combined API existed.
+  const after = await conventionReceiptInputs(
+    packageRoot,
+    undefined,
+    finalVerificationOptions
+  );
   if (canonicalJson(before.snapshot) !== canonicalJson(after.snapshot)) {
     throw new Error(
       "Mirai Intl source inputs changed while source analysis ran"
@@ -429,27 +449,56 @@ async function createConventionCheckReceipt(
   if (canonicalJson(before.receipt) !== canonicalJson(after.receipt)) {
     throw new Error("Mirai Intl inputs changed before receipt authorization");
   }
-  return after.receipt;
+  return {
+    receipt: after.receipt,
+    verification: after.verification,
+  };
 }
 
-/** Materialize, verify and atomically persist deterministic source authority. */
-export async function proveConventionCatalog(
-  packageRoot: string
-): Promise<IntlCheckReceiptV1> {
+/**
+ * Materialize source authority and return the environment-aware catalog
+ * verification produced by the fresh post-analysis snapshot.
+ *
+ * @internal Used by the workspace CLI to avoid a redundant third verification.
+ */
+export async function authorizeConventionCatalog(
+  packageRoot: string,
+  finalVerificationOptions: ConventionOptions = {}
+): Promise<
+  Readonly<{
+    receipt: IntlCheckReceiptV1;
+    verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
+  }>
+> {
   const root = resolve(packageRoot);
   const destination = receiptPath(root);
   try {
     // Proof is the production authority entrypoint. It must be able to
     // materialize the immutable content-addressed payload after a clean clone,
     // while a matching catalog remains a writer no-op.
-    await ensureMiraiIntlCatalog({ root });
-    const receipt = await createConventionCheckReceipt(root);
-    await writeReceipt(destination, receipt);
-    return receipt;
+    const ensured = await ensureMiraiIntlCatalog({ root });
+    const authorization = await createConventionCheckReceipt(
+      root,
+      ensured.loaded,
+      finalVerificationOptions
+    );
+    await writeReceipt(destination, authorization.receipt);
+    return authorization;
   } catch (error) {
     await rm(destination, { force: true });
     throw error;
   }
+}
+
+/** Materialize, verify and atomically persist deterministic source authority. */
+export async function proveConventionCatalog(
+  packageRoot: string
+): Promise<IntlCheckReceiptV1> {
+  return (
+    await authorizeConventionCatalog(packageRoot, {
+      collectEnvironment: false,
+    })
+  ).receipt;
 }
 
 /** Reject a missing, stale, malformed, or non-canonical source receipt. */
