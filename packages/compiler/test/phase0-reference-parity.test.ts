@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 import { analyzeConventionSources } from "../src/analyze-sources";
@@ -19,7 +19,10 @@ import { generateConventionCatalog } from "../src/catalog";
 const programInstrumentation = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("typescript", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("typescript")>();
+  interface TypeScriptModule {
+    default: typeof ts;
+  }
+  const actual = await importOriginal<TypeScriptModule>();
   const wrapped = Object.create(actual.default) as typeof actual.default;
   Object.defineProperty(wrapped, "createProgram", {
     value: (...arguments_: Parameters<typeof actual.default.createProgram>) => {
