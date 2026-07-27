@@ -5,10 +5,7 @@ import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
 import { sha256 } from "./canonical";
 import { loadConventionCatalog } from "./catalog";
 import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
-import {
-  collectMiraiIntlSemanticEvidence,
-  transformMiraiIntlSource,
-} from "./transform";
+import { transformMiraiIntlSource } from "./transform";
 import type {
   MiraiIntlSemanticEvidence,
   MiraiIntlTransformOptions,
@@ -238,15 +235,27 @@ async function analyzeLoadedConventionSourceFiles(
     // unrelated modules without changing the source.
     candidates += 1;
     try {
+      let semanticEvidence: MiraiIntlSemanticEvidence | undefined;
       await transformMiraiIntlSource(source, file, {
+        authorizationEvidence: {
+          record(value) {
+            semanticEvidence = value;
+          },
+          workspaceRoot,
+        },
         generatedDirectory,
         root,
       });
       evidence.push(
-        await collectMiraiIntlSemanticEvidence(source, file, workspaceRoot, {
-          generatedDirectory,
-          root,
-        })
+        semanticEvidence ?? {
+          ambientTypeFileLimit: 16,
+          declarations: [],
+          libs: [],
+          providerBudgetExceeded: false,
+          providerRootLimit: 64,
+          providers: [],
+          source: relative(workspaceRoot, file).split(sep).join("/"),
+        }
       );
     } catch (error) {
       exceptionDiagnostics.push(parseTransformDiagnostic(error, file, source));

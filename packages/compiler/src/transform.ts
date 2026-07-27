@@ -7,6 +7,11 @@ import { sha256 } from "./canonical";
 import { privateMessageSliceSpecifier } from "./private-module";
 
 export type MiraiIntlTransformOptions = Readonly<{
+  /** @internal Authorization-only evidence sink; does not alter transforms. */
+  authorizationEvidence?: Readonly<{
+    record(evidence: MiraiIntlSemanticEvidence): void;
+    workspaceRoot: string;
+  }>;
   generatedDirectory?: string;
   requireProof?: boolean;
   root?: string;
@@ -74,6 +79,7 @@ type CurrentCatalog = Readonly<{
   contractPath: string;
   dependencies: ReadonlyArray<string>;
   generatedFacadePath: string;
+  generatedFacadeHash: `sha256:${string}`;
   messages: ReadonlyMap<string, CatalogMessage>;
   privateCarrierPath: string;
   provenancePath: string;
@@ -508,6 +514,7 @@ async function loadCurrentCatalog(
       provenancePath,
     ],
     generatedFacadePath: await realpath(generatedFacadePath),
+    generatedFacadeHash: sha256(generatedFacadeSource),
     messages,
     privateCarrierPath,
     provenancePath,
@@ -1260,64 +1267,43 @@ function evidencePath(workspaceRoot: string, file: string): string {
   return path;
 }
 
-/**
- * Exposes the exact file-scoped TypeScript universe already admitted by the
- * finite resolver. Phase 1 records this evidence without changing resolver
- * batching or reuse.
- */
-export async function collectMiraiIntlSemanticEvidence(
-  source: string,
-  id: string,
-  workspaceRoot: string,
-  options: MiraiIntlTransformOptions = {}
-): Promise<MiraiIntlSemanticEvidence> {
-  const cleanId = cleanModuleId(id);
-  const catalog = await loadCurrentCatalog(options);
-  const root = resolve(options.root ?? process.cwd());
-  const generatedImports = await generatedFacadeImportNames(
-    source,
-    cleanId,
-    root,
-    catalog.generatedFacadePath
-  );
-  const { program, providerBudgetExceeded, providerRoots, sourceFile } =
-    createProgram(
-      source,
-      cleanId,
-      root,
-      catalog,
-      generatedImports.facadeModules
-    );
+function semanticEvidence(
+  program: ts.Program,
+  providerBudgetExceeded: string | undefined,
+  providerRoots: ReadonlyArray<string>,
+  sourceFile: ts.SourceFile,
+  generatedFacadeModules: ReadonlySet<string>,
+  catalog: CurrentCatalog,
+  workspaceRoot: string
+): MiraiIntlSemanticEvidence {
+  const cleanId = cleanModuleId(sourceFile.fileName);
   const virtualGeneratedFacade = resolve(
     dirname(cleanId),
     ".mirai-intl-generated-facade.d.ts"
   );
-  const declarationEntries = (
-    await Promise.all(
-      program
-        .getSourceFiles()
-        .filter(
-          (file) =>
-            file.fileName !== sourceFile.fileName &&
-            /\.d\.[cm]?ts$/u.test(file.fileName)
-        )
-        .map(async (file) => {
-          const programPath = resolve(file.fileName);
-          const absolute =
-            programPath === virtualGeneratedFacade
-              ? catalog.generatedFacadePath
-              : programPath;
-          return {
-            absolute,
-            hash:
-              programPath === virtualGeneratedFacade
-                ? sha256(await readFile(catalog.generatedFacadePath, "utf8"))
-                : sha256(file.text),
-            path: evidencePath(workspaceRoot, absolute),
-          };
-        })
+  const declarationEntries = program
+    .getSourceFiles()
+    .filter(
+      (file) =>
+        file.fileName !== sourceFile.fileName &&
+        /\.d\.[cm]?ts$/u.test(file.fileName)
     )
-  ).toSorted((left, right) => left.path.localeCompare(right.path));
+    .map((file) => {
+      const programPath = resolve(file.fileName);
+      const absolute =
+        programPath === virtualGeneratedFacade
+          ? catalog.generatedFacadePath
+          : programPath;
+      return {
+        absolute,
+        hash:
+          programPath === virtualGeneratedFacade
+            ? catalog.generatedFacadeHash
+            : sha256(file.text),
+        path: evidencePath(workspaceRoot, absolute),
+      };
+    })
+    .toSorted((left, right) => left.path.localeCompare(right.path));
   const libs = declarationEntries
     .filter(({ absolute }) =>
       /[/\\]typescript[/\\]lib[/\\]lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u.test(
@@ -1338,9 +1324,7 @@ export async function collectMiraiIntlSemanticEvidence(
     catalog.generatedFacadePath
   );
   const evidenceProviderRoots = [
-    ...(generatedImports.facadeModules.size > 0
-      ? [catalog.generatedFacadePath]
-      : []),
+    ...(generatedFacadeModules.size > 0 ? [catalog.generatedFacadePath] : []),
     ...providerRoots,
   ];
   const providers = evidenceProviderRoots
@@ -1438,7 +1422,8 @@ function analyzeSource(
   id: string,
   root: string,
   catalog: CurrentCatalog,
-  generatedImports: GeneratedFacadeImportNames
+  generatedImports: GeneratedFacadeImportNames,
+  authorizationEvidence?: MiraiIntlTransformOptions["authorizationEvidence"]
 ): Readonly<{
   imports: ReadonlyArray<
     Readonly<{ descriptor: string; local: string; module: string }>
@@ -1458,13 +1443,13 @@ function analyzeSource(
   removedNodes: ReadonlySet<string>;
   replacements: ReadonlyMap<string, Replacement>;
 }> {
-  const { checker, providerBudgetExceeded, sourceFile } = createProgram(
-    source,
-    id,
-    root,
-    catalog,
-    generatedImports.facadeModules
-  );
+  const {
+    checker,
+    program,
+    providerBudgetExceeded,
+    providerRoots,
+    sourceFile,
+  } = createProgram(source, id, root, catalog, generatedImports.facadeModules);
   const factorySymbols = new Map<ts.Symbol, FactoryKind>();
   const objectSymbols = new Map<ts.Symbol, string>();
   const translationKeyFactorySymbols = new Set<ts.Symbol>();
@@ -3002,6 +2987,17 @@ function analyzeSource(
   };
   validateTranslatorReferences(sourceFile);
 
+  authorizationEvidence?.record(
+    semanticEvidence(
+      program,
+      providerBudgetExceeded,
+      providerRoots,
+      sourceFile,
+      generatedImports.facadeModules,
+      catalog,
+      authorizationEvidence.workspaceRoot
+    )
+  );
   return {
     dynamicHelpers,
     dynamicRegistries: [...dynamicRegistries.entries()]
@@ -3470,7 +3466,8 @@ export async function transformMiraiIntlSource(
     cleanId,
     root,
     catalog,
-    generatedImports
+    generatedImports,
+    options.authorizationEvidence
   );
   if (analysis.replacements.size === 0 && analysis.removedNodes.size === 0) {
     return null;
