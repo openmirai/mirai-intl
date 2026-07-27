@@ -289,6 +289,7 @@ describe("catalog generation snapshot contracts", () => {
         parseCatalogPublicationJournal({
           expectedPublicationHash: hash("publication"),
           ownerToken: "123e4567-e89b-12d3-a456-426614174000",
+          previousControlsHash: null,
           previousDirectory: null,
           schemaVersion: 1,
           stageDirectory: "stage-123e4567-e89b-12d3-a456-426614174000",
@@ -300,6 +301,7 @@ describe("catalog generation snapshot contracts", () => {
       parseCatalogPublicationJournal({
         expectedPublicationHash: hash("publication"),
         ownerToken: "owner",
+        previousControlsHash: null,
         previousDirectory: null,
         schemaVersion: 1,
         stageDirectory: "stage-owner",
@@ -311,6 +313,7 @@ describe("catalog generation snapshot contracts", () => {
         expectedPublicationHash: hash("publication"),
         extra: true,
         ownerToken: "owner",
+        previousControlsHash: null,
         previousDirectory: null,
         schemaVersion: 1,
         stageDirectory: "stage-owner",

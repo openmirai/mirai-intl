@@ -1067,7 +1067,8 @@ function publicationPlan(
 
 function expectedPublicationHash(
   plan: PublicationPlan,
-  previousDirectory: string | null
+  previousDirectory: string | null,
+  previousControlsHash: Sha256 | null
 ): Sha256 {
   return sha256(
     canonicalJson({
@@ -1076,11 +1077,41 @@ function expectedPublicationHash(
       lockHash: sha256(plan.lockContent),
       manifest: plan.manifest,
       pointerHash: sha256(plan.pointerContent),
+      previousControlsHash,
       receiptHash: plan.receiptHash,
       selectorHash: sha256(plan.selectorContent),
       previousDirectory,
     })
   );
+}
+
+async function controlSnapshot(
+  root: string,
+  outputRoot: string
+): Promise<
+  Readonly<{
+    hash: Sha256;
+    sources: Readonly<Record<string, string>>;
+  }>
+> {
+  const sources: Record<string, string> = {};
+  for (const name of [
+    "index.ts",
+    "catalog.lock.json",
+    receiptFileName,
+    "current.json",
+  ] as const) {
+    const source = await readManagedTextFile(
+      outputRoot,
+      join(root, name),
+      `Previous generated control file ${name}`
+    );
+    if (source === undefined) {
+      throw new Error(`Previous generated control file ${name} is missing`);
+    }
+    sources[name] = source;
+  }
+  return { hash: canonicalHash(sources), sources };
 }
 
 async function syncDirectory(directory: string): Promise<void> {
@@ -1578,6 +1609,7 @@ async function createStage(
   const stageRoot = join(publicationRoot, journal.stageDirectory);
   const payloadRoot = join(stageRoot, "payload");
   const controlsRoot = join(stageRoot, "controls");
+  const previousControlsRoot = join(stageRoot, "previous-controls");
   if (!isWithin(outputRoot, stageRoot)) {
     throw new Error("Generated publication stage escapes the output root");
   }
@@ -1585,6 +1617,7 @@ async function createStage(
   await mkdir(stageRoot);
   await mkdir(payloadRoot);
   await mkdir(controlsRoot);
+  await mkdir(previousControlsRoot);
   try {
     for (const [name, content] of artifactEntries(artifacts)) {
       await writeDurableFile(join(payloadRoot, name), content);
@@ -1605,8 +1638,18 @@ async function createStage(
       join(controlsRoot, "current.json"),
       plan.pointerContent
     );
+    if (journal.previousControlsHash !== null) {
+      const previous = await controlSnapshot(root, outputRoot);
+      if (previous.hash !== journal.previousControlsHash) {
+        throw new Error("Previous generated control identity changed");
+      }
+      for (const [name, source] of Object.entries(previous.sources)) {
+        await writeDurableFile(join(previousControlsRoot, name), source);
+      }
+    }
     await syncDirectory(payloadRoot);
     await syncDirectory(controlsRoot);
+    await syncDirectory(previousControlsRoot);
     await syncDirectory(stageRoot);
     await syncDirectory(publicationRoot);
     await assertPayloadManifest(
@@ -1638,6 +1681,193 @@ async function createStage(
   }
 }
 
+async function rollbackCommittedPointer(
+  root: string,
+  outputRoot: string,
+  publicationRoot: string,
+  stageRoot: string,
+  journal: PublicationJournal,
+  hooks: PublicationFaultInjectionHooks | undefined
+): Promise<void> {
+  let currentJournal = journal;
+  const controlsRoot = join(stageRoot, "controls");
+  const previousControlsRoot = join(stageRoot, "previous-controls");
+  const stagedPointerSource = await readManagedTextFile(
+    outputRoot,
+    join(controlsRoot, "current.json"),
+    "Staged generated current pointer"
+  );
+  if (stagedPointerSource === undefined) {
+    throw new Error("Staged generated current pointer is missing");
+  }
+  const stagedPointer =
+    parseCanonicalCatalogCurrentPointer(stagedPointerSource);
+
+  if (currentJournal.state === "ROLLBACK_REQUIRED") {
+    for (const name of [
+      "index.ts",
+      "catalog.lock.json",
+      receiptFileName,
+      "current.json",
+    ] as const) {
+      const staged = await readManagedTextFile(
+        outputRoot,
+        join(controlsRoot, name),
+        `Staged generated control file ${name}`
+      );
+      const committed = await readManagedTextFile(
+        outputRoot,
+        join(root, name),
+        `Committed generated control file ${name}`
+      );
+      if (
+        staged === undefined ||
+        (name === "current.json" && committed === undefined
+          ? false
+          : committed !== staged)
+      ) {
+        throw new Error(
+          `Cannot roll back changed generated control file ${name}`
+        );
+      }
+    }
+    const previousEntries = await readdir(previousControlsRoot);
+    if (currentJournal.previousControlsHash === null) {
+      if (previousEntries.length !== 0) {
+        throw new Error("Unexpected previous generated control backup");
+      }
+    } else {
+      const previous = await controlSnapshot(previousControlsRoot, outputRoot);
+      if (previous.hash !== currentJournal.previousControlsHash) {
+        throw new Error("Previous generated control backup identity changed");
+      }
+    }
+    await rm(join(root, "current.json"), { force: true });
+    await syncDirectory(root);
+    currentJournal = await advanceJournal(
+      publicationRoot,
+      currentJournal,
+      "ROLLBACK_POINTER_REMOVED",
+      hooks
+    );
+  }
+
+  if (currentJournal.state === "ROLLBACK_POINTER_REMOVED") {
+    for (const name of [
+      "index.ts",
+      "catalog.lock.json",
+      receiptFileName,
+    ] as const) {
+      const previous = await readManagedTextFile(
+        outputRoot,
+        join(previousControlsRoot, name),
+        `Previous generated control file ${name}`
+      );
+      if (previous === undefined) {
+        await rm(join(root, name), { force: true });
+        await syncDirectory(root);
+      } else {
+        await durableReplaceTextFile(root, name, previous);
+      }
+    }
+    const previousPointer = await readManagedTextFile(
+      outputRoot,
+      join(previousControlsRoot, "current.json"),
+      "Previous generated current pointer"
+    );
+    if (previousPointer === undefined) {
+      await rm(join(root, "current.json"), { force: true });
+      await syncDirectory(root);
+    } else {
+      await durableReplaceTextFile(root, "current.json", previousPointer);
+    }
+    currentJournal = await advanceJournal(
+      publicationRoot,
+      currentJournal,
+      "ROLLBACK_CONTROLS_RESTORED",
+      hooks
+    );
+  }
+
+  if (currentJournal.state === "ROLLBACK_CONTROLS_RESTORED") {
+    if (stagedPointer.directory !== currentJournal.previousDirectory) {
+      const rolledBackPayload = join(root, stagedPointer.directory);
+      if (
+        await assertConfinedDirectory(
+          outputRoot,
+          rolledBackPayload,
+          "Rolled back generated artifact directory",
+          true
+        )
+      ) {
+        const entries = await readdir(rolledBackPayload, {
+          withFileTypes: true,
+        });
+        const artifacts: Record<string, string> = {};
+        for (const entry of entries) {
+          if (
+            !entry.isFile() ||
+            entry.isSymbolicLink() ||
+            !flatArtifactName.test(entry.name)
+          ) {
+            throw new Error("Rolled back generated payload identity changed");
+          }
+          const source = await readManagedTextFile(
+            outputRoot,
+            join(rolledBackPayload, entry.name),
+            `Rolled back generated artifact ${entry.name}`
+          );
+          if (source === undefined) {
+            throw new Error("Rolled back generated payload identity changed");
+          }
+          artifacts[entry.name] = source;
+        }
+        if (artifactContentHash(artifacts) !== stagedPointer.contentHash) {
+          throw new Error("Rolled back generated payload identity changed");
+        }
+        await rm(rolledBackPayload, { recursive: true });
+        await syncDirectory(join(root, "builds"));
+      }
+    }
+    if (currentJournal.previousControlsHash === null) {
+      for (const name of [
+        "index.ts",
+        "catalog.lock.json",
+        receiptFileName,
+        "current.json",
+      ] as const) {
+        if (
+          (await readManagedTextFile(
+            outputRoot,
+            join(root, name),
+            `Rolled back generated control file ${name}`
+          )) !== undefined
+        ) {
+          throw new Error(`Rolled back generated control file ${name} exists`);
+        }
+      }
+    } else {
+      const restored = await controlSnapshot(root, outputRoot);
+      if (restored.hash !== currentJournal.previousControlsHash) {
+        throw new Error("Restored generated control identity changed");
+      }
+      const previous = parseCanonicalCatalogCurrentPointer(
+        restored.sources["current.json"] ?? ""
+      );
+      if (previous.directory !== currentJournal.previousDirectory) {
+        throw new Error("Previous generated pointer backup identity changed");
+      }
+      await assertPreviousCommittedState(root, outputRoot, previous);
+    }
+
+    await rm(stageRoot, { recursive: true });
+    await rm(join(publicationRoot, journalFileName));
+    await syncDirectory(publicationRoot);
+    await rm(publicationRoot, { recursive: true });
+    await syncDirectory(root);
+  }
+}
+
 async function installStagedFile(
   outputRoot: string,
   stagedFile: string,
@@ -1655,8 +1885,11 @@ async function installStagedFile(
   if (staged !== expected) {
     throw new Error(`${label} staged bytes are corrupt`);
   }
-  await rename(stagedFile, destination);
-  await syncDirectory(dirname(destination));
+  await durableReplaceTextFile(
+    dirname(destination),
+    basename(destination),
+    staged
+  );
   if (!(await exactTextFile(outputRoot, destination, expected, label))) {
     throw new Error(`${label} installed bytes are corrupt`);
   }
@@ -1808,8 +2041,34 @@ async function runPublication(
   await assertPublicationArea(outputRoot, publicationRoot, journal);
   if (journal) {
     if (
+      journal.state === "ROLLBACK_REQUIRED" ||
+      journal.state === "ROLLBACK_POINTER_REMOVED" ||
+      journal.state === "ROLLBACK_CONTROLS_RESTORED"
+    ) {
+      await rollbackCommittedPointer(
+        root,
+        outputRoot,
+        publicationRoot,
+        join(publicationRoot, journal.stageDirectory),
+        journal,
+        options.publicationHooks
+      );
+      return runPublication(
+        root,
+        outputRoot,
+        ownerToken,
+        artifacts,
+        plan,
+        options
+      );
+    }
+    if (
       journal.expectedPublicationHash !==
-      expectedPublicationHash(plan, journal.previousDirectory)
+      expectedPublicationHash(
+        plan,
+        journal.previousDirectory,
+        journal.previousControlsHash
+      )
     ) {
       throw new Error(
         "Interrupted publication does not match the exact expected generation"
@@ -1818,6 +2077,13 @@ async function runPublication(
   } else {
     const current = await inspectInitialState(root, outputRoot, plan);
     const expectedPointer = JSON.parse(plan.pointerContent) as CurrentPointer;
+    let previousControlsHash: Sha256 | null = null;
+    let previousDirectory: string | null = null;
+    if (current && canonicalJson(current) !== canonicalJson(expectedPointer)) {
+      await assertPreviousCommittedState(root, outputRoot, current);
+      previousControlsHash = (await controlSnapshot(root, outputRoot)).hash;
+      previousDirectory = current.directory;
+    }
     if (current && canonicalJson(current) === canonicalJson(expectedPointer)) {
       try {
         await assertCommittedPlan(root, outputRoot, plan);
@@ -1836,10 +2102,12 @@ async function runPublication(
     journal = {
       expectedPublicationHash: expectedPublicationHash(
         plan,
-        current?.directory ?? null
+        previousDirectory,
+        previousControlsHash
       ),
       ownerToken,
-      previousDirectory: current?.directory ?? null,
+      previousControlsHash,
+      previousDirectory,
       schemaVersion: 1,
       stageDirectory: `stage-${ownerToken}`,
       state: "PREPARED",
@@ -1975,13 +2243,33 @@ async function runPublication(
         ? basename(journal.previousDirectory)
         : undefined
     );
-    const reconstructed = await options.afterPointerCommit?.(plan.snapshot);
-    if (
-      reconstructed !== undefined &&
-      canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
-        canonicalJson(plan.snapshot)
-    ) {
-      throw new Error("Catalog generation inputs changed after pointer commit");
+    try {
+      const reconstructed = await options.afterPointerCommit?.(plan.snapshot);
+      if (
+        reconstructed !== undefined &&
+        canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
+          canonicalJson(plan.snapshot)
+      ) {
+        throw new Error(
+          "Catalog generation inputs changed after pointer commit"
+        );
+      }
+    } catch (error) {
+      journal = await advanceJournal(
+        publicationRoot,
+        journal,
+        "ROLLBACK_REQUIRED",
+        options.publicationHooks
+      );
+      await rollbackCommittedPointer(
+        root,
+        outputRoot,
+        publicationRoot,
+        stageRoot,
+        journal,
+        options.publicationHooks
+      );
+      throw error;
     }
     journal = await advanceJournal(
       publicationRoot,

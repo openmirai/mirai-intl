@@ -40,6 +40,9 @@ export const CATALOG_PUBLICATION_STATES = [
   "SELECTORS_INSTALLED",
   "RECEIPT_INSTALLED",
   "POINTER_COMMITTED",
+  "ROLLBACK_REQUIRED",
+  "ROLLBACK_POINTER_REMOVED",
+  "ROLLBACK_CONTROLS_RESTORED",
   "VALIDATED",
 ] as const;
 
@@ -136,6 +139,7 @@ export type CatalogGenerationSnapshotInput = Readonly<{
 export type CatalogPublicationJournalV1 = Readonly<{
   expectedPublicationHash: Sha256;
   ownerToken: string;
+  previousControlsHash: Sha256 | null;
   previousDirectory: string | null;
   schemaVersion: 1;
   stageDirectory: string;
@@ -808,6 +812,7 @@ export function parseCatalogPublicationJournal(
     [
       "expectedPublicationHash",
       "ownerToken",
+      "previousControlsHash",
       "previousDirectory",
       "schemaVersion",
       "stageDirectory",
@@ -839,6 +844,13 @@ export function parseCatalogPublicationJournal(
       "Catalog publication journal.expectedPublicationHash"
     ),
     ownerToken,
+    previousControlsHash:
+      object.previousControlsHash === null
+        ? null
+        : sha(
+            object.previousControlsHash,
+            "Catalog publication journal.previousControlsHash"
+          ),
     previousDirectory:
       object.previousDirectory === null
         ? null

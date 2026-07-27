@@ -11,6 +11,7 @@ import {
   NON_AUTHORITATIVE_ARTIFACT_ABI,
   parseCanonicalCatalogCurrentPointer,
   parseCanonicalCatalogGenerationReceipt,
+  parseCanonicalCatalogPublicationJournal,
 } from "./generation-snapshot";
 import type { MiraiIntlTransformOptions } from "./transform";
 
@@ -95,6 +96,52 @@ async function assertGeneratedRootConfinement(
   return canonicalGeneratedRoot;
 }
 
+async function hasRecoverablePublicationJournal(
+  generatedRoot: string
+): Promise<boolean> {
+  const publicationRoot = join(generatedRoot, ".catalog-publication");
+  const publicationKind = await pathKind(publicationRoot);
+  if (publicationKind === "missing") {
+    return false;
+  }
+  if (publicationKind !== "directory") {
+    throw new Error(
+      "Generated publication staging area is not a regular directory"
+    );
+  }
+  const journalSource = await readRegularText(
+    join(publicationRoot, "journal.v1.json"),
+    "Generated publication journal"
+  );
+  const journal = parseCanonicalCatalogPublicationJournal(journalSource);
+  const entries = await readdir(publicationRoot, { withFileTypes: true });
+  const allowed = new Set(["journal.v1.json", journal.stageDirectory]);
+  for (const entry of entries) {
+    if (
+      !allowed.has(entry.name) ||
+      entry.isSymbolicLink() ||
+      (entry.name === "journal.v1.json" && !entry.isFile()) ||
+      (entry.name === journal.stageDirectory && !entry.isDirectory())
+    ) {
+      throw new Error(
+        `Generated publication staging area contains unexplained state ${entry.name}`
+      );
+    }
+  }
+  if (
+    journal.state !== "PREPARED" &&
+    !entries.some(
+      (entry) =>
+        entry.name === journal.stageDirectory &&
+        entry.isDirectory() &&
+        !entry.isSymbolicLink()
+    )
+  ) {
+    throw new Error("Generated publication stage is missing");
+  }
+  return true;
+}
+
 async function reusePublishedGeneration(
   root: string,
   generatedRoot: string
@@ -117,7 +164,8 @@ async function reusePublishedGeneration(
   if (topLevel.length === 0) {
     return undefined;
   }
-  const expectedTopLevel = new Set([
+  const allowedTopLevel = new Set([
+    ".catalog-publication",
     "builds",
     "catalog-generation-receipt.v1.json",
     "catalog.lock.json",
@@ -125,13 +173,31 @@ async function reusePublishedGeneration(
     "index.ts",
   ]);
   for (const entry of topLevel) {
-    if (!expectedTopLevel.has(entry.name) || entry.isSymbolicLink()) {
+    if (!allowedTopLevel.has(entry.name) || entry.isSymbolicLink()) {
       throw new Error(
         `Generated catalog contains unexplained state ${entry.name}`
       );
     }
   }
-  if (topLevel.length !== expectedTopLevel.size) {
+  if (await hasRecoverablePublicationJournal(generatedRoot)) {
+    return undefined;
+  }
+
+  const topLevelNames = new Set(topLevel.map((entry) => entry.name));
+  if (!topLevelNames.has("current.json")) {
+    if (
+      [...topLevelNames].some((name) => name !== "builds") ||
+      (topLevelNames.has("builds") &&
+        (await readdir(join(generatedRoot, "builds"))).length > 0)
+    ) {
+      throw new Error("Generated catalog control state is incomplete");
+    }
+    return undefined;
+  }
+  if (
+    !topLevelNames.has("index.ts") ||
+    !topLevelNames.has("catalog.lock.json")
+  ) {
     throw new Error("Generated catalog control state is incomplete");
   }
 
@@ -140,11 +206,25 @@ async function reusePublishedGeneration(
     "Generated current pointer"
   );
   const current = parseCanonicalCatalogCurrentPointer(currentSource);
-  const receiptSource = await readRegularText(
-    join(generatedRoot, "catalog-generation-receipt.v1.json"),
-    "Catalog generation receipt"
-  );
-  const receipt = parseCanonicalCatalogGenerationReceipt(receiptSource);
+  let receiptSource: string;
+  let receipt: ReturnType<typeof parseCanonicalCatalogGenerationReceipt>;
+  try {
+    receiptSource = await readRegularText(
+      join(generatedRoot, "catalog-generation-receipt.v1.json"),
+      "Catalog generation receipt"
+    );
+    receipt = parseCanonicalCatalogGenerationReceipt(receiptSource);
+  } catch (error) {
+    if (
+      errorCode(error) === "ENOENT" ||
+      !topLevelNames.has("catalog-generation-receipt.v1.json") ||
+      error instanceof SyntaxError ||
+      error instanceof TypeError
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
   if (receipt.abi.artifactAbi === NON_AUTHORITATIVE_ARTIFACT_ABI) {
     throw new Error(
       "Non-authoritative test generation receipt cannot be reused in production"
@@ -188,10 +268,17 @@ async function reusePublishedGeneration(
   }
 
   const buildsRoot = join(generatedRoot, "builds");
-  if ((await pathKind(buildsRoot)) !== "directory") {
-    throw new Error("Generated catalog builds directory is missing");
+  const buildsKind = await pathKind(buildsRoot);
+  if (buildsKind === "missing") {
+    return undefined;
+  }
+  if (buildsKind !== "directory") {
+    throw new Error("Generated catalog builds directory is not a directory");
   }
   const builds = await readdir(buildsRoot, { withFileTypes: true });
+  if (builds.length === 0) {
+    return undefined;
+  }
   if (
     builds.length !== 1 ||
     builds[0]?.name !== basename(current.directory) ||
