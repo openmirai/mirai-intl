@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -155,7 +156,7 @@ async function loadGeneratedModule(
   representation: DescriptorRepresentation,
   output: ReturnType<typeof compileCatalog> = compiled
 ): Promise<Readonly<Record<string, unknown>>> {
-  const root = await mkdtemp(join(import.meta.dirname, ".generated-"));
+  const root = await createGeneratedModuleRoot();
   const modulePath = join(root, "catalog.descriptors.gen.mjs");
   const artifacts = emitArtifacts(output, representation);
   const packageDirectory = join(root, "node_modules", "@openmirai");
@@ -175,6 +176,10 @@ async function loadGeneratedModule(
   } finally {
     await rm(root, { force: true, recursive: true });
   }
+}
+
+function createGeneratedModuleRoot(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "mirai-intl-runtime-generated-"));
 }
 
 async function loadGeneratedTree(
@@ -452,6 +457,23 @@ function catalogWithoutRenderPayloads(): RuntimeCatalog {
     })),
   };
 }
+
+describe("generated module fixture isolation", () => {
+  it("creates generated descriptor modules outside the repository worktree", async () => {
+    const root = await createGeneratedModuleRoot();
+    const repositoryRoot = resolve(import.meta.dirname, "../../..");
+
+    try {
+      const relativeRoot = relative(repositoryRoot, root);
+      expect(
+        relativeRoot === "" ||
+          (!relativeRoot.startsWith("..") && !isAbsolute(relativeRoot))
+      ).toBe(false);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
 
 describe.each(backendMatrix)("$name strict runtime", (backendCase) => {
   it("renders its supported EN/TH golden corpus", () => {
