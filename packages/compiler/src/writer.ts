@@ -1405,9 +1405,7 @@ async function assertKnownBuilds(
   }
 }
 
-async function cleanupLegacySiblingStages(
-  outputRoot: string
-): Promise<boolean> {
+async function assertNoLegacySiblingStages(outputRoot: string): Promise<void> {
   const parent = dirname(outputRoot);
   const escapedBase = basename(outputRoot).replaceAll(
     /[.*+?^${}()|[\]\\]/gu,
@@ -1417,31 +1415,30 @@ async function cleanupLegacySiblingStages(
     `^\\.${escapedBase}\\.[\\da-z-]+\\.tmp$`,
     "u"
   );
-  let changed = false;
   for (const entry of await readdir(parent, { withFileTypes: true })) {
     if (!reservedName.test(entry.name)) {
       continue;
     }
-    if (!entry.isDirectory() || entry.isSymbolicLink()) {
-      throw new Error(
-        `Legacy generated staging entry ${entry.name} must be a non-symlink directory`
-      );
-    }
-    const candidate = join(parent, entry.name);
-    if (
-      !isWithin(parent, candidate) ||
-      !isSamePath(dirname(candidate), parent) ||
-      !isSamePath(await realpath(candidate), candidate)
-    ) {
-      throw new Error("Legacy generated staging cleanup escaped its parent");
-    }
-    await rm(candidate, { recursive: true });
-    changed = true;
+    throw new Error(
+      `Legacy generated staging entry ${entry.name} has no journal ownership proof`
+    );
   }
-  if (changed) {
-    await syncDirectory(parent);
+}
+
+async function discardUninstalledPublication(
+  root: string,
+  publicationRoot: string,
+  journal: PublicationJournal
+): Promise<void> {
+  if (journal.state !== "STAGED_DURABLE") {
+    throw new Error("Cannot discard publication after payload installation");
   }
-  return changed;
+  const stageRoot = join(publicationRoot, journal.stageDirectory);
+  await rm(stageRoot, { recursive: true });
+  await rm(join(publicationRoot, journalFileName));
+  await syncDirectory(publicationRoot);
+  await rm(publicationRoot, { recursive: true });
+  await syncDirectory(root);
 }
 
 async function assertCommittedPlan(
@@ -2119,18 +2116,22 @@ async function runPublication(
       previousDirectory = current.directory;
     }
     if (current && canonicalJson(current) === canonicalJson(expectedPointer)) {
+      let committed = false;
       try {
         await assertCommittedPlan(root, outputRoot, plan);
-        const cleanedLegacyStage = await cleanupLegacySiblingStages(outputRoot);
+        committed = true;
+      } catch {
+        // Only exact expected bytes may be reconstructed through the journal.
+      }
+      if (committed) {
+        await assertNoLegacySiblingStages(outputRoot);
         await rm(publicationRoot, { recursive: true });
         await syncDirectory(root);
         return {
-          changed: cleanedLegacyStage,
+          changed: false,
           contentHash: plan.contentHash,
           directory: plan.destination,
         };
-      } catch {
-        // Only exact expected bytes may be reconstructed through the journal.
       }
     }
     journal = {
@@ -2178,15 +2179,20 @@ async function runPublication(
       plan.manifest,
       "Staged generated artifact directory"
     );
-    const reconstructed = await options.beforePayloadInstall?.(plan.snapshot);
-    if (
-      reconstructed !== undefined &&
-      canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
-        canonicalJson(plan.snapshot)
-    ) {
-      throw new Error(
-        "Catalog generation inputs changed before payload installation"
-      );
+    try {
+      const reconstructed = await options.beforePayloadInstall?.(plan.snapshot);
+      if (
+        reconstructed !== undefined &&
+        canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
+          canonicalJson(plan.snapshot)
+      ) {
+        throw new Error(
+          "Catalog generation inputs changed before payload installation"
+        );
+      }
+    } catch (error) {
+      await discardUninstalledPublication(root, publicationRoot, journal);
+      throw error;
     }
     await installPayload(root, outputRoot, stageRoot, plan);
     journal = await advanceJournal(
@@ -2321,6 +2327,7 @@ async function runPublication(
         ? basename(journal.previousDirectory)
         : undefined
     );
+    await assertNoLegacySiblingStages(outputRoot);
     await removePreviousPayload(
       root,
       outputRoot,
@@ -2329,7 +2336,6 @@ async function runPublication(
     );
     await options.publicationHooks?.afterPreviousPayloadRemoval?.();
     await assertKnownBuilds(root, [plan.directoryName]);
-    await cleanupLegacySiblingStages(outputRoot);
     await rm(stageRoot, { force: true, recursive: true });
     await rm(join(publicationRoot, journalFileName));
     await syncDirectory(publicationRoot);

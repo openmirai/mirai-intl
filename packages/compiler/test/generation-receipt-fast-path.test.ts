@@ -398,6 +398,18 @@ describe("catalog generation receipt fast path", () => {
       await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
         "Catalog generation inputs changed before payload installation"
       );
+      await expect(
+        readFile(
+          join(root, "src/i18n/generated/.catalog-publication/journal.v1.json"),
+          "utf8"
+        )
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: true,
+      });
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: false,
+      });
     } finally {
       await rm(container, { force: true, recursive: true });
     }

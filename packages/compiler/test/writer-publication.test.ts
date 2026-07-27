@@ -176,7 +176,7 @@ describe("crash-safe catalog publication", () => {
     }
   });
 
-  it("removes only confined legacy sibling staging directories", async () => {
+  it("hard-fails sibling staging without exact journal ownership proof", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-publication-"));
     const root = join(container, "generated");
     const external = await mkdtemp(join(tmpdir(), "mirai-intl-external-"));
@@ -185,10 +185,10 @@ describe("crash-safe catalog publication", () => {
       await writeArtifactSet(root, artifacts);
       const abandoned = join(dirname(root), ".generated.abandoned.tmp");
       await mkdir(abandoned);
-      await expect(writeArtifactSet(root, artifacts)).resolves.toMatchObject({
-        changed: true,
-      });
-      await expect(readdir(dirname(root))).resolves.not.toContain(
+      await expect(writeArtifactSet(root, artifacts)).rejects.toThrowError(
+        /no journal ownership proof/u
+      );
+      await expect(readdir(dirname(root))).resolves.toContain(
         basename(abandoned)
       );
 
@@ -198,7 +198,7 @@ describe("crash-safe catalog publication", () => {
         "dir"
       );
       await expect(writeArtifactSet(root, artifacts)).rejects.toThrowError(
-        /Legacy generated staging entry|symbolic link/u
+        /no journal ownership proof/u
       );
       await expect(readdir(external)).resolves.toEqual([]);
     } finally {
@@ -224,6 +224,12 @@ describe("crash-safe catalog publication", () => {
       ).rejects.toThrowError(/inconsistent|changed/u);
       await expect(readFile(join(root, "current.json"))).rejects.toMatchObject({
         code: "ENOENT",
+      });
+      await expect(
+        readdir(join(root, ".catalog-publication"))
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(writeArtifactSet(root, artifacts)).resolves.toMatchObject({
+        changed: true,
       });
     } finally {
       await rm(root, { force: true, recursive: true });
