@@ -1068,11 +1068,6 @@ function finiteDependencyModules(
     ts.forEachChild(node, collectDynamicDependencies);
   };
   collectDynamicDependencies(sourceFile);
-  for (const translatorName of [...translatorNames].toSorted(
-    compareCanonicalStrings
-  )) {
-    traceName(translatorName);
-  }
   return modules;
 }
 
@@ -1409,6 +1404,9 @@ function createProgram(
           resolvedFileName: generatedFacadeId,
         };
       }
+      if (containingFile === id && !finiteModules.has(moduleName)) {
+        return undefined;
+      }
       const traced = resolveModuleWithFrontier(
         moduleName,
         containingFile,
@@ -1434,9 +1432,6 @@ function createProgram(
         return isWithin(catalog.selectedCanonicalDirectory, canonical)
           ? resolution
           : undefined;
-      }
-      if (containingFile === id && !finiteModules.has(moduleName)) {
-        return undefined;
       }
       if (!isAllowedProvider(canonical, resolution)) {
         return undefined;

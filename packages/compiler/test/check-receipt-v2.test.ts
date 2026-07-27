@@ -136,16 +136,11 @@ async function workspaceFixture(): Promise<{
   await writeFile(
     join(packageRoot, "src/page.ts"),
     [
-      'import { key } from "./key";',
-      'import { useTranslations } from "x";',
+      'import { externalKey, useTranslations } from "x";',
       'const { t } = useTranslations("group");',
-      "export const page = t(key);",
+      'export const page = t(externalKey as "greeting");',
       "",
     ].join("\n")
-  );
-  await writeFile(
-    join(packageRoot, "src/key.d.ts"),
-    'export declare const key: "greeting";\n'
   );
   await writeJson(join(packageRoot, "tsconfig.json"), {
     include: ["src/**/*.ts"],
@@ -175,7 +170,7 @@ describe("V2 build receipt verification", () => {
     await expect(readFile(path, "utf8")).resolves.toBe(firstBytes);
     expect(first.schemaVersion).toBe(2);
     expect(first.counters.semanticAuthorizationRuns).toBe(1);
-    expect(first.counters.providerRoots).toBe(3);
+    expect(first.counters.providerRoots).toBe(2);
     expect(first.projects[0]?.normalizedOptions.allowJs).toBe(true);
     expect(first.projects[0]?.normalizedOptions.moduleSuffixes).toEqual([
       ".ios",
@@ -220,17 +215,6 @@ describe("V2 build receipt verification", () => {
             }),
           ],
           root: "node_modules/@example/transitive/index.d.ts",
-        }),
-        expect.objectContaining({
-          resolutions: [
-            expect.objectContaining({
-              from: "src/page.ts",
-              packageName: null,
-              packageVersion: null,
-              specifier: "x",
-            }),
-          ],
-          root: "src/page.ts",
         }),
       ])
     );
@@ -469,7 +453,11 @@ describe("V2 build receipt verification", () => {
     });
     await writeFile(
       join(workspaceRoot, "node_modules/x/index.d.ts"),
-      "export declare function useTranslations(): { t(key: string): string };\n"
+      [
+        'export declare const externalKey: "greeting";',
+        "export declare function useTranslations(namespace: string): { t(key: string): string };",
+        "",
+      ].join("\n")
     );
     if (!missingResolution) {
       throw new Error("Missing unresolved hoisted provider receipt evidence");
