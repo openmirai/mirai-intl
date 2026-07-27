@@ -10,6 +10,7 @@ import {
   parseCanonicalCatalogCurrentPointer,
   parseCanonicalCatalogGenerationReceipt,
   parseCatalogCurrentPointer,
+  parseCatalogGenerationInputIdentity,
   parseCatalogGenerationReceipt,
   parseCatalogGenerationSnapshot,
   parseCatalogPublicationJournal,
@@ -28,7 +29,7 @@ function manifest(path: string) {
   return { entries, hash: canonicalHash(entries) };
 }
 
-function inputIdentity(): CatalogGenerationInputIdentityV1 {
+function inputIdentity(withLock = true): CatalogGenerationInputIdentityV1 {
   const compilerModules = manifest("generation.ts");
   const packageFiles = manifest("index.js");
   const packageBase = {
@@ -42,10 +43,12 @@ function inputIdentity(): CatalogGenerationInputIdentityV1 {
     packageJsonHash: hash("icu-package-json"),
     version: "3.5.14",
   };
-  const applicationBase = {
-    lock: { hash: hash("lock"), name: "pnpm-lock.yaml" },
-    packageJsonHash: hash("application-package-json"),
-  };
+  const applicationBase = withLock
+    ? {
+        lock: { hash: hash("lock"), name: "pnpm-lock.yaml" },
+        packageJsonHash: hash("application-package-json"),
+      }
+    : { packageJsonHash: hash("application-package-json") };
   return buildCatalogGenerationInputIdentity({
     application: { ...applicationBase, hash: canonicalHash(applicationBase) },
     artifactAbi: "mirai-intl-artifact-v2",
@@ -98,6 +101,49 @@ function setAtPath(
 }
 
 describe("catalog generation snapshot contracts", () => {
+  it("canonically binds application identities with and without a lock", () => {
+    const locked = inputIdentity();
+    expect(locked.application.hash).toBe(
+      canonicalHash({
+        lock: locked.application.lock,
+        packageJsonHash: locked.application.packageJsonHash,
+      })
+    );
+
+    const unlocked = inputIdentity(false);
+    expect(unlocked.application).not.toHaveProperty("lock");
+    expect(unlocked.application.hash).toBe(
+      canonicalHash({
+        packageJsonHash: unlocked.application.packageJsonHash,
+      })
+    );
+    expect(parseCatalogGenerationInputIdentity(unlocked)).toEqual(unlocked);
+    expect(canonicalJson(unlocked)).toContain('"application"');
+
+    expect(() =>
+      parseCatalogGenerationInputIdentity({
+        ...unlocked,
+        application: { ...unlocked.application, lock: undefined },
+      })
+    ).toThrow("must be a plain object");
+
+    const changedLock = structuredClone(locked);
+    const currentLock = changedLock.application.lock;
+    if (!currentLock) {
+      throw new Error("Expected a lock fixture");
+    }
+    const mutated = {
+      ...changedLock,
+      application: {
+        ...changedLock.application,
+        lock: { ...currentLock, hash: hash("changed-lock") },
+      },
+    };
+    expect(() => parseCatalogGenerationInputIdentity(mutated)).toThrow(
+      "does not bind application inputs"
+    );
+  });
+
   it("normalizes and orders payloads while excluding the receipt", () => {
     const payload = buildCatalogPayloadManifest([
       { hash: hash("z"), mode: null, path: "z.json", size: 1 },

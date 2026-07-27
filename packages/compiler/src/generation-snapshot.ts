@@ -271,13 +271,19 @@ function parseApplication(
   value: unknown,
   context: string
 ): ApplicationPackageIdentity {
-  const object = exact(value, ["hash", "lock", "packageJsonHash"], context);
+  const candidate = record(value, context);
+  const hasLock = Object.hasOwn(candidate, "lock");
+  const object = exact(
+    candidate,
+    hasLock ? ["hash", "lock", "packageJsonHash"] : ["hash", "packageJsonHash"],
+    context
+  );
   const packageJsonHash = sha(
     object.packageJsonHash,
     `${context}.packageJsonHash`
   );
   let lock: ApplicationPackageIdentity["lock"];
-  if (object.lock === undefined) {
+  if (!hasLock) {
     lock = undefined;
   } else {
     const lockObject = exact(object.lock, ["hash", "name"], `${context}.lock`);
@@ -287,10 +293,12 @@ function parseApplication(
     };
   }
   const hash = sha(object.hash, `${context}.hash`);
-  if (hash !== canonicalHash({ lock, packageJsonHash })) {
+  const inputs =
+    lock === undefined ? { packageJsonHash } : { lock, packageJsonHash };
+  if (hash !== canonicalHash(inputs)) {
     fail(`${context}.hash`, "does not bind application inputs");
   }
-  return { hash, lock, packageJsonHash };
+  return { ...inputs, hash };
 }
 
 function parseCompiler(

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Sha256 } from "@openmirai/intl-abi";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { canonicalHash } from "../src/canonical";
 import {
   computeApplicationPackageIdentity,
   computeCompilerImplementationIdentity,
@@ -191,6 +192,20 @@ describe("TypeScript lib identity", () => {
 });
 
 describe("application package identity", () => {
+  it("omits an absent workspace lock from its canonical identity", async () => {
+    const root = await temporaryRoot("application-without-lock");
+    await write(
+      join(root, "package.json"),
+      JSON.stringify({ name: "application", private: true })
+    );
+
+    const identity = await computeApplicationPackageIdentity(root);
+    expect(identity).not.toHaveProperty("lock");
+    expect(identity.hash).toBe(
+      canonicalHash({ packageJsonHash: identity.packageJsonHash })
+    );
+  });
+
   it("is path-independent, uncached, and binds workspace lock mutations", async () => {
     const first = await temporaryRoot("application-a");
     const second = await temporaryRoot("application-b");
@@ -203,6 +218,16 @@ describe("application package identity", () => {
     }
 
     const before = await computeApplicationPackageIdentity(first);
+    expect(before.lock).toEqual({
+      hash: expect.stringMatching(/^sha256:/u),
+      name: "pnpm-lock.yaml",
+    });
+    expect(before.hash).toBe(
+      canonicalHash({
+        lock: before.lock,
+        packageJsonHash: before.packageJsonHash,
+      })
+    );
     expect(await computeApplicationPackageIdentity(second)).toEqual(before);
     await write(
       join(first, "package.json"),

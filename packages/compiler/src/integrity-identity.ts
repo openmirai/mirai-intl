@@ -44,11 +44,11 @@ export interface TypeScriptLibIdentity {
 
 export interface ApplicationPackageIdentity {
   readonly hash: Sha256;
-  readonly lock:
-    | {
-        readonly hash: Sha256;
-        readonly name: string;
-      }
+  readonly lock?:
+    | Readonly<{
+        hash: Sha256;
+        name: string;
+      }>
     | undefined;
   readonly packageJsonHash: Sha256;
 }
@@ -463,11 +463,9 @@ export async function computeApplicationPackageIdentity(
           hash: hashBytes(await readRegularFile(workspaceLock.path)),
           name: workspaceLock.name,
         };
-  return {
-    hash: canonicalHash({ lock, packageJsonHash }),
-    lock,
-    packageJsonHash,
-  };
+  const inputs =
+    lock === undefined ? { packageJsonHash } : { lock, packageJsonHash };
+  return { ...inputs, hash: canonicalHash(inputs) };
 }
 
 async function computeDefaultImmutableIntegrityIdentity(): Promise<ImmutableIntegrityIdentity> {
