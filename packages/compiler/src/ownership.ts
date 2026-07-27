@@ -228,9 +228,9 @@ async function projectFiles(
     [...edges]
       .toSorted(([left], [right]) => left.localeCompare(right))
       .map(async ([path, edge]) => ({
-        extends: edge.extends
-          .map((entry) => receiptRelativePath(workspaceRoot, entry))
-          .toSorted(),
+        extends: edge.extends.map((entry) =>
+          receiptRelativePath(workspaceRoot, entry)
+        ),
         hash: sha256(await readFile(path, "utf8")),
         path: receiptRelativePath(workspaceRoot, path),
         references: edge.references

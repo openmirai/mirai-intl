@@ -36,6 +36,10 @@ async function fixture(): Promise<string> {
   });
   await mkdir(join(root, "src"), { recursive: true });
   await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
+  await writeFile(join(root, "src/legacy.js"), "export const legacy = 1;\n");
+  await writeJson(join(root, "tsconfig.a.json"), {
+    compilerOptions: { allowJs: true },
+  });
   await writeJson(join(root, "tsconfig.base.json"), {
     compilerOptions: { strict: true },
   });
@@ -43,9 +47,12 @@ async function fixture(): Promise<string> {
     compilerOptions: { composite: true },
     files: [],
   });
+  await writeJson(join(root, "tsconfig.z.json"), {
+    compilerOptions: { allowJs: false },
+  });
   await writeJson(join(root, "tsconfig.json"), {
-    extends: "./tsconfig.base.json",
-    include: ["src/**/*.ts"],
+    extends: ["./tsconfig.base.json", "./tsconfig.z.json", "./tsconfig.a.json"],
+    include: ["src/**/*"],
     references: [{ path: "./tsconfig.types.json" }],
   });
   await writeJson(join(root, "mirai-intl.config.json"), {
@@ -73,9 +80,24 @@ describe("V2 build receipt verification", () => {
     await expect(readFile(path, "utf8")).resolves.toBe(firstBytes);
     expect(first.schemaVersion).toBe(2);
     expect(first.counters.semanticAuthorizationRuns).toBe(1);
+    expect(first.projects[0]?.normalizedOptions.allowJs).toBe(true);
+    expect(first.projects[0]?.rootFiles).toEqual(
+      expect.arrayContaining(["src/legacy.js", "src/page.ts"])
+    );
     expect(
       first.projects[0]?.configManifest.map((entry) => entry.path)
-    ).toEqual(["tsconfig.base.json", "tsconfig.json", "tsconfig.types.json"]);
+    ).toEqual([
+      "tsconfig.a.json",
+      "tsconfig.base.json",
+      "tsconfig.json",
+      "tsconfig.types.json",
+      "tsconfig.z.json",
+    ]);
+    expect(
+      first.projects[0]?.configManifest.find(
+        (entry) => entry.path === "tsconfig.json"
+      )?.extends
+    ).toEqual(["tsconfig.base.json", "tsconfig.z.json", "tsconfig.a.json"]);
 
     vi.resetModules();
     vi.doMock("typescript", () => {
@@ -151,7 +173,7 @@ describe("V2 build receipt verification", () => {
       "addition",
       async (root: string) => {
         await writeFile(
-          join(root, "src/added.ts"),
+          join(root, "src/added.js"),
           "export const added = 1;\n"
         );
       },
@@ -160,14 +182,14 @@ describe("V2 build receipt verification", () => {
     [
       "deletion",
       async (root: string) => {
-        await rm(join(root, "src/page.ts"));
+        await rm(join(root, "src/legacy.js"));
       },
       /receipt input must be a regular file/u,
     ],
     [
       "rename",
       async (root: string) => {
-        await rename(join(root, "src/page.ts"), join(root, "src/renamed.ts"));
+        await rename(join(root, "src/legacy.js"), join(root, "src/renamed.js"));
       },
       /receipt input must be a regular file/u,
     ],

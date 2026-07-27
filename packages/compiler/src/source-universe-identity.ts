@@ -172,6 +172,59 @@ function expansionRoot(origin: string, pattern: string): string {
   return candidate.endsWith(sep) ? candidate.slice(0, -1) : candidate;
 }
 
+function extensionPriority(path: string): Readonly<{
+  identity: string;
+  priority: number;
+}> {
+  for (const [suffix, priority] of [
+    [".d.mts", 0],
+    [".mts", 1],
+    [".mjs", 2],
+    [".d.cts", 0],
+    [".cts", 1],
+    [".cjs", 2],
+    [".d.ts", 0],
+    [".ts", 1],
+    [".tsx", 2],
+    [".js", 3],
+    [".jsx", 4],
+  ] as const) {
+    if (path.endsWith(suffix)) {
+      let family = "script";
+      if (suffix.includes("mts") || suffix === ".mjs") {
+        family = "module";
+      } else if (suffix.includes("cts") || suffix === ".cjs") {
+        family = "commonjs";
+      }
+      return {
+        identity: `${path.slice(0, -suffix.length)}\u0000${family}`,
+        priority,
+      };
+    }
+  }
+  return { identity: path, priority: 0 };
+}
+
+function applyExtensionPriority(
+  files: ReadonlyArray<string>
+): ReadonlyArray<string> {
+  const selected = new Map<
+    string,
+    Readonly<{ path: string; priority: number }>
+  >();
+  for (const path of files) {
+    const candidate = extensionPriority(path);
+    const current = selected.get(candidate.identity);
+    if (!current || candidate.priority < current.priority) {
+      selected.set(candidate.identity, {
+        path,
+        priority: candidate.priority,
+      });
+    }
+  }
+  return [...selected.values()].map(({ path }) => path).toSorted();
+}
+
 function mergeConfig(
   inherited: EffectiveConfig,
   source: Record<string, unknown>,
@@ -335,5 +388,7 @@ export async function reconstructProjectRootFiles(
       );
     })
     .map((file) => workspacePath(root, file));
-  return [...new Set([...explicitFiles, ...includedFiles])].toSorted();
+  return applyExtensionPriority([
+    ...new Set([...explicitFiles, ...includedFiles]),
+  ]);
 }

@@ -81,8 +81,16 @@ async function fixture(): Promise<string> {
   });
   await mkdir(join(root, "src"), { recursive: true });
   await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
+  await writeFile(join(root, "src/legacy.js"), "export const legacy = 1;\n");
+  await writeJson(join(root, "tsconfig.a.json"), {
+    compilerOptions: { allowJs: true },
+  });
+  await writeJson(join(root, "tsconfig.z.json"), {
+    compilerOptions: { allowJs: false },
+  });
   await writeJson(join(root, "tsconfig.json"), {
-    include: ["src/**/*.ts"],
+    extends: ["./tsconfig.z.json", "./tsconfig.a.json"],
+    include: ["src/**/*"],
   });
   await writeJson(join(root, "mirai-intl.config.json"), {
     checkProjects: [{ path: "tsconfig.json", role: "owner" }],
@@ -137,7 +145,7 @@ describe("complete authorization integrity mutation barrier", () => {
       "addition",
       async (root: string) => {
         await writeFile(
-          join(root, "src/added.ts"),
+          join(root, "src/added.js"),
           "export const added = 1;\n"
         );
       },
@@ -145,13 +153,13 @@ describe("complete authorization integrity mutation barrier", () => {
     [
       "deletion",
       async (root: string) => {
-        await rm(join(root, "src/page.ts"));
+        await rm(join(root, "src/legacy.js"));
       },
     ],
     [
       "rename",
       async (root: string) => {
-        await rename(join(root, "src/page.ts"), join(root, "src/renamed.ts"));
+        await rename(join(root, "src/legacy.js"), join(root, "src/renamed.js"));
       },
     ],
   ] as const)(

@@ -279,7 +279,7 @@ export async function verifyConventionBuildReceipt(
   for (const { project, rootFiles } of reconstructedProjects) {
     if (canonicalJson(rootFiles) !== canonicalJson(project.rootFiles)) {
       throw new Error(
-        `Mirai Intl check-project source universe is stale: ${project.path}`
+        `Mirai Intl check-project source universe is stale: ${project.path}; expected ${canonicalJson(project.rootFiles)}, received ${canonicalJson(rootFiles)}`
       );
     }
   }

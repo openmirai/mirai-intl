@@ -338,7 +338,13 @@ function parseTsconfig(
     const entries = input.map((entry, index) =>
       path(entry, `${context}.${field}[${index}]`, normalize)
     );
-    sortedUnique(entries, (entry) => entry, `${context}.${field}`);
+    if (field === "extends") {
+      if (new Set(entries).size !== entries.length) {
+        fail(`${context}.${field}`, "contains duplicate identities");
+      }
+    } else {
+      sortedUnique(entries, (entry) => entry, `${context}.${field}`);
+    }
     return entries;
   };
   return {
