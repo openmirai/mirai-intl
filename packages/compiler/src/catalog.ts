@@ -11,6 +11,7 @@ import {
   emptyObjectSchema,
 } from "@openmirai/intl-abi";
 import type {
+  IntlCheckCanonicalJsonV2,
   IntlCheckExceptionV1,
   IntlCheckProjectV1,
   IrNode,
@@ -23,6 +24,19 @@ import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import { COMPILER_VERSION, compileCatalog } from "./compile";
 import { emitArtifacts } from "./emit";
 import type { DescriptorRepresentation, EmittedArtifacts } from "./emit";
+import {
+  buildCatalogGenerationInputIdentity,
+  buildCatalogGenerationSnapshot,
+} from "./generation-snapshot";
+import type {
+  CatalogGenerationInputIdentityV1,
+  CatalogGenerationSnapshot,
+} from "./generation-snapshot";
+import {
+  computeApplicationPackageIdentity,
+  createIntegrityManifest,
+  getImmutableIntegrityIdentity,
+} from "./integrity-identity";
 import { inferMessageContract, inspectMessageSyntax } from "./parser";
 import type { CatalogSource, MessageSource } from "./source";
 import { verifyArtifactSet, writeArtifactSet } from "./writer";
@@ -81,6 +95,7 @@ type MessageSchema = Readonly<{
 type SourceFileEvidence = Readonly<{
   hash: `sha256:${string}`;
   path: string;
+  size: number;
 }>;
 
 export type ConventionFramework = "next" | "vite";
@@ -221,11 +236,10 @@ const compiledConventionCatalogs = new WeakMap<
 function compiledConventionCatalog(
   loaded: LoadedConventionCatalog
 ): ReturnType<typeof compileCatalog> {
-  const compiled = compiledConventionCatalogs.get(loaded);
-  if (!compiled) {
-    throw new Error(
-      "Convention catalog snapshot was not loaded by the compiler"
-    );
+  let compiled = compiledConventionCatalogs.get(loaded);
+  if (compiled === undefined) {
+    compiled = compileCatalog(loaded.source);
+    compiledConventionCatalogs.set(loaded, compiled);
   }
   return compiled;
 }
@@ -743,7 +757,11 @@ async function discoverSource(
               ? toJsonValue(assertObject(parsed, relativePath), relativePath)
               : toJsonValue(parsed, relativePath),
         };
-        files.push({ hash: sha256(content), path: relativePath });
+        files.push({
+          hash: sha256(content),
+          path: relativePath,
+          size: Buffer.byteLength(content),
+        });
       }
       const mount =
         logicalParts.length > 0 && flatten.has(logicalParts[0] ?? "")
@@ -2388,8 +2406,9 @@ function conventionExceptions(
   };
 }
 
-export async function loadConventionCatalog(
-  packageRoot: string
+async function loadConventionCatalogSnapshot(
+  packageRoot: string,
+  compile: boolean
 ): Promise<LoadedConventionCatalog> {
   const repositoryRoot = await realpath(resolve(packageRoot));
   const packagePath = join(repositoryRoot, "package.json");
@@ -2598,7 +2617,6 @@ export async function loadConventionCatalog(
     rendererCapabilityId: config.catalog.rendererCapabilityId,
     sourceLocale: config.catalog.sourceLocale,
   };
-  const compiled = compileCatalog(source);
   const outputRoot = await confinedProspectivePath(
     repositoryRoot,
     resolve(repositoryRoot, config.output),
@@ -2680,8 +2698,96 @@ export async function loadConventionCatalog(
         .toSorted(compareCanonicalStrings),
     },
   };
-  compiledConventionCatalogs.set(loaded, compiled);
+  if (compile) {
+    compiledConventionCatalogs.set(loaded, compileCatalog(source));
+  }
   return loaded;
+}
+
+export async function loadConventionCatalog(
+  packageRoot: string
+): Promise<LoadedConventionCatalog> {
+  return loadConventionCatalogSnapshot(packageRoot, true);
+}
+
+const catalogArtifactAbi = "mirai-intl-artifact-v2";
+
+function canonicalIdentityValue(value: unknown): IntlCheckCanonicalJsonV2 {
+  return JSON.parse(canonicalJson(value)) as IntlCheckCanonicalJsonV2;
+}
+
+function normalizedGenerationConfig(
+  loaded: LoadedConventionCatalog
+): IntlCheckCanonicalJsonV2 {
+  return canonicalIdentityValue({
+    catalog: loaded.config.catalog,
+    checkProjects: loaded.config.checkProjects,
+    discovery: loaded.discovery,
+    inputs: {
+      discoveryPolicyHash: loaded.inputs.discoveryPolicyHash,
+      exceptionsHash: loaded.inputs.exceptionsHash,
+      exceptionsPresent: loaded.inputs.exceptionsPresent,
+      messageContractHash: loaded.inputs.messageContractHash,
+    },
+    output: loaded.config.output,
+    representation: loaded.config.representation,
+    sources: loaded.config.sources.map((source) => ({
+      dependency: source.dependency ?? null,
+      excludeDirectories: source.excludeDirectories,
+      flattenDirectories: source.flattenDirectories,
+      mount: source.mount,
+      root: source.root,
+    })),
+  });
+}
+
+async function generationInputIdentity(
+  loaded: LoadedConventionCatalog
+): Promise<CatalogGenerationInputIdentityV1> {
+  const [immutable, application] = await Promise.all([
+    getImmutableIntegrityIdentity(),
+    computeApplicationPackageIdentity(loaded.repositoryRoot),
+  ]);
+  const normalizedConfig = canonicalJson(normalizedGenerationConfig(loaded));
+  return buildCatalogGenerationInputIdentity({
+    application,
+    artifactAbi: catalogArtifactAbi,
+    compiler: immutable.compiler,
+    config: createIntegrityManifest([
+      {
+        hash: sha256(normalizedConfig),
+        path: "normalized-config.v1.json",
+        size: Buffer.byteLength(normalizedConfig),
+      },
+    ]),
+    environment: {
+      typescript: canonicalIdentityValue(immutable.typescript),
+      typescriptLibs: canonicalIdentityValue(immutable.typescriptLibs),
+    },
+    generationOptions: {
+      compact: true,
+      representation: loaded.config.representation,
+    },
+    icu: immutable.icuParser,
+    locales: createIntegrityManifest(loaded.inputs.sourceFiles),
+    runtimeAbi: RUNTIME_ABI,
+  });
+}
+
+/** @internal Load only the deterministic generation-input ledger. */
+export async function loadConventionCatalogGenerationInput(
+  packageRoot: string
+): Promise<
+  Readonly<{
+    generationInput: CatalogGenerationInputIdentityV1;
+    loaded: LoadedConventionCatalog;
+  }>
+> {
+  const loaded = await loadConventionCatalogSnapshot(packageRoot, false);
+  return {
+    generationInput: await generationInputIdentity(loaded),
+    loaded,
+  };
 }
 
 /** @internal Generate and retain the compiler-owned loaded snapshot. */
@@ -2695,6 +2801,7 @@ export async function generateConventionCatalogWithSnapshot(
   }>
 > {
   const loaded = await loadConventionCatalog(packageRoot);
+  const generationInput = await generationInputIdentity(loaded);
   const compiled = compiledConventionCatalog(loaded);
   const artifacts = emitArtifacts(compiled, loaded.config.representation, {
     compact: true,
@@ -2702,7 +2809,23 @@ export async function generateConventionCatalogWithSnapshot(
   const facade = stableFacadeOptions(loaded, compiled);
   const report = await createReport(loaded, compiled, artifacts, options);
   const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
+    beforePayloadInstall: async (
+      snapshot
+    ): Promise<CatalogGenerationSnapshot> => {
+      const current = await loadConventionCatalogGenerationInput(
+        loaded.repositoryRoot
+      );
+      return buildCatalogGenerationSnapshot({
+        catalogLockHash: snapshot.catalogLockHash,
+        generationInput: current.generationInput,
+        payloadContentHash: snapshot.payload.contentHash,
+        payloadDirectory: snapshot.payload.directory,
+        payloadEntries: snapshot.payload.manifest.entries,
+        stableFacadeHash: snapshot.stableFacadeHash,
+      });
+    },
     expectedCanonicalRoot: loaded.outputRoot,
+    generationInput,
   });
   return { loaded, result: { report, write } };
 }
@@ -2728,8 +2851,10 @@ export async function verifyLoadedConventionCatalog(
   });
   const facade = stableFacadeOptions(loaded, compiled);
   const report = await createReport(loaded, compiled, artifacts, options);
+  const generationInput = await generationInputIdentity(loaded);
   const write = await verifyArtifactSet(loaded.outputRoot, artifacts, facade, {
     expectedCanonicalRoot: loaded.outputRoot,
+    generationInput,
   });
   return { report, valid: true, write };
 }

@@ -1,7 +1,16 @@
-import { resolve } from "node:path";
+import { lstat, readFile, readdir } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 
-import { generateConventionCatalogWithSnapshot } from "./catalog";
+import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
+import {
+  generateConventionCatalogWithSnapshot,
+  loadConventionCatalogGenerationInput,
+} from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
+import {
+  parseCanonicalCatalogCurrentPointer,
+  parseCanonicalCatalogGenerationReceipt,
+} from "./generation-snapshot";
 import type { MiraiIntlTransformOptions } from "./transform";
 
 export type GeneratedCatalogState = Readonly<{
@@ -12,6 +21,198 @@ export type GeneratedCatalogState = Readonly<{
 const generations = new Map<string, Promise<GeneratedCatalogState>>();
 const activeEnsures = new Map<string, Promise<GeneratedCatalogState>>();
 const processEnsures = new Map<string, Promise<GeneratedCatalogState>>();
+
+function errorCode(error: unknown): unknown {
+  return error && typeof error === "object"
+    ? Reflect.get(error, "code")
+    : undefined;
+}
+
+async function pathKind(
+  path: string
+): Promise<"directory" | "file" | "missing"> {
+  try {
+    const entry = await lstat(path);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Generated catalog contains symbolic link ${path}`);
+    }
+    if (entry.isDirectory()) {
+      return "directory";
+    }
+    if (entry.isFile()) {
+      return "file";
+    }
+    throw new Error(`Generated catalog contains non-regular entry ${path}`);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return "missing";
+    }
+    throw error;
+  }
+}
+
+async function readRegularText(path: string, label: string): Promise<string> {
+  if ((await pathKind(path)) !== "file") {
+    throw new Error(`${label} is missing or is not a regular file`);
+  }
+  return readFile(path, "utf8");
+}
+
+async function reusePublishedGeneration(
+  root: string,
+  generatedRoot: string
+): Promise<LoadedConventionCatalog | undefined> {
+  const rootKind = await pathKind(generatedRoot);
+  if (rootKind === "missing") {
+    return undefined;
+  }
+  if (rootKind !== "directory") {
+    throw new Error("Generated catalog root is not a regular directory");
+  }
+
+  const topLevel = (
+    await readdir(generatedRoot, { withFileTypes: true })
+  ).toSorted((left, right) => compareCanonicalStrings(left.name, right.name));
+  if (topLevel.length === 0) {
+    return undefined;
+  }
+  const expectedTopLevel = new Set([
+    "builds",
+    "catalog-generation-receipt.v1.json",
+    "catalog.lock.json",
+    "current.json",
+    "index.ts",
+  ]);
+  for (const entry of topLevel) {
+    if (!expectedTopLevel.has(entry.name) || entry.isSymbolicLink()) {
+      throw new Error(
+        `Generated catalog contains unexplained state ${entry.name}`
+      );
+    }
+  }
+  if (topLevel.length !== expectedTopLevel.size) {
+    throw new Error("Generated catalog control state is incomplete");
+  }
+
+  const currentSource = await readRegularText(
+    join(generatedRoot, "current.json"),
+    "Generated current pointer"
+  );
+  const current = parseCanonicalCatalogCurrentPointer(currentSource);
+  const receiptSource = await readRegularText(
+    join(generatedRoot, "catalog-generation-receipt.v1.json"),
+    "Catalog generation receipt"
+  );
+  const receipt = parseCanonicalCatalogGenerationReceipt(receiptSource);
+  if (sha256(receiptSource) !== current.generationReceiptHash) {
+    throw new Error(
+      "Generated current pointer does not bind its generation receipt"
+    );
+  }
+  const pointerBase = {
+    contentHash: current.contentHash,
+    directory: current.directory,
+    schemaVersion: 2 as const,
+  };
+  if (
+    canonicalJson(receipt.pointerBase) !== canonicalJson(pointerBase) ||
+    canonicalJson(receipt.selectorBase) !== canonicalJson(pointerBase)
+  ) {
+    throw new Error(
+      "Generated current pointer and generation receipt disagree"
+    );
+  }
+
+  const facadeSource = await readRegularText(
+    join(generatedRoot, "index.ts"),
+    "Generated stable facade"
+  );
+  if (sha256(facadeSource) !== receipt.stableFacadeHash) {
+    throw new Error("Generated stable facade is corrupt");
+  }
+  const lockSource = await readRegularText(
+    join(generatedRoot, "catalog.lock.json"),
+    "Generated catalog lock"
+  );
+  if (
+    lockSource !== `${canonicalJson(pointerBase)}\n` ||
+    sha256(lockSource) !== receipt.catalogLockHash
+  ) {
+    throw new Error("Generated catalog lock is corrupt");
+  }
+
+  const buildsRoot = join(generatedRoot, "builds");
+  if ((await pathKind(buildsRoot)) !== "directory") {
+    throw new Error("Generated catalog builds directory is missing");
+  }
+  const builds = await readdir(buildsRoot, { withFileTypes: true });
+  if (
+    builds.length !== 1 ||
+    builds[0]?.name !== basename(current.directory) ||
+    !builds[0].isDirectory() ||
+    builds[0].isSymbolicLink()
+  ) {
+    throw new Error(
+      "Generated catalog builds contain duplicate or unexplained state"
+    );
+  }
+  const payloadRoot = join(generatedRoot, current.directory);
+  if ((await pathKind(payloadRoot)) !== "directory") {
+    throw new Error("Selected generated catalog payload is missing");
+  }
+  const payloadEntries = (
+    await readdir(payloadRoot, { withFileTypes: true })
+  ).toSorted((left, right) => compareCanonicalStrings(left.name, right.name));
+  if (payloadEntries.length !== receipt.payload.manifest.entries.length) {
+    throw new Error("Generated catalog payload does not match its manifest");
+  }
+  const artifacts: Record<string, string> = {};
+  for (const [index, expected] of receipt.payload.manifest.entries.entries()) {
+    const actual = payloadEntries[index];
+    if (
+      actual?.name !== expected.path ||
+      !actual.isFile() ||
+      actual.isSymbolicLink()
+    ) {
+      throw new Error("Generated catalog payload does not match its manifest");
+    }
+    const path = join(payloadRoot, expected.path);
+    const source = await readRegularText(
+      path,
+      `Generated catalog payload ${expected.path}`
+    );
+    const file = await lstat(path);
+    if (
+      Buffer.byteLength(source) !== expected.size ||
+      sha256(source) !== expected.hash ||
+      (expected.mode !== null && (file.mode & 0o777) !== expected.mode)
+    ) {
+      throw new Error(`Generated catalog payload ${expected.path} is corrupt`);
+    }
+    artifacts[expected.path] = source;
+  }
+  if (sha256(canonicalJson(artifacts)) !== current.contentHash) {
+    throw new Error("Generated catalog payload content identity is corrupt");
+  }
+
+  const input = await loadConventionCatalogGenerationInput(root);
+  if (
+    sha256(canonicalJson(input.generationInput)) !== receipt.generationInputHash
+  ) {
+    return undefined;
+  }
+  if (
+    receipt.abi.artifactAbi !== input.generationInput.artifactAbi ||
+    receipt.abi.runtimeAbi !== input.generationInput.runtimeAbi ||
+    receipt.compilerHash !== input.generationInput.compiler.hash ||
+    receipt.icuHash !== input.generationInput.icu.hash
+  ) {
+    throw new Error(
+      "Catalog generation receipt does not bind its generation identities"
+    );
+  }
+  return input.loaded;
+}
 
 function resolvedOptions(options: MiraiIntlTransformOptions): Readonly<{
   generatedRoot: string;
@@ -33,9 +234,13 @@ function resolvedOptions(options: MiraiIntlTransformOptions): Readonly<{
 function serializeGeneration(
   options: MiraiIntlTransformOptions
 ): Promise<GeneratedCatalogState> {
-  const { key, root } = resolvedOptions(options);
+  const { generatedRoot, key, root } = resolvedOptions(options);
   const previous = generations.get(key);
   const run = (previous ?? Promise.resolve(undefined)).then(async () => {
+    const loaded = await reusePublishedGeneration(root, generatedRoot);
+    if (loaded !== undefined) {
+      return { changed: false, loaded };
+    }
     const generation = await generateConventionCatalogWithSnapshot(root, {
       collectEnvironment: false,
     });
