@@ -53,7 +53,7 @@ function isWithin(root: string, path: string): boolean {
   );
 }
 
-async function findWorkspaceRoot(root: string): Promise<string> {
+export async function findWorkspaceRoot(root: string): Promise<string> {
   const canonicalRoot = await realpath(root);
   let directory = canonicalRoot;
   while (true) {

@@ -15,6 +15,8 @@ export type MiraiIntlTransformOptions = Readonly<{
   generatedDirectory?: string;
   requireProof?: boolean;
   root?: string;
+  /** @internal Canonical provider-resolution boundary for workspace adapters. */
+  workspaceRoot?: string;
 }>;
 
 export type MiraiIntlSourceMap = Readonly<{
@@ -1815,6 +1817,7 @@ function analyzeSource(
   root: string,
   catalog: CurrentCatalog,
   generatedImports: GeneratedFacadeImportNames,
+  workspaceRoot: string,
   authorizationEvidence?: MiraiIntlTransformOptions["authorizationEvidence"],
   semanticProgram?: SemanticProgramContext,
   ownerCompilerOptions?: ts.CompilerOptions
@@ -1855,7 +1858,7 @@ function analyzeSource(
       catalog,
       generatedImports.facadeModules,
       ownerCompilerOptions,
-      authorizationEvidence?.workspaceRoot ?? root
+      workspaceRoot
     );
   authorizationEvidence?.record(
     semanticEvidence(
@@ -3889,6 +3892,9 @@ async function transformMiraiIntlSourceWithCatalog(
     root,
     catalog,
     generatedImports,
+    options.authorizationEvidence?.workspaceRoot ??
+      options.workspaceRoot ??
+      root,
     options.authorizationEvidence,
     semanticProgram,
     ownerCompilerOptions

@@ -13,6 +13,7 @@ import {
   invalidateMiraiIntlCatalogCache,
   transformMiraiIntlSource,
 } from "./transform";
+import { findWorkspaceRoot } from "./ownership";
 import type {
   MiraiIntlSourceMap,
   MiraiIntlTransformOptions,
@@ -112,10 +113,15 @@ export function miraiIntlVite(
   let identityFiles: ReadonlyArray<string> = [];
   let configuredLocaleRoot: string | undefined;
   let discoveryReady: Promise<void> = Promise.resolve();
+  let workspaceRootPromise: Promise<string> | undefined;
   const currentOptions = (): MiraiIntlTransformOptions =>
     resolvedRoot ? { ...options, root: resolvedRoot } : options;
   const packageRoot = (): string =>
     resolve(resolvedRoot ?? options.root ?? process.cwd());
+  const workspaceRoot = (): Promise<string> => {
+    workspaceRootPromise ??= findWorkspaceRoot(packageRoot());
+    return workspaceRootPromise;
+  };
   const applyDiscovery = (loaded: LoadedConventionCatalog): void => {
     const discovery = loaded.discovery;
     if (!discovery) {
@@ -288,8 +294,11 @@ export function miraiIntlVite(
       return loadPrivateMessageSlice(request);
     },
     name: "mirai-intl",
-    transform(code, id) {
-      return transformMiraiIntlSource(code, id, currentOptions());
+    async transform(code, id) {
+      return transformMiraiIntlSource(code, id, {
+        ...currentOptions(),
+        workspaceRoot: await workspaceRoot(),
+      });
     },
   };
 }

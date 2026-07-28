@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { emptyObjectSchema } from "@openmirai/intl-abi";
 import type { NextConfig as OfficialNextConfig } from "next";
@@ -175,6 +175,41 @@ describe("Vite adapter", () => {
       expect(result?.code).toContain("t(__miraiIntlMessage0)");
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("confines shared workspace providers to the workspace instead of the app root", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "mirai-intl-vite-workspace-")
+    );
+    const root = join(workspace, "apps/app");
+    const sharedFile = join(workspace, "packages/shared/src/schema.ts");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - apps/*\n  - packages/*\n",
+        "utf8"
+      );
+      await writeArtifactSet(
+        join(root, "src/i18n/generated"),
+        adapterArtifacts
+      );
+      await mkdir(dirname(sharedFile), { recursive: true });
+      const source = [
+        'import { createTranslationKey } from "../../../apps/app/src/i18n/generated";',
+        'export const key = createTranslationKey("pages.home")("title");',
+        "",
+      ].join("\n");
+      await writeFile(sharedFile, source, "utf8");
+
+      const result = await miraiIntlVite({ root }).transform(
+        source,
+        sharedFile
+      );
+
+      expect(result?.code).toContain('export const key = "pages.home.title";');
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
     }
   });
 
