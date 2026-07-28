@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/openmirai/mirai-intl/compare/v0.3.0...v0.3.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **compiler:** support shared Vite workspace sources ([3859000](https://github.com/openmirai/mirai-intl/commit/385900003f20bb1951a3a0e6e79a96fc0c314c76))
+
 # [0.3.0](https://github.com/openmirai/mirai-intl/compare/v0.2.0...v0.3.0) (2026-07-28)
 
 
