@@ -1,4 +1,4 @@
-import { SeverityNumber } from "@opentelemetry/api-logs";
+import { logs, SeverityNumber } from "@opentelemetry/api-logs";
 import type { IntlDiagnostic } from "@openmirai/intl-abi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,22 +7,12 @@ import {
   createOtelRecoveryDiagnosticSink,
 } from "../src/otel";
 
-const { emit, getLogger } = vi.hoisted(() => {
-  const emitMock = vi.fn();
-  return {
-    emit: emitMock,
-    getLogger: vi.fn(() => ({ emit: emitMock })),
-  };
-});
+const emit = vi.fn();
+const getLogger = vi.fn(() => ({ emit, enabled: () => true }));
 
-vi.mock("@opentelemetry/api-logs", () => ({
-  SeverityNumber: {
-    WARN: 13,
-  },
-  logs: {
-    getLogger,
-  },
-}));
+const installLoggerProvider = (): void => {
+  logs.setGlobalLoggerProvider({ getLogger });
+};
 
 const missingResource = (
   overrides: Partial<IntlDiagnostic> = {}
@@ -45,21 +35,27 @@ const terminalRecovery = () => ({
 
 describe("createOtelDiagnosticSink", () => {
   afterEach(() => {
+    logs.disable();
     emit.mockReset();
     getLogger.mockClear();
-    getLogger.mockImplementation(() => ({ emit }));
+    getLogger.mockImplementation(() => ({ emit, enabled: () => true }));
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
   it("emits a WARN log for INTL_MISSING_RESOURCE", () => {
+    installLoggerProvider();
     const sink = createOtelDiagnosticSink({
       loggerName: "openmirai.test.i18n",
     });
 
     sink(missingResource());
 
-    expect(getLogger).toHaveBeenCalledWith("openmirai.test.i18n");
+    expect(getLogger).toHaveBeenCalledWith(
+      "openmirai.test.i18n",
+      undefined,
+      undefined
+    );
     expect(emit).toHaveBeenCalledTimes(1);
     expect(emit).toHaveBeenCalledWith({
       attributes: {
@@ -75,6 +71,7 @@ describe("createOtelDiagnosticSink", () => {
   });
 
   it("dedupes repeated diagnostics", () => {
+    installLoggerProvider();
     const sink = createOtelDiagnosticSink();
     const diagnostic = missingResource();
 
@@ -85,6 +82,7 @@ describe("createOtelDiagnosticSink", () => {
   });
 
   it("allows the same diagnostic again after the five-minute dedupe window", () => {
+    installLoggerProvider();
     vi.useFakeTimers();
     const sink = createOtelDiagnosticSink();
     const diagnostic = missingResource();
@@ -98,6 +96,7 @@ describe("createOtelDiagnosticSink", () => {
   });
 
   it("ignores codes outside the configured allow-list", () => {
+    installLoggerProvider();
     const sink = createOtelDiagnosticSink();
 
     sink({
@@ -108,7 +107,16 @@ describe("createOtelDiagnosticSink", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  it("is a no-op when the optional logs provider is not registered", () => {
+    const sink = createOtelDiagnosticSink();
+
+    expect(() => sink(missingResource())).not.toThrow();
+    expect(getLogger).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
   it("emits actionable guidance for every diagnostic in development", () => {
+    installLoggerProvider();
     vi.stubEnv("NODE_ENV", "development");
     const consoleError = vi
       .spyOn(globalThis.console, "error")
@@ -130,6 +138,7 @@ describe("createOtelDiagnosticSink", () => {
   });
 
   it("fail-opens when getLogger throws", () => {
+    installLoggerProvider();
     getLogger.mockImplementation(() => {
       throw new Error("provider unavailable");
     });
@@ -141,6 +150,7 @@ describe("createOtelDiagnosticSink", () => {
   });
 
   it("fail-opens when emit throws", () => {
+    installLoggerProvider();
     emit.mockImplementation(() => {
       throw new Error("exporter unavailable");
     });
@@ -151,6 +161,7 @@ describe("createOtelDiagnosticSink", () => {
   });
 
   it("uses translation namespace when path has no separator", () => {
+    installLoggerProvider();
     const sink = createOtelDiagnosticSink();
 
     sink(missingResource({ path: "greeting" }));
@@ -168,20 +179,26 @@ describe("createOtelDiagnosticSink", () => {
 
 describe("createOtelRecoveryDiagnosticSink", () => {
   afterEach(() => {
+    logs.disable();
     emit.mockReset();
     getLogger.mockClear();
-    getLogger.mockImplementation(() => ({ emit }));
+    getLogger.mockImplementation(() => ({ emit, enabled: () => true }));
     vi.restoreAllMocks();
   });
 
   it("emits a privacy-safe WARN event for terminal recovery", () => {
+    installLoggerProvider();
     const sink = createOtelRecoveryDiagnosticSink({
       loggerName: "openmirai.test.i18n",
     });
 
     sink(terminalRecovery());
 
-    expect(getLogger).toHaveBeenCalledWith("openmirai.test.i18n");
+    expect(getLogger).toHaveBeenCalledWith(
+      "openmirai.test.i18n",
+      undefined,
+      undefined
+    );
     expect(emit).toHaveBeenCalledWith({
       attributes: {
         "i18n.locale": "th",

@@ -15,6 +15,7 @@ import type {
   IntlBuildProofV1,
   IntlCheckPackageIdentityV2,
   IntlCheckReceiptV2,
+  IntlSemanticAuthorizationObservationV2,
 } from "@openmirai/intl-abi";
 
 import {
@@ -44,6 +45,24 @@ import {
 import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
 import { captureProviderResolutionFrontier } from "./provider-resolution-identity";
+
+export class IntlSourceAuthorizationError extends Error {
+  override readonly name = "IntlSourceAuthorizationError";
+
+  constructor(
+    readonly diagnostics: ReadonlyArray<
+      Readonly<{ file: string; message: string }>
+    >,
+    readonly observation: IntlSemanticAuthorizationObservationV2 &
+      Readonly<{ checkerProjects: number; ownerProjects: number }>
+  ) {
+    super(
+      `Mirai Intl source analysis failed with ${diagnostics.length} diagnostic(s): ${diagnostics
+        .map(({ file, message }) => `${file}: ${message}`)
+        .join("; ")}`
+    );
+  }
+}
 
 const artifactAbi = "mirai-intl-artifact-v2";
 const proofDirectory = "build-proofs";
@@ -400,8 +419,26 @@ async function createConventionCheckReceipt(
     universe.workspaceRoot
   );
   if (analysis.diagnostics.length > 0) {
-    throw new Error(
-      `Mirai Intl source analysis failed with ${analysis.diagnostics.length} diagnostic(s): ${analysis.diagnostics.map(({ file, message }) => `${file}: ${message}`).join("; ")}`
+    throw new IntlSourceAuthorizationError(
+      analysis.diagnostics.map((diagnostic) => ({
+        ...diagnostic,
+        file: (isAbsolute(diagnostic.file)
+          ? relative(root, diagnostic.file)
+          : diagnostic.file
+        )
+          .split(sep)
+          .join("/"),
+      })),
+      {
+        checkerProjects: universe.projects.filter(
+          (project) => project.role === "checker"
+        ).length,
+        ownerProjects: universe.projects.filter(
+          (project) => project.role === "owner"
+        ).length,
+        semanticAuthorizationRuns: 1,
+        semanticFilesAnalyzed: analysis.filesAnalyzed,
+      }
     );
   }
   // Reload after semantic analysis so catalog/source mutations cannot inherit

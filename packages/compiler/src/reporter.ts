@@ -25,12 +25,22 @@ export type ReporterOptions = Readonly<{
   reportFile: string | undefined;
 }>;
 
+type CliSummaryScalar = boolean | number | string;
+
+export type CliSummary = Readonly<
+  Record<
+    string,
+    CliSummaryScalar | ReadonlyArray<Readonly<Record<string, CliSummaryScalar>>>
+  >
+>;
+
 export type CliReport = Readonly<{
   command: string;
   diagnostics: ReadonlyArray<CliDiagnostic>;
-  result?: unknown;
+  rawJson?: unknown;
   schemaVersion: 1;
   success: boolean;
+  summary: CliSummary;
 }>;
 
 const ANSI = {
@@ -167,7 +177,17 @@ export async function emitReport(
     await writeReportFile(options.reportFile, report);
   }
   if (options.format === "json") {
-    process.stdout.write(`${canonicalJson(report.result)}\n`);
+    process.stdout.write(
+      `${canonicalJson(
+        report.rawJson ?? {
+          command: report.command,
+          diagnostics: report.diagnostics,
+          schemaVersion: report.schemaVersion,
+          success: report.success,
+          summary: report.summary,
+        }
+      )}\n`
+    );
     return;
   }
   if (report.diagnostics.length > 0) {

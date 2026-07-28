@@ -86,7 +86,16 @@ export type MiraiI18nextOptions<
   loadCatalogResource: (
     locale: CatalogLocaleOf<Manifest>
   ) => PromiseLike<Resource> | Resource;
-  recovery?: false | RecoveringI18nextRuntimeOptions<i18n>;
+  recovery?:
+    | false
+    | (RecoveringI18nextRuntimeOptions<i18n> &
+        Readonly<{
+          /**
+           * `auto` recovers only in production. Use `always` for explicit
+           * recovery outside production, such as a production-mode SSR host.
+           */
+          mode?: "always" | "auto";
+        }>);
   resourceNamespace?: string;
 }>;
 
@@ -125,6 +134,10 @@ const MiraiI18nextTranslationContext = createContext<
   ProviderTranslationBinding | undefined
 >(undefined);
 
+declare const process: Readonly<{
+  env: Readonly<{ NODE_ENV?: string }>;
+}>;
+
 export function createProviderBoundUseTranslations<
   Contract extends object,
 >(): BoundUseTranslations<Contract, i18n> {
@@ -141,16 +154,13 @@ export function createProviderBoundUseTranslations<
 }
 
 function productionEnvironment(): boolean {
-  const processValue: unknown = Reflect.get(globalThis, "process");
-  if (!processValue || typeof processValue !== "object") {
+  try {
+    return process.env.NODE_ENV === "production";
+  } catch {
+    // Browser bundles may not provide a process global. Bundlers can still
+    // statically replace the direct process.env.NODE_ENV expression above.
     return false;
   }
-  const environment: unknown = Reflect.get(processValue, "env");
-  return (
-    !!environment &&
-    typeof environment === "object" &&
-    Reflect.get(environment, "NODE_ENV") === "production"
-  );
 }
 
 function createUnavailableTranslationWarning(): (locale: string) => void {
@@ -199,11 +209,11 @@ export function createMiraiI18next<
   const defaultLocale =
     options.defaultLocale ?? options.catalogManifest.sourceLocale;
   const resourceNamespace = options.resourceNamespace ?? "translation";
-  const configuredRecovery =
-    options.recovery === false ? undefined : options.recovery;
+  const { mode: recoveryMode = "auto", ...configuredRecovery } =
+    options.recovery === false ? {} : (options.recovery ?? {});
   const recoveringRuntime =
     options.recovery !== false &&
-    (options.recovery !== undefined || productionEnvironment());
+    (recoveryMode === "always" || productionEnvironment());
   const warnUnavailableTranslation = createUnavailableTranslationWarning();
   const otelDiagnosticSink = createOtelDiagnosticSink();
   const otelRecoveryDiagnosticSink = createOtelRecoveryDiagnosticSink();
@@ -217,7 +227,11 @@ export function createMiraiI18next<
     warnUnavailableTranslation(diagnostic.locale);
     otelRecoveryDiagnosticSink(diagnostic);
   };
-  const runtimeOptions = { resourceNamespace };
+  const runtimeOptions = {
+    ...configuredRecovery,
+    resourceNamespace,
+    strictValidation: true,
+  };
   const recoveryRuntimeOptions = {
     ...configuredRecovery,
     diagnosticSink: composeSinks(

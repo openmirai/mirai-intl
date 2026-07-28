@@ -1,7 +1,16 @@
 import { execFile } from "node:child_process";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -3132,6 +3141,21 @@ export async function loadConventionCatalog(
 }
 
 const catalogArtifactAbi = "mirai-intl-artifact-v2";
+const applicationLockNames = [
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+] as const;
+const generationInputCache = new Map<
+  string,
+  Readonly<{
+    fingerprint: `sha256:${string}`;
+    generationInput: CatalogGenerationInputIdentityV1;
+    loaded: LoadedConventionCatalog;
+  }>
+>();
 
 function canonicalIdentityValue(value: unknown): IntlCheckCanonicalJsonV2 {
   return JSON.parse(canonicalJson(value)) as IntlCheckCanonicalJsonV2;
@@ -3195,6 +3219,117 @@ async function generationInputIdentity(
   });
 }
 
+function generationWatchEntries(
+  root: string,
+  path: string
+): Array<readonly [string, string]> {
+  try {
+    const entry = lstatSync(path, { bigint: true });
+    const relativePath = relative(root, path).split(sep).join("/");
+    if (entry.isSymbolicLink()) {
+      throw new Error(
+        `Catalog generation input contains symbolic link ${path}`
+      );
+    }
+    const identity = [
+      entry.dev,
+      entry.ino,
+      entry.mode,
+      entry.size,
+      entry.mtimeNs,
+      entry.ctimeNs,
+    ].join(":");
+    if (entry.isFile()) {
+      return [[relativePath, identity]];
+    }
+    if (!entry.isDirectory()) {
+      throw new Error(
+        `Catalog generation input contains non-regular entry ${path}`
+      );
+    }
+    const children = readdirSync(path, { withFileTypes: true }).toSorted(
+      (left, right) => compareCanonicalStrings(left.name, right.name)
+    );
+    const nested = children.map((child) =>
+      generationWatchEntries(root, join(path, child.name))
+    );
+    return [[`${relativePath}/`, identity], ...nested.flat()];
+  } catch (error) {
+    if (fileSystemErrorCode(error) === "ENOENT") {
+      return [[relative(root, path).split(sep).join("/"), "missing"]];
+    }
+    throw error;
+  }
+}
+
+function generationLockWatchEntries(
+  root: string
+): Array<readonly [string, string]> {
+  const entries: Array<readonly [string, string]> = [];
+  let directory = root;
+  for (;;) {
+    const candidates = applicationLockNames.map((name) =>
+      generationWatchEntries(root, join(directory, name))
+    );
+    entries.push(...candidates.flat());
+    if (
+      candidates.some((candidate) =>
+        candidate.some(([, identity]) => identity !== "missing")
+      )
+    ) {
+      return entries;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      return entries;
+    }
+    directory = parent;
+  }
+}
+
+function withinWatchRoot(root: string, path: string): boolean {
+  const relation = relative(root, path);
+  return (
+    relation === "" ||
+    (relation !== ".." &&
+      !relation.startsWith(`..${sep}`) &&
+      !isAbsolute(relation))
+  );
+}
+
+function generationInputFingerprint(
+  loaded: LoadedConventionCatalog
+): `sha256:${string}` {
+  const watchRoots = [
+    ...loaded.watch.roots,
+    join(loaded.repositoryRoot, "src/locales"),
+    join(loaded.repositoryRoot, "locales"),
+  ]
+    .filter(
+      (root, index, values) =>
+        values.indexOf(root) === index &&
+        !values.some(
+          (candidate, candidateIndex) =>
+            candidateIndex !== index && withinWatchRoot(candidate, root)
+        )
+    )
+    .toSorted(compareCanonicalStrings);
+  const roots = watchRoots
+    .map((path) => generationWatchEntries(loaded.repositoryRoot, path))
+    .flat();
+  const files = [...new Set(loaded.watch.files)]
+    .filter((path) => !watchRoots.some((root) => withinWatchRoot(root, path)))
+    .toSorted(compareCanonicalStrings)
+    .map((path) => generationWatchEntries(loaded.repositoryRoot, path))
+    .flat();
+  const entries = [
+    ...roots,
+    ...files,
+    ...generationLockWatchEntries(loaded.repositoryRoot),
+  ].toSorted(([left], [right]) => compareCanonicalStrings(left, right));
+  return sha256(canonicalJson(entries));
+}
+
 /** @internal Load only the deterministic generation-input ledger. */
 export async function loadConventionCatalogGenerationInput(
   packageRoot: string
@@ -3204,11 +3339,28 @@ export async function loadConventionCatalogGenerationInput(
     loaded: LoadedConventionCatalog;
   }>
 > {
-  const loaded = await loadConventionCatalogSnapshot(packageRoot, false);
-  return {
-    generationInput: await generationInputIdentity(loaded),
+  const root = realpathSync(resolve(packageRoot));
+  const cached = generationInputCache.get(root);
+  if (cached !== undefined) {
+    const fingerprintBefore = generationInputFingerprint(cached.loaded);
+    if (
+      fingerprintBefore === cached.fingerprint &&
+      generationInputFingerprint(cached.loaded) === fingerprintBefore
+    ) {
+      return {
+        generationInput: cached.generationInput,
+        loaded: cached.loaded,
+      };
+    }
+  }
+  const loaded = await loadConventionCatalogSnapshot(root, false);
+  const generationInput = await generationInputIdentity(loaded);
+  generationInputCache.set(root, {
+    fingerprint: generationInputFingerprint(loaded),
+    generationInput,
     loaded,
-  };
+  });
+  return { generationInput, loaded };
 }
 
 /** @internal Generate and retain the compiler-owned loaded snapshot. */

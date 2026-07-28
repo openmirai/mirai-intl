@@ -588,6 +588,7 @@ describe("createMiraiI18next", () => {
       recovery: {
         diagnosticSink: (diagnostic) => diagnostics.push(diagnostic),
         missingMessageFallback: "Translation unavailable",
+        mode: "always",
       },
     });
     const controller = adapter.createRequestController("en");
@@ -631,6 +632,7 @@ describe("createMiraiI18next", () => {
       recovery: {
         diagnosticSink: (diagnostic) => diagnostics.push(diagnostic),
         missingMessageFallback: "Translation unavailable",
+        mode: "always",
       },
     });
     const recoveringController =
@@ -645,6 +647,106 @@ describe("createMiraiI18next", () => {
     expect(output).toBe("Translation unavailable");
     expect(output).not.toContain("greeting");
     expect(diagnostics).toHaveLength(1);
+  });
+
+  it("keeps development strict when auto recovery fallbacks are configured", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      const adapter = createMiraiI18next({
+        catalogManifest,
+        isCatalogLocale,
+        loadCatalogResource: () => ({ translation: {} }),
+        recovery: {
+          missingMessageFallback: "Translation unavailable",
+          textFallback: () => "Translation unavailable",
+        },
+      });
+      const controller = adapter.createRequestController("en");
+      await controller.activateLocale("en");
+
+      expect(() =>
+        Reflect.apply(controller.getTranslations().t, undefined, [greeting])
+      ).toThrow(/translation|resource|renderer/iu);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("auto-recovers in production with a locale-resource fallback and never exposes a dotted key", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const localizedResource = {
+        translation: {
+          system: { translationUnavailable: "Translation unavailable" },
+        },
+      } as const;
+      const localizedFallback =
+        localizedResource.translation.system.translationUnavailable;
+      const adapter = createMiraiI18next({
+        catalogManifest,
+        isCatalogLocale,
+        loadCatalogResource: () => localizedResource,
+        recovery: {
+          missingMessageFallback: (diagnostic) =>
+            diagnostic.locale === "en" ? localizedFallback : "",
+        },
+      });
+      const controller = adapter.createRequestController("en");
+      await controller.activateLocale("en");
+      const t = controller.getTranslations().t as unknown as (
+        key: unknown
+      ) => string;
+
+      expect(t("missing.parent.key")).toBe(localizedFallback);
+      expect(t("missing.parent.key")).not.toBe("missing.parent.key");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps recovery false strict in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const adapter = createMiraiI18next({
+        catalogManifest,
+        isCatalogLocale,
+        loadCatalogResource: () => ({ translation: {} }),
+        recovery: false,
+      });
+      const controller = adapter.createRequestController("en");
+      await controller.activateLocale("en");
+
+      expect(() =>
+        Reflect.apply(controller.getTranslations().t, undefined, [greeting])
+      ).toThrow(/translation|resource|renderer/iu);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("allows explicit always recovery without exposing an unlowered dotted key", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      const adapter = createMiraiI18next({
+        catalogManifest,
+        isCatalogLocale,
+        loadCatalogResource: () => ({ translation: {} }),
+        recovery: {
+          mode: "always",
+          textFallback: () => "Translation unavailable",
+        },
+      });
+      const controller = adapter.createRequestController("en");
+      await controller.activateLocale("en");
+      const t = controller.getTranslations().t as unknown as (
+        key: unknown
+      ) => string;
+
+      expect(t("missing.parent.key")).toBe("Translation unavailable");
+      expect(t("missing.parent.key")).not.toBe("missing.parent.key");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("binds shared typed hooks to the nearest adapter provider", async () => {

@@ -1,4 +1,13 @@
-import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
+import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
@@ -23,6 +32,14 @@ export type GeneratedCatalogState = Readonly<{
 const generations = new Map<string, Promise<GeneratedCatalogState>>();
 const activeEnsures = new Map<string, Promise<GeneratedCatalogState>>();
 const processEnsures = new Map<string, Promise<GeneratedCatalogState>>();
+const publishedGenerations = new Map<
+  string,
+  Readonly<{
+    fingerprint: `sha256:${string}`;
+    generationInput: object;
+    generationInputHash: `sha256:${string}`;
+  }>
+>();
 
 function errorCode(error: unknown): unknown {
   return error && typeof error === "object"
@@ -53,11 +70,31 @@ async function pathKind(
   }
 }
 
-async function readRegularText(path: string, label: string): Promise<string> {
-  if ((await pathKind(path)) !== "file") {
-    throw new Error(`${label} is missing or is not a regular file`);
+function readRegularFile(
+  path: string,
+  label: string
+): Readonly<{ mode: number; source: string }> {
+  let file;
+  try {
+    file = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    throw new Error(`${label} is missing or is not a regular file`, {
+      cause: error,
+    });
   }
-  return readFile(path, "utf8");
+  try {
+    const entry = fstatSync(file);
+    if (!entry.isFile()) {
+      throw new Error(`${label} is missing or is not a regular file`);
+    }
+    return { mode: entry.mode, source: readFileSync(file, "utf8") };
+  } finally {
+    closeSync(file);
+  }
+}
+
+function readRegularText(path: string, label: string): string {
+  return readRegularFile(path, label).source;
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -68,6 +105,44 @@ function isWithin(root: string, candidate: string): boolean {
     !relation.startsWith(`..${sep}`) &&
     !isAbsolute(relation)
   );
+}
+
+function generatedStateFingerprint(
+  root: string,
+  directory = root
+): `sha256:${string}` {
+  const entries: Array<readonly [string, string]> = [];
+  const visit = (current: string): void => {
+    const entry = lstatSync(current, { bigint: true });
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Generated catalog contains symbolic link ${current}`);
+    }
+    const path = relative(root, current).split(sep).join("/") || ".";
+    const identity = [
+      entry.dev,
+      entry.ino,
+      entry.mode,
+      entry.size,
+      entry.mtimeNs,
+      entry.ctimeNs,
+    ].join(":");
+    entries.push([entry.isDirectory() ? `${path}/` : path, identity]);
+    if (entry.isDirectory()) {
+      for (const child of readdirSync(current, {
+        withFileTypes: true,
+      }).toSorted((left, right) =>
+        compareCanonicalStrings(left.name, right.name)
+      )) {
+        visit(join(current, child.name));
+      }
+    } else if (!entry.isFile()) {
+      throw new Error(
+        `Generated catalog contains non-regular entry ${current}`
+      );
+    }
+  };
+  visit(directory);
+  return sha256(canonicalJson(entries));
 }
 
 async function assertGeneratedRootConfinement(
@@ -109,7 +184,7 @@ async function hasRecoverablePublicationJournal(
       "Generated publication staging area is not a regular directory"
     );
   }
-  const journalSource = await readRegularText(
+  const journalSource = readRegularText(
     join(publicationRoot, "journal.v1.json"),
     "Generated publication journal"
   );
@@ -182,6 +257,32 @@ async function reusePublishedGeneration(
   if (await hasRecoverablePublicationJournal(generatedRoot)) {
     return undefined;
   }
+  const generatedFingerprint = generatedStateFingerprint(generatedRoot);
+  const published = publishedGenerations.get(canonicalGeneratedRoot);
+  if (
+    published !== undefined &&
+    published.fingerprint === generatedFingerprint
+  ) {
+    const input = await loadConventionCatalogGenerationInput(root);
+    const generationInputHashBefore = sha256(
+      canonicalJson(input.generationInput)
+    );
+    const confirmedFingerprint = generatedStateFingerprint(generatedRoot);
+    const generationInputHashAfter = sha256(
+      canonicalJson(input.generationInput)
+    );
+    if (
+      confirmedFingerprint === generatedFingerprint &&
+      input.generationInput === published.generationInput &&
+      generationInputHashBefore === generationInputHashAfter &&
+      generationInputHashAfter === published.generationInputHash &&
+      (await realpath(input.loaded.outputRoot)) === canonicalGeneratedRoot
+    ) {
+      return input.loaded;
+    }
+  } else {
+    publishedGenerations.delete(canonicalGeneratedRoot);
+  }
 
   const topLevelNames = new Set(topLevel.map((entry) => entry.name));
   if (!topLevelNames.has("current.json")) {
@@ -201,23 +302,26 @@ async function reusePublishedGeneration(
     throw new Error("Generated catalog control state is incomplete");
   }
 
-  const currentSource = await readRegularText(
-    join(generatedRoot, "current.json"),
-    "Generated current pointer"
-  );
-  const current = parseCanonicalCatalogCurrentPointer(currentSource);
-  let receiptSource: string;
-  let receipt: ReturnType<typeof parseCanonicalCatalogGenerationReceipt>;
-  try {
-    receiptSource = await readRegularText(
+  if (!topLevelNames.has("catalog-generation-receipt.v1.json")) {
+    return undefined;
+  }
+  const [currentSource, receiptSource] = [
+    readRegularText(
+      join(generatedRoot, "current.json"),
+      "Generated current pointer"
+    ),
+    readRegularText(
       join(generatedRoot, "catalog-generation-receipt.v1.json"),
       "Catalog generation receipt"
-    );
+    ),
+  ];
+  const current = parseCanonicalCatalogCurrentPointer(currentSource);
+  let receipt: ReturnType<typeof parseCanonicalCatalogGenerationReceipt>;
+  try {
     receipt = parseCanonicalCatalogGenerationReceipt(receiptSource);
   } catch (error) {
     if (
       errorCode(error) === "ENOENT" ||
-      !topLevelNames.has("catalog-generation-receipt.v1.json") ||
       error instanceof SyntaxError ||
       error instanceof TypeError
     ) {
@@ -249,17 +353,16 @@ async function reusePublishedGeneration(
     );
   }
 
-  const facadeSource = await readRegularText(
-    join(generatedRoot, "index.ts"),
-    "Generated stable facade"
-  );
+  const [facadeSource, lockSource] = [
+    readRegularText(join(generatedRoot, "index.ts"), "Generated stable facade"),
+    readRegularText(
+      join(generatedRoot, "catalog.lock.json"),
+      "Generated catalog lock"
+    ),
+  ];
   if (sha256(facadeSource) !== receipt.stableFacadeHash) {
     throw new Error("Generated stable facade is corrupt");
   }
-  const lockSource = await readRegularText(
-    join(generatedRoot, "catalog.lock.json"),
-    "Generated catalog lock"
-  );
   if (
     lockSource !== `${canonicalJson(pointerBase)}\n` ||
     sha256(lockSource) !== receipt.catalogLockHash
@@ -299,7 +402,6 @@ async function reusePublishedGeneration(
   if (payloadEntries.length !== receipt.payload.manifest.entries.length) {
     throw new Error("Generated catalog payload does not match its manifest");
   }
-  const artifacts: Record<string, string> = {};
   for (const [index, expected] of receipt.payload.manifest.entries.entries()) {
     const actual = payloadEntries[index];
     if (
@@ -309,21 +411,31 @@ async function reusePublishedGeneration(
     ) {
       throw new Error("Generated catalog payload does not match its manifest");
     }
+  }
+  const payload = receipt.payload.manifest.entries.map((expected) => {
     const path = join(payloadRoot, expected.path);
-    const source = await readRegularText(
-      path,
-      `Generated catalog payload ${expected.path}`
-    );
-    const file = await lstat(path);
+    let file: ReturnType<typeof readRegularFile>;
+    try {
+      file = readRegularFile(
+        path,
+        `Generated catalog payload ${expected.path}`
+      );
+    } catch (error) {
+      throw new Error(`Generated catalog payload ${expected.path} is corrupt`, {
+        cause: error,
+      });
+    }
+    const { mode, source } = file;
     if (
       Buffer.byteLength(source) !== expected.size ||
       sha256(source) !== expected.hash ||
-      (expected.mode !== null && (file.mode & 0o777) !== expected.mode)
+      (expected.mode !== null && (mode & 0o777) !== expected.mode)
     ) {
       throw new Error(`Generated catalog payload ${expected.path} is corrupt`);
     }
-    artifacts[expected.path] = source;
-  }
+    return [expected.path, source] as const;
+  });
+  const artifacts = Object.fromEntries(payload);
   if (sha256(canonicalJson(artifacts)) !== current.contentHash) {
     throw new Error("Generated catalog payload content identity is corrupt");
   }
@@ -334,9 +446,8 @@ async function reusePublishedGeneration(
       "Generated catalog root does not match the loaded catalog output root"
     );
   }
-  if (
-    sha256(canonicalJson(input.generationInput)) !== receipt.generationInputHash
-  ) {
+  const generationInputHash = sha256(canonicalJson(input.generationInput));
+  if (generationInputHash !== receipt.generationInputHash) {
     return undefined;
   }
   if (
@@ -349,6 +460,16 @@ async function reusePublishedGeneration(
       "Catalog generation receipt does not bind its generation identities"
     );
   }
+  const confirmedGeneratedFingerprint =
+    generatedStateFingerprint(generatedRoot);
+  if (confirmedGeneratedFingerprint !== generatedFingerprint) {
+    throw new Error("Generated catalog changed during validation");
+  }
+  publishedGenerations.set(canonicalGeneratedRoot, {
+    fingerprint: confirmedGeneratedFingerprint,
+    generationInput: input.generationInput,
+    generationInputHash,
+  });
   return input.loaded;
 }
 

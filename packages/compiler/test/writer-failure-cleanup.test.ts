@@ -21,23 +21,26 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof FileSystemPromises>();
   return {
     ...original,
-    async writeFile(
-      path: Parameters<typeof original.writeFile>[0],
-      data: Parameters<typeof original.writeFile>[1],
-      options?: Parameters<typeof original.writeFile>[2]
-    ) {
+    async open(...arguments_: Parameters<typeof original.open>) {
+      const handle = await original.open(...arguments_);
+      const path = arguments_[0];
       const normalizedPath = String(path).replaceAll("\\", "/");
-      if (
-        injectedFailure.nextStagingWrite &&
+      const stagingPayload =
         normalizedPath.includes("/.catalog-publication/stage-") &&
-        normalizedPath.includes("/payload/")
-      ) {
-        injectedFailure.nextStagingWrite = false;
-        throw Object.assign(new Error("Injected staging write failure"), {
-          code: "EIO",
-        });
+        normalizedPath.includes("/payload/");
+      if (stagingPayload) {
+        const writeFile = handle.writeFile.bind(handle);
+        handle.writeFile = async (...writeArguments) => {
+          if (injectedFailure.nextStagingWrite) {
+            injectedFailure.nextStagingWrite = false;
+            throw Object.assign(new Error("Injected staging write failure"), {
+              code: "EIO",
+            });
+          }
+          return writeFile(...writeArguments);
+        };
       }
-      return original.writeFile(path, data, options);
+      return handle;
     },
   };
 });

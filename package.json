@@ -24,6 +24,7 @@
     "generate:fixtures": "tsx scripts/generate-fixtures.ts",
     "lint": "oxlint . && oxfmt --check .",
     "lint:fix": "oxlint --fix --fix-suggestions . && oxfmt --write .",
+    "pack:browser-smoke": "tsx scripts/browser-recovery-smoke.ts",
     "pack:smoke": "tsx scripts/pack-smoke.ts",
     "prediagnostic:smoke": "corepack pnpm build",
     "prepare": "husky",
@@ -34,7 +35,7 @@
     "test": "vitest run --exclude packages/runtime/test/perf.test.ts",
     "typecheck": "tsc -b --force --pretty false && tsc -p tsconfig.tools.json --pretty false",
     "typecheck:fixtures": "tsx scripts/type-fixtures.ts",
-    "verify": "corepack pnpm format && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm typecheck:fixtures && corepack pnpm test && corepack pnpm test:perf && corepack pnpm check:generated && corepack pnpm benchmark && corepack pnpm pack:smoke && corepack pnpm diagnostic:smoke",
+    "verify": "corepack pnpm format && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm typecheck:fixtures && corepack pnpm test && corepack pnpm test:perf && corepack pnpm check:generated && corepack pnpm benchmark && corepack pnpm pack:smoke && corepack pnpm pack:browser-smoke && corepack pnpm diagnostic:smoke",
     "test:perf": "vitest run packages/runtime/test/perf.test.ts"
   },
   "devDependencies": {
@@ -44,7 +45,6 @@
     "@openmirai/intl-abi": "workspace:*",
     "@openmirai/intl-compiler": "workspace:*",
     "@openmirai/intl-runtime": "workspace:*",
-    "@opentelemetry/api-logs": "^0.220.0",
     "@release-it/bumper": "7.0.6",
     "@release-it/conventional-changelog": "11.0.1",
     "@tsconfig/node24": "24.0.4",

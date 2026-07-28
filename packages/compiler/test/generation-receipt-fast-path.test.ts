@@ -151,6 +151,37 @@ describe("catalog generation receipt fast path", () => {
     }
   }, 60_000);
 
+  it("invalidates a cached receipt when a nearer workspace lock appears", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      await writeFile(
+        join(container, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\n",
+        "utf8"
+      );
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: true,
+      });
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: false,
+      });
+
+      await writeFile(
+        join(root, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\npackages: {}\n",
+        "utf8"
+      );
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: true,
+      });
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: false,
+      });
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it.each([
     "PREPARED",
     "STAGED_DURABLE",

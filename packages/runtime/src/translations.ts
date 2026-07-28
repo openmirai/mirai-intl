@@ -696,8 +696,7 @@ export function createRecoveringTranslationFunction<
       ...values,
     ]);
   const map = (...input: Array<unknown>): never => {
-    runtime.recoverMap();
-    const text = "";
+    const text = runtime.recoverMap();
     if (input.length === 1 && Array.isArray(input[0])) {
       return Object.freeze(
         Object.fromEntries(

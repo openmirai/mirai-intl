@@ -71,9 +71,9 @@ const rememberDiagnostic = (
 /**
  * Framework-agnostic OpenTelemetry Logs sink for mirai-intl diagnostics.
  *
- * Uses only `@opentelemetry/api-logs` (optional peer). Fail-open when the
- * LoggerProvider is missing or emit fails. Does not depend on React or any
- * app monitoring package.
+ * Uses the package-owned `@opentelemetry/api-logs` API. The API's no-op
+ * provider keeps application monitoring optional; exporter/provider failures
+ * also fail open. Does not depend on React or any app monitoring package.
  */
 export function createOtelDiagnosticSink(
   options: CreateOtelDiagnosticSinkOptions = {}

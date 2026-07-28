@@ -9,7 +9,6 @@ import {
   realpath,
   rename,
   rm,
-  writeFile,
 } from "node:fs/promises";
 import {
   basename,
@@ -1172,13 +1171,9 @@ async function writeDurableFile(
   content: string,
   exclusive = true
 ): Promise<void> {
-  await writeFile(file, content, {
-    encoding: "utf8",
-    flag: exclusive ? "wx" : "w",
-    mode: 0o600,
-  });
-  const handle = await open(file, "r");
+  const handle = await open(file, exclusive ? "wx" : "w", 0o600);
   try {
+    await handle.writeFile(content, "utf8");
     await handle.sync();
   } finally {
     await handle.close();
@@ -1191,12 +1186,6 @@ async function durableReplaceTextFile(
   content: string
 ): Promise<void> {
   await replaceTextFile(root, name, content);
-  const handle = await open(join(root, name), "r");
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
   await syncDirectory(root);
 }
 
@@ -1651,33 +1640,33 @@ async function createStage(
   await mkdir(controlsRoot);
   await mkdir(previousControlsRoot);
   try {
-    for (const [name, content] of artifactEntries(artifacts)) {
-      await writeDurableFile(join(payloadRoot, name), content);
-    }
-    await writeDurableFile(
-      join(controlsRoot, "index.ts"),
-      plan.selectorContent
+    await Promise.all(
+      artifactEntries(artifacts).map(([name, content]) =>
+        writeDurableFile(join(payloadRoot, name), content)
+      )
     );
-    await writeDurableFile(
-      join(controlsRoot, "catalog.lock.json"),
-      plan.lockContent
-    );
-    await writeDurableFile(
-      join(controlsRoot, receiptFileName),
-      plan.receiptContent
-    );
-    await writeDurableFile(
-      join(controlsRoot, "current.json"),
-      plan.pointerContent
-    );
+    await Promise.all([
+      writeDurableFile(join(controlsRoot, "index.ts"), plan.selectorContent),
+      writeDurableFile(
+        join(controlsRoot, "catalog.lock.json"),
+        plan.lockContent
+      ),
+      writeDurableFile(
+        join(controlsRoot, receiptFileName),
+        plan.receiptContent
+      ),
+      writeDurableFile(join(controlsRoot, "current.json"), plan.pointerContent),
+    ]);
     if (journal.previousControlsHash !== null) {
       const previous = await controlSnapshot(root, outputRoot);
       if (previous.hash !== journal.previousControlsHash) {
         throw new Error("Previous generated control identity changed");
       }
-      for (const [name, source] of Object.entries(previous.sources)) {
-        await writeDurableFile(join(previousControlsRoot, name), source);
-      }
+      await Promise.all(
+        Object.entries(previous.sources).map(([name, source]) =>
+          writeDurableFile(join(previousControlsRoot, name), source)
+        )
+      );
     }
     await syncDirectory(payloadRoot);
     await syncDirectory(controlsRoot);
@@ -2211,20 +2200,22 @@ async function runPublication(
       "Generated artifact directory"
     );
     const controlsRoot = join(stageRoot, "controls");
-    await installStagedFile(
-      outputRoot,
-      join(controlsRoot, "index.ts"),
-      join(root, "index.ts"),
-      plan.selectorContent,
-      "Generated stable facade"
-    );
-    await installStagedFile(
-      outputRoot,
-      join(controlsRoot, "catalog.lock.json"),
-      join(root, "catalog.lock.json"),
-      plan.lockContent,
-      "Generated catalog lock"
-    );
+    await Promise.all([
+      installStagedFile(
+        outputRoot,
+        join(controlsRoot, "index.ts"),
+        join(root, "index.ts"),
+        plan.selectorContent,
+        "Generated stable facade"
+      ),
+      installStagedFile(
+        outputRoot,
+        join(controlsRoot, "catalog.lock.json"),
+        join(root, "catalog.lock.json"),
+        plan.lockContent,
+        "Generated catalog lock"
+      ),
+    ]);
     await assertExactSelectors(root, outputRoot, plan);
     journal = await advanceJournal(
       publicationRoot,

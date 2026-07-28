@@ -9,12 +9,71 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { proveConventionCatalog } from "../src/proof";
 import { verifyProviderResolutionFrontier } from "../src/provider-resolution-identity";
 
+const semanticFactoryNames = vi.hoisted(
+  () =>
+    [
+      "createAbstractBuilder",
+      "createProgram",
+      "createIncrementalProgram",
+      "createSemanticDiagnosticsBuilderProgram",
+      "createEmitAndSemanticDiagnosticsBuilderProgram",
+      "createLanguageService",
+      "createSolutionBuilder",
+      "createSolutionBuilderWithWatch",
+      "createWatchProgram",
+    ] as const satisfies ReadonlyArray<keyof typeof ts>
+);
+
+const semanticProgramInstrumentation = vi.hoisted(() => ({
+  constructions: {
+    createAbstractBuilder: 0,
+    createEmitAndSemanticDiagnosticsBuilderProgram: 0,
+    createIncrementalProgram: 0,
+    createLanguageService: 0,
+    createProgram: 0,
+    createSemanticDiagnosticsBuilderProgram: 0,
+    createSolutionBuilder: 0,
+    createSolutionBuilderWithWatch: 0,
+    createWatchProgram: 0,
+  },
+  failFast: false,
+}));
+
+vi.mock("typescript", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const compiler = Reflect.get(actual, "default") as typeof ts;
+  const instrumented = Object.create(compiler) as typeof compiler;
+  for (const factoryName of semanticFactoryNames) {
+    const factory = compiler[factoryName];
+    Object.defineProperty(instrumented, factoryName, {
+      value: (...arguments_: Array<unknown>) => {
+        semanticProgramInstrumentation.constructions[factoryName] += 1;
+        if (semanticProgramInstrumentation.failFast) {
+          throw new Error(
+            `build receipt verification invoked TypeScript semantic factory ${factoryName}`
+          );
+        }
+        return Reflect.apply(factory, compiler, arguments_);
+      },
+    });
+  }
+  return { ...actual, default: instrumented };
+});
+
 const roots: Array<string> = [];
+
+function semanticConstructionCount(): number {
+  return Object.values(semanticProgramInstrumentation.constructions).reduce(
+    (total, count) => total + count,
+    0
+  );
+}
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -152,6 +211,10 @@ async function workspaceFixture(): Promise<{
 }
 
 afterEach(async () => {
+  for (const factoryName of semanticFactoryNames) {
+    semanticProgramInstrumentation.constructions[factoryName] = 0;
+  }
+  semanticProgramInstrumentation.failFast = false;
   vi.doUnmock("typescript");
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { force: true, recursive: true }))
@@ -251,18 +314,28 @@ describe("V2 build receipt verification", () => {
         (entry) => entry.path === "tsconfig.json"
       )?.extends
     ).toEqual(["tsconfig.z.json", "tsconfig.a.json", "tsconfig.base.json"]);
+    expect(semanticConstructionCount()).toBeGreaterThan(0);
 
+    for (const factoryName of semanticFactoryNames) {
+      semanticProgramInstrumentation.constructions[factoryName] = 0;
+    }
+    semanticProgramInstrumentation.failFast = true;
     vi.resetModules();
-    vi.doMock("typescript", () => {
-      throw new Error("build verification imported TypeScript");
-    });
     const { verifyConventionBuildReceipt } =
       await import("../src/check-receipt");
-    await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
-      buildReceiptVerifications: 1,
+    const verification = await verifyConventionBuildReceipt(root);
+    expect(verification).toMatchObject({
       buildSemanticAnalysisRuns: 0,
       receipt: { schemaVersion: 2 },
     });
+    expect(verification.buildReceiptVerifications).toBeGreaterThanOrEqual(1);
+    expect(semanticConstructionCount()).toBe(0);
+
+    await writeFile(join(root, "src/page.ts"), "export const stale = true;\n");
+    await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+      /source is stale or corrupt/u
+    );
+    expect(semanticConstructionCount()).toBe(0);
   }, 60_000);
 
   it("rejects source and generation corruption", async () => {

@@ -430,6 +430,30 @@ try {
   assertBoundedText(generated.stdout, stdoutOutputLimit, "baseline stdout");
   assertBoundedText(generated.stderr, stderrOutputLimit, "baseline stderr");
   assertNoSensitiveOutput(generated.stdout, "baseline generation");
+  const successfulJson = execute(
+    process.execPath,
+    [cli, "check", "--format=json"],
+    baseline
+  );
+  expect(
+    successfulJson.exitCode === 0 && successfulJson.stderr === "",
+    `packed JSON success failed:\n${successfulJson.stdout}${successfulJson.stderr}`
+  );
+  const successfulEnvelope = JSON.parse(successfulJson.stdout) as unknown;
+  expect(
+    successfulEnvelope !== null &&
+      typeof successfulEnvelope === "object" &&
+      Object.keys(successfulEnvelope).toSorted().join(",") ===
+        "command,diagnostics,schemaVersion,success,summary",
+    "packed JSON success did not use the bounded safe envelope"
+  );
+  assertNoLeakedReportFields(successfulEnvelope, "packed JSON success");
+  assertNoSensitiveOutput(successfulJson.stdout, "packed JSON success");
+  assertBoundedText(
+    successfulJson.stdout,
+    stdoutOutputLimit,
+    "packed JSON success stdout"
+  );
 
   const scenarios: Array<ScenarioEvidence> = [];
   scenarios.push(
@@ -456,6 +480,31 @@ try {
       },
       name: "invalid-named-key",
     })
+  );
+  const failedJson = execute(
+    process.execPath,
+    [cli, "check", "--format=json"],
+    join(scenariosRoot, "invalid-named-key")
+  );
+  expect(
+    failedJson.exitCode === 1 && failedJson.stderr === "",
+    `packed JSON failure did not exit 1 cleanly:\n${failedJson.stdout}${failedJson.stderr}`
+  );
+  const failedEnvelope = JSON.parse(failedJson.stdout) as {
+    diagnostics?: ReadonlyArray<Diagnostic>;
+  };
+  expect(
+    Object.keys(failedEnvelope).toSorted().join(",") ===
+      "command,diagnostics,schemaVersion,success,summary" &&
+      failedEnvelope.diagnostics?.[0]?.code === "INTL_SOURCE_INVALID",
+    "packed JSON failure did not preserve its structured diagnostic"
+  );
+  assertNoLeakedReportFields(failedEnvelope, "packed JSON failure");
+  assertNoSensitiveOutput(failedJson.stdout, "packed JSON failure");
+  assertBoundedText(
+    failedJson.stdout,
+    stdoutOutputLimit,
+    "packed JSON failure stdout"
   );
   scenarios.push(
     await runFailureScenario(cli, baseline, {
