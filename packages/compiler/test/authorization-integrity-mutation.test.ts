@@ -45,10 +45,14 @@ vi.mock("../src/analyze-sources", async (importOriginal) => {
   const actual = await importOriginal<typeof AnalyzeSources>();
   return {
     ...actual,
-    async analyzeConventionSourceFiles(
-      ...arguments_: Parameters<typeof actual.analyzeConventionSourceFiles>
+    async analyzeLoadedConventionSourceFiles(
+      ...arguments_: Parameters<
+        typeof actual.analyzeLoadedConventionSourceFiles
+      >
     ) {
-      const result = await actual.analyzeConventionSourceFiles(...arguments_);
+      const result = await actual.analyzeLoadedConventionSourceFiles(
+        ...arguments_
+      );
       await mutation.afterAnalysis?.();
       mutation.enabled = true;
       return result;

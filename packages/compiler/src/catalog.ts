@@ -1290,31 +1290,121 @@ function messageContractIdentity(
   }));
 }
 
+type GitRepository = Readonly<{
+  commonDirectory: string;
+  gitDirectory: string;
+  root: string;
+}>;
+
+async function gitRepository(start: string): Promise<GitRepository> {
+  let current = await realpath(start);
+  for (;;) {
+    const marker = join(current, ".git");
+    const entry = await lstat(marker).catch(() => undefined);
+    if (entry) {
+      if (entry.isSymbolicLink()) {
+        throw new Error("Git metadata marker must not be a symbolic link");
+      }
+      let gitDirectory: string;
+      if (entry.isDirectory()) {
+        gitDirectory = marker;
+      } else if (entry.isFile()) {
+        const match = /^gitdir: (.+)\r?\n?$/u.exec(
+          await readFile(marker, "utf8")
+        );
+        if (!match?.[1]) {
+          throw new Error("Git metadata pointer is invalid");
+        }
+        gitDirectory = await realpath(resolve(current, match[1]));
+      } else {
+        throw new Error("Git metadata marker is not a regular entry");
+      }
+      const commonSource = await readFile(
+        join(gitDirectory, "commondir"),
+        "utf8"
+      ).catch(() => undefined);
+      const commonDirectory = commonSource
+        ? await realpath(resolve(gitDirectory, commonSource.trim()))
+        : gitDirectory;
+      return { commonDirectory, gitDirectory, root: current };
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error("Git repository is unavailable");
+    }
+    current = parent;
+  }
+}
+
+async function gitHead(repository: GitRepository): Promise<string | null> {
+  const source = (await readFile(join(repository.gitDirectory, "HEAD"), "utf8"))
+    .trim()
+    .replace(/\r$/u, "");
+  if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(source)) {
+    return source;
+  }
+  const match = /^ref: (refs\/[^\s]+)$/u.exec(source);
+  if (!match?.[1]) {
+    return null;
+  }
+  const ref = match[1];
+  if (
+    ref.includes("\\") ||
+    ref
+      .split("/")
+      .some(
+        (segment) => segment.length === 0 || segment === "." || segment === ".."
+      )
+  ) {
+    return null;
+  }
+  const loose = await readFile(join(repository.commonDirectory, ref), "utf8")
+    .then((value) => value.trim())
+    .catch(() => undefined);
+  if (loose && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(loose)) {
+    return loose;
+  }
+  const packed = await readFile(
+    join(repository.commonDirectory, "packed-refs"),
+    "utf8"
+  ).catch(() => "");
+  for (const line of packed.split("\n")) {
+    const [hash, name] = line.trim().split(" ");
+    if (name === ref && hash && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(hash)) {
+      return hash;
+    }
+  }
+  return null;
+}
+
 async function gitEvidence(start: string): Promise<GitEvidence> {
   try {
-    const { stdout: rootOutput } = await execFileAsync("git", [
-      "-C",
-      start,
-      "rev-parse",
-      "--show-toplevel",
-    ]);
-    const root = rootOutput.trim();
-    const head = await execFileAsync("git", ["-C", root, "rev-parse", "HEAD"])
-      .then(({ stdout }) => stdout.trim())
-      .catch(() => null);
-    const { stdout } = await execFileAsync("git", [
-      "-C",
-      root,
-      "status",
-      "--porcelain=v1",
-      "--untracked-files=all",
+    const repository = await gitRepository(start);
+    const [head, { stdout }] = await Promise.all([
+      gitHead(repository),
+      execFileAsync(
+        "git",
+        [
+          "-C",
+          repository.root,
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all",
+        ],
+        { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }
+      ),
     ]);
     const status = stdout
       .split("\n")
       .map((line) => line.trimEnd())
       .filter(Boolean)
       .toSorted(compareCanonicalStrings);
-    return { dirty: status.length > 0, head, root, status };
+    return {
+      dirty: status.length > 0,
+      head,
+      root: repository.root,
+      status,
+    };
   } catch {
     return { dirty: true, head: null, root: null, status: ["git-unavailable"] };
   }
@@ -1541,6 +1631,73 @@ function lockfileHasImporter(lockfile: string, importer: string): boolean {
   return false;
 }
 
+function simpleWorkspaceMembership(
+  manifest: string,
+  importer: string
+): boolean | undefined {
+  const patterns: Array<string> = [];
+  let inPackages = false;
+  for (const rawLine of manifest.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.trim().length === 0 || line.trimStart().startsWith("#")) {
+      continue;
+    }
+    if (!inPackages) {
+      if (line === "packages:") {
+        inPackages = true;
+        continue;
+      }
+      return undefined;
+    }
+    if (!line.startsWith(" ")) {
+      break;
+    }
+    const match = /^  - ([!*a-zA-Z0-9._@/-]+)$/u.exec(line);
+    if (!match?.[1]) {
+      return undefined;
+    }
+    const pattern = match[1].startsWith("!") ? match[1].slice(1) : match[1];
+    let prefix = pattern;
+    if (pattern.endsWith("/**")) {
+      prefix = pattern.slice(0, -3);
+    } else if (pattern.endsWith("/*")) {
+      prefix = pattern.slice(0, -2);
+    }
+    if (prefix.includes("*") || (pattern.includes("*") && prefix === pattern)) {
+      return undefined;
+    }
+    patterns.push(match[1]);
+  }
+  if (!inPackages || patterns.length === 0) {
+    return undefined;
+  }
+  const matches = (pattern: string): boolean => {
+    if (pattern.endsWith("/**")) {
+      const prefix = pattern.slice(0, -3);
+      return importer === prefix || importer.startsWith(`${prefix}/`);
+    }
+    if (pattern.endsWith("/*")) {
+      const prefix = pattern.slice(0, -2);
+      const remainder = importer.slice(prefix.length + 1);
+      return (
+        importer.startsWith(`${prefix}/`) &&
+        remainder.length > 0 &&
+        !remainder.includes("/")
+      );
+    }
+    return importer === pattern;
+  };
+  let included = false;
+  for (const rawPattern of patterns) {
+    const excluded = rawPattern.startsWith("!");
+    const pattern = excluded ? rawPattern.slice(1) : rawPattern;
+    if (matches(pattern)) {
+      included = !excluded;
+    }
+  }
+  return included;
+}
+
 async function workspaceIncludesPackage(
   workspaceRoot: string,
   packageRoot: string
@@ -1601,11 +1758,20 @@ async function pnpmLockfileEvidence(
       "pnpm-workspace.yaml"
     );
     if (hasWorkspaceManifest && hasLockfile) {
-      const content = await readFile(lockfilePath, "utf8");
+      const [content, workspaceManifest] = await Promise.all([
+        readFile(lockfilePath, "utf8"),
+        readFile(join(directory, "pnpm-workspace.yaml"), "utf8"),
+      ]);
       const importer = relative(directory, packageRoot).split(sep).join("/");
+      const simpleMembership = simpleWorkspaceMembership(
+        workspaceManifest,
+        importer
+      );
       if (
         lockfileHasImporter(content, importer) &&
-        (await workspaceIncludesPackage(directory, packageRoot))
+        (simpleMembership === true ||
+          (simpleMembership === undefined &&
+            (await workspaceIncludesPackage(directory, packageRoot))))
       ) {
         return { content };
       }
@@ -1625,24 +1791,22 @@ async function collectEnvironment(
   loaded: LoadedConventionCatalog
 ): Promise<CatalogEnvironmentEvidence> {
   const packageJsonPath = join(loaded.repositoryRoot, "package.json");
-  const [packageJson, lockfileEvidence, appGit] = await Promise.all([
-    readFile(packageJsonPath, "utf8"),
-    pnpmLockfileEvidence(loaded.repositoryRoot),
-    gitEvidence(loaded.repositoryRoot),
-  ]);
-  const compilerStart = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../.."
-  );
-  const compilerGit = await gitEvidence(compilerStart);
+  const packageJson = await readFile(packageJsonPath, "utf8");
   const packageJsonObject = assertObject(
     JSON.parse(packageJson) as unknown,
     "application package.json"
   );
-  const resolvedInstalledTuple = await installedTuple(
-    loaded.repositoryRoot,
-    packageJsonObject.packageManager
+  const compilerStart = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../.."
   );
+  const [lockfileEvidence, appGit, compilerGit, resolvedInstalledTuple] =
+    await Promise.all([
+      pnpmLockfileEvidence(loaded.repositoryRoot),
+      gitEvidence(loaded.repositoryRoot),
+      gitEvidence(compilerStart),
+      installedTuple(loaded.repositoryRoot, packageJsonObject.packageManager),
+    ]);
   return {
     appGit,
     compilerGit,
@@ -1650,6 +1814,13 @@ async function collectEnvironment(
     lockfileHash: sha256(lockfileEvidence.content),
     packageJsonHash: sha256(packageJson),
   };
+}
+
+/** @internal Preserve fail-closed lockfile/workspace membership validation. */
+export async function validateConventionEnvironment(
+  loaded: LoadedConventionCatalog
+): Promise<void> {
+  await pnpmLockfileEvidence(loaded.repositoryRoot);
 }
 
 function artifactBytes(artifacts: EmittedArtifacts): number {
@@ -3186,13 +3357,24 @@ function normalizedGenerationConfig(
   });
 }
 
-async function generationInputIdentity(
-  loaded: LoadedConventionCatalog
-): Promise<CatalogGenerationInputIdentityV1> {
+async function generationInputEnvironment(repositoryRoot: string): Promise<
+  Readonly<{
+    application: Awaited<ReturnType<typeof computeApplicationPackageIdentity>>;
+    immutable: Awaited<ReturnType<typeof getImmutableIntegrityIdentity>>;
+  }>
+> {
   const [immutable, application] = await Promise.all([
     getImmutableIntegrityIdentity(),
-    computeApplicationPackageIdentity(loaded.repositoryRoot),
+    computeApplicationPackageIdentity(repositoryRoot),
   ]);
+  return { application, immutable };
+}
+
+async function generationInputIdentity(
+  loaded: LoadedConventionCatalog,
+  environment = generationInputEnvironment(loaded.repositoryRoot)
+): Promise<CatalogGenerationInputIdentityV1> {
+  const { application, immutable } = await environment;
   const normalizedConfig = canonicalJson(normalizedGenerationConfig(loaded));
   return buildCatalogGenerationInputIdentity({
     application,
@@ -3353,8 +3535,9 @@ export async function loadConventionCatalogGenerationInput(
       };
     }
   }
+  const environment = generationInputEnvironment(root);
   const loaded = await loadConventionCatalogSnapshot(root, false);
-  const generationInput = await generationInputIdentity(loaded);
+  const generationInput = await generationInputIdentity(loaded, environment);
   generationInputCache.set(root, {
     fingerprint: generationInputFingerprint(loaded),
     generationInput,
@@ -3373,8 +3556,8 @@ export async function generateConventionCatalogWithSnapshot(
     result: ConventionGenerationResult;
   }>
 > {
-  const loaded = await loadConventionCatalog(packageRoot);
-  const generationInput = await generationInputIdentity(loaded);
+  const { generationInput, loaded } =
+    await loadConventionCatalogGenerationInput(packageRoot);
   const compiled = compiledConventionCatalog(loaded);
   const artifacts = emitArtifacts(compiled, loaded.config.representation, {
     compact: true,
@@ -3387,7 +3570,7 @@ export async function generateConventionCatalogWithSnapshot(
     const current = await loadConventionCatalogGenerationInput(
       loaded.repositoryRoot
     );
-    return buildCatalogGenerationSnapshot({
+    const reconstructed = buildCatalogGenerationSnapshot({
       catalogLockHash: snapshot.catalogLockHash,
       generationInput: current.generationInput,
       payloadContentHash: snapshot.payload.contentHash,
@@ -3395,6 +3578,7 @@ export async function generateConventionCatalogWithSnapshot(
       payloadEntries: snapshot.payload.manifest.entries,
       stableFacadeHash: snapshot.stableFacadeHash,
     });
+    return reconstructed;
   };
   const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
     afterPointerCommit: reconstructGenerationSnapshot,

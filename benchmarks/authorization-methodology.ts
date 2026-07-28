@@ -36,16 +36,16 @@ const PRODUCTION_PACKAGES = [
 
 export const FROZEN_PRODUCTION_CANDIDATE = {
   compilerCliHash:
-    "sha256:9b5f7cd66a58e62494f38d1fdb157bd4c7e9c2e825d74754f712f60895a5d648",
+    "sha256:e2f8669d839a5d1c3698739bfe58ae36efb044e673d52fba8ae35447d18ec75c",
   dist: {
-    fileCount: 116,
-    hash: "sha256:1e1345d2b0fedf6b8537d9d15f02b399df4fff52c7a627aabc9b9aece09d9f39",
+    fileCount: 119,
+    hash: "sha256:7d3a92489250df1d38d0872d09b1d793891a13a21d912d430d6745ee1efca227",
   },
   lockfileHash:
     "sha256:b3b8c41512bbabdf6dda03ee6cfc4de6b62617f2fa0e87577859b588a5c38de8",
   source: {
-    fileCount: 84,
-    hash: "sha256:2b5bea5a863c24535338ace5ab8e4d96012d9fcc27e328c98593309a58f318b7",
+    fileCount: 85,
+    hash: "sha256:c7f9e00e00842b7e5dc2fc407748e78fb4c69b5de0752ac555b342724523c334",
   },
 } as const;
 
@@ -149,6 +149,12 @@ export function acceptanceEligibility(
 
 export function completeContractPass(gate: PerformanceGate): boolean {
   return gate.absoluteMedianPass && gate.absoluteP95Pass && gate.confidencePass;
+}
+
+export function measurementTimeoutMilliseconds(
+  surface: MeasurementSurface
+): number {
+  return surface === "rss" ? 600_000 : 180_000;
 }
 
 export function releaseAcceptance(input: ReleaseAcceptanceInput): boolean {

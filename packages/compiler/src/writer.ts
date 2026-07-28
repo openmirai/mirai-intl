@@ -475,7 +475,7 @@ async function replaceTextFile(
     const handle = await open(temporary, "wx");
     try {
       await handle.writeFile(content, "utf8");
-      await handle.sync();
+      await handle.datasync();
     } finally {
       await handle.close();
     }
@@ -785,7 +785,7 @@ async function installPublicationLock(
     | undefined;
   try {
     await handle.writeFile(content, "utf8");
-    await handle.sync();
+    await handle.datasync();
     const candidateStats = await handle.stat();
     candidateIdentity = {
       device: candidateStats.dev,
@@ -1174,7 +1174,7 @@ async function writeDurableFile(
   const handle = await open(file, exclusive ? "wx" : "w", 0o600);
   try {
     await handle.writeFile(content, "utf8");
-    await handle.sync();
+    await handle.datasync();
   } finally {
     await handle.close();
   }
@@ -1267,7 +1267,14 @@ async function advanceJournal(
   hooks: PublicationFaultInjectionHooks | undefined
 ): Promise<PublicationJournal> {
   const next = Object.freeze({ ...journal, state });
-  await persistJournal(publicationRoot, next);
+  if (
+    state === "STAGED_DURABLE" ||
+    state === "ROLLBACK_REQUIRED" ||
+    state === "ROLLBACK_POINTER_REMOVED" ||
+    state === "ROLLBACK_CONTROLS_RESTORED"
+  ) {
+    await persistJournal(publicationRoot, next);
+  }
   await hooks?.afterState?.(state);
   return next;
 }
@@ -1416,11 +1423,34 @@ async function assertNoLegacySiblingStages(outputRoot: string): Promise<void> {
 
 async function discardUninstalledPublication(
   root: string,
+  outputRoot: string,
   publicationRoot: string,
-  journal: PublicationJournal
+  journal: PublicationJournal,
+  plan: PublicationPlan
 ): Promise<void> {
   if (journal.state !== "STAGED_DURABLE") {
     throw new Error("Cannot discard publication after payload installation");
+  }
+  const current = await readCurrent(root, outputRoot);
+  if (current?.directory === plan.relativeDirectory) {
+    throw new Error("Cannot discard a committed generated payload");
+  }
+  if (
+    await assertConfinedDirectory(
+      outputRoot,
+      plan.destination,
+      "Uncommitted generated artifact directory",
+      true
+    )
+  ) {
+    await assertPayloadManifest(
+      outputRoot,
+      plan.destination,
+      plan.manifest,
+      "Uncommitted generated artifact directory"
+    );
+    await rm(plan.destination, { recursive: true });
+    await syncDirectory(join(root, "builds"));
   }
   const stageRoot = join(publicationRoot, journal.stageDirectory);
   await rm(stageRoot, { recursive: true });
@@ -1636,9 +1666,11 @@ async function createStage(
   }
   await rm(stageRoot, { force: true, recursive: true });
   await mkdir(stageRoot);
-  await mkdir(payloadRoot);
-  await mkdir(controlsRoot);
-  await mkdir(previousControlsRoot);
+  await Promise.all([
+    mkdir(payloadRoot),
+    mkdir(controlsRoot),
+    mkdir(previousControlsRoot),
+  ]);
   try {
     await Promise.all(
       artifactEntries(artifacts).map(([name, content]) =>
@@ -1668,11 +1700,14 @@ async function createStage(
         )
       );
     }
-    await syncDirectory(payloadRoot);
-    await syncDirectory(controlsRoot);
-    await syncDirectory(previousControlsRoot);
+    await Promise.all([
+      syncDirectory(payloadRoot),
+      syncDirectory(controlsRoot),
+      ...(journal.previousControlsHash === null
+        ? []
+        : [syncDirectory(previousControlsRoot)]),
+    ]);
     await syncDirectory(stageRoot);
-    await syncDirectory(publicationRoot);
     await assertPayloadManifest(
       outputRoot,
       payloadRoot,
@@ -1888,6 +1923,54 @@ async function rollbackCommittedPointer(
   }
 }
 
+type StagedFileInstall = Readonly<{
+  destination: string;
+  expected: string;
+  label: string;
+  stagedFile: string;
+}>;
+
+async function installStagedFiles(
+  outputRoot: string,
+  installs: ReadonlyArray<StagedFileInstall>
+): Promise<void> {
+  const written = await Promise.all(
+    installs.map(async ({ destination, expected, label, stagedFile }) => {
+      const staged = await readManagedTextFile(outputRoot, stagedFile, label);
+      if (staged === undefined) {
+        if (await exactTextFile(outputRoot, destination, expected, label)) {
+          return false;
+        }
+        throw new Error(`${label} is missing from both stage and destination`);
+      }
+      if (staged !== expected) {
+        throw new Error(`${label} staged bytes are corrupt`);
+      }
+      await replaceTextFile(
+        dirname(destination),
+        basename(destination),
+        staged
+      );
+      return true;
+    })
+  );
+  const directories = [
+    ...new Set(
+      installs
+        .filter((_, index) => written[index])
+        .map(({ destination }) => dirname(destination))
+    ),
+  ];
+  await Promise.all(directories.map((directory) => syncDirectory(directory)));
+  await Promise.all(
+    installs.map(async ({ destination, expected, label }) => {
+      if (!(await exactTextFile(outputRoot, destination, expected, label))) {
+        throw new Error(`${label} installed bytes are corrupt`);
+      }
+    })
+  );
+}
+
 async function installStagedFile(
   outputRoot: string,
   stagedFile: string,
@@ -1895,23 +1978,54 @@ async function installStagedFile(
   expected: string,
   label: string
 ): Promise<void> {
-  const staged = await readManagedTextFile(outputRoot, stagedFile, label);
-  if (staged === undefined) {
-    if (await exactTextFile(outputRoot, destination, expected, label)) {
-      return;
-    }
-    throw new Error(`${label} is missing from both stage and destination`);
-  }
-  if (staged !== expected) {
-    throw new Error(`${label} staged bytes are corrupt`);
-  }
-  await durableReplaceTextFile(
-    dirname(destination),
-    basename(destination),
-    staged
+  await installStagedFiles(outputRoot, [
+    {
+      destination,
+      expected,
+      label,
+      stagedFile,
+    },
+  ]);
+}
+
+async function installStagedControls(
+  root: string,
+  outputRoot: string,
+  stageRoot: string,
+  plan: PublicationPlan
+): Promise<void> {
+  const controlsRoot = join(stageRoot, "controls");
+  await installStagedFiles(outputRoot, [
+    {
+      destination: join(root, "index.ts"),
+      expected: plan.selectorContent,
+      label: "Generated stable facade",
+      stagedFile: join(controlsRoot, "index.ts"),
+    },
+    {
+      destination: join(root, "catalog.lock.json"),
+      expected: plan.lockContent,
+      label: "Generated catalog lock",
+      stagedFile: join(controlsRoot, "catalog.lock.json"),
+    },
+    {
+      destination: join(root, receiptFileName),
+      expected: plan.receiptContent,
+      label: "Catalog generation receipt",
+      stagedFile: join(controlsRoot, receiptFileName),
+    },
+  ]);
+  await assertExactSelectors(root, outputRoot, plan);
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
   );
-  if (!(await exactTextFile(outputRoot, destination, expected, label))) {
-    throw new Error(`${label} installed bytes are corrupt`);
+  if (
+    receiptSource !== plan.receiptContent ||
+    sha256(receiptSource) !== plan.receiptHash
+  ) {
+    throw new Error("Catalog generation receipt is corrupt before commit");
   }
 }
 
@@ -2144,7 +2258,6 @@ async function runPublication(
     await syncDirectory(publicationRoot);
     await options.publicationHooks?.afterState?.("PREPARED");
   }
-
   const stageRoot = join(publicationRoot, journal.stageDirectory);
   if (journal.state === "PREPARED") {
     await createStage(
@@ -2163,12 +2276,54 @@ async function runPublication(
     );
   }
   if (journal.state === "STAGED_DURABLE") {
-    await assertPayloadManifest(
-      outputRoot,
-      join(stageRoot, "payload"),
-      plan.manifest,
-      "Staged generated artifact directory"
-    );
+    const expectedPointer = JSON.parse(plan.pointerContent) as CurrentPointer;
+    const current = await readCurrent(root, outputRoot);
+    if (
+      current !== undefined &&
+      canonicalJson(current) === canonicalJson(expectedPointer)
+    ) {
+      let committed = false;
+      try {
+        await assertCommittedPlan(
+          root,
+          outputRoot,
+          plan,
+          journal.previousDirectory
+            ? basename(journal.previousDirectory)
+            : undefined
+        );
+        committed = true;
+      } catch {
+        // The staged publication owns reconstruction of exact missing bytes.
+      }
+      if (committed) {
+        journal = Object.freeze({ ...journal, state: "POINTER_COMMITTED" });
+      }
+    }
+  }
+  if (journal.state === "STAGED_DURABLE") {
+    if (
+      await assertConfinedDirectory(
+        outputRoot,
+        join(stageRoot, "payload"),
+        "Staged generated artifact directory",
+        true
+      )
+    ) {
+      await assertPayloadManifest(
+        outputRoot,
+        join(stageRoot, "payload"),
+        plan.manifest,
+        "Staged generated artifact directory"
+      );
+    } else {
+      await assertPayloadManifest(
+        outputRoot,
+        plan.destination,
+        plan.manifest,
+        "Uncommitted generated artifact directory"
+      );
+    }
     try {
       const reconstructed = await options.beforePayloadInstall?.(plan.snapshot);
       if (
@@ -2181,7 +2336,13 @@ async function runPublication(
         );
       }
     } catch (error) {
-      await discardUninstalledPublication(root, publicationRoot, journal);
+      await discardUninstalledPublication(
+        root,
+        outputRoot,
+        publicationRoot,
+        journal,
+        plan
+      );
       throw error;
     }
     await installPayload(root, outputRoot, stageRoot, plan);
@@ -2199,39 +2360,12 @@ async function runPublication(
       plan.manifest,
       "Generated artifact directory"
     );
-    const controlsRoot = join(stageRoot, "controls");
-    await Promise.all([
-      installStagedFile(
-        outputRoot,
-        join(controlsRoot, "index.ts"),
-        join(root, "index.ts"),
-        plan.selectorContent,
-        "Generated stable facade"
-      ),
-      installStagedFile(
-        outputRoot,
-        join(controlsRoot, "catalog.lock.json"),
-        join(root, "catalog.lock.json"),
-        plan.lockContent,
-        "Generated catalog lock"
-      ),
-    ]);
-    await assertExactSelectors(root, outputRoot, plan);
+    await installStagedControls(root, outputRoot, stageRoot, plan);
     journal = await advanceJournal(
       publicationRoot,
       journal,
       "SELECTORS_INSTALLED",
       options.publicationHooks
-    );
-  }
-  if (journal.state === "SELECTORS_INSTALLED") {
-    await assertExactSelectors(root, outputRoot, plan);
-    await installStagedFile(
-      outputRoot,
-      join(stageRoot, "controls", receiptFileName),
-      join(root, receiptFileName),
-      plan.receiptContent,
-      "Catalog generation receipt"
     );
     journal = await advanceJournal(
       publicationRoot,
@@ -2334,7 +2468,6 @@ async function runPublication(
     await rm(publicationRoot, { recursive: true });
     await syncDirectory(root);
   }
-
   return {
     changed: true,
     contentHash: plan.contentHash,

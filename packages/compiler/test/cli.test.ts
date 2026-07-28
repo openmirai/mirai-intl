@@ -173,8 +173,8 @@ async function workspaceAnalysisInstrumentation(
       "  const loaded = nextLoad(url, context);",
       '  if (loaded.format !== "module" || !url.includes("/packages/compiler/dist/analyze-sources-")) return loaded;',
       '  const source = typeof loaded.source === "string" ? loaded.source : Buffer.from(loaded.source).toString("utf8");',
-      '  const transformed = source.replace("async function analyzeConventionSourceFiles(packageRoot, sourceFiles, workspaceRoot, options = {}) {", "async function analyzeConventionSourceFiles(packageRoot, sourceFiles, workspaceRoot, options = {}) {\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;");',
-      '  if (source.includes("async function analyzeConventionSourceFiles(") && transformed === source) throw new Error("Failed to instrument workspace source analysis");',
+      '  const transformed = source.replace("async function analyzeLoadedConventionSourceFiles(loaded, root, generatedDirectory, sourceFiles, workspaceRoot = root, options = {}) {", "async function analyzeLoadedConventionSourceFiles(loaded, root, generatedDirectory, sourceFiles, workspaceRoot = root, options = {}) {\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;");',
+      '  if (source.includes("async function analyzeLoadedConventionSourceFiles(") && transformed === source) throw new Error("Failed to instrument workspace source analysis");',
       "  return { ...loaded, source: transformed === source ? source : `${transformed}\\nglobalThis.__miraiWorkspaceAnalysisInstrumented = true;\\n` };",
       "}",
       "",
@@ -327,6 +327,144 @@ describe("convention-only CLI", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 90_000);
+
+  it.each([
+    {
+      mutate: async (workspace: string) =>
+        writeFile(
+          join(workspace, "pnpm-workspace.yaml"),
+          "packages:\n  - packages/*\n"
+        ),
+      name: "workspace exclusion",
+    },
+    {
+      mutate: async (workspace: string) =>
+        rm(join(workspace, "pnpm-lock.yaml")),
+      name: "missing workspace lockfile",
+    },
+  ])(
+    "fails closed before writing a workspace receipt after $name",
+    async ({ mutate }) => {
+      const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+      const app = join(workspace, "apps/auth");
+      try {
+        await writeFile(
+          join(workspace, "pnpm-workspace.yaml"),
+          "packages:\n  - apps/*\n"
+        );
+        await writeFile(
+          join(workspace, "pnpm-lock.yaml"),
+          "lockfileVersion: '9.0'\nimporters:\n\n  apps/auth:\n    dependencies: {}\n"
+        );
+        await writeConventionApp(app);
+        expect(runCli(app, "generate").status).toBe(0);
+        await mutate(workspace);
+
+        const checked = runCli(
+          workspace,
+          "check",
+          "--workspace",
+          "--format=json"
+        );
+        expect(checked.status).toBe(1);
+        expect(JSON.parse(checked.stdout)).toMatchObject({
+          command: "check",
+          success: false,
+        });
+        expect(checked.stdout).toContain(
+          "no pnpm-lock.yaml exists at the package root and no parent pnpm workspace lockfile includes the target package importer"
+        );
+        await expect(
+          readFile(join(app, ".mirai-intl/check-receipt.v2.json"), "utf8")
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await rm(workspace, { force: true, recursive: true });
+      }
+    },
+    90_000
+  );
+
+  it("uses simple workspace membership with later top-level settings", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const binRoot = join(workspace, "bin");
+    const app = join(workspace, "apps/auth");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - apps/*\n\noverrides:\n  postcss: 8.5.10\n"
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\nimporters:\n\n  apps/auth:\n    dependencies: {}\n"
+      );
+      await writeConventionApp(app);
+      await mkdir(binRoot, { recursive: true });
+      const pnpm = join(binRoot, "pnpm");
+      await writeFile(
+        pnpm,
+        "#!/usr/bin/env node\nprocess.stderr.write('pnpm must not run for simple workspace membership\\n');\nprocess.exitCode = 1;\n",
+        "utf8"
+      );
+      await chmod(pnpm, 0o755);
+
+      const generated = runCliWithEnvironment(
+        app,
+        {
+          ...process.env,
+          PATH: `${binRoot}${delimiter}${process.env.PATH ?? ""}`,
+        },
+        "generate",
+        "--json"
+      );
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("falls back to pnpm for unsupported workspace YAML syntax", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const binRoot = join(workspace, "bin");
+    const app = join(workspace, "apps/auth");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        'packages:\n  - "apps/*"\n'
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\nimporters:\n\n  apps/auth:\n    dependencies: {}\n"
+      );
+      await writeConventionApp(app);
+      await mkdir(binRoot, { recursive: true });
+      const pnpm = join(binRoot, "pnpm");
+      await writeFile(
+        pnpm,
+        `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(
+          JSON.stringify([{ name: "@example/cli-app", path: app }])
+        )});\n`,
+        "utf8"
+      );
+      await chmod(pnpm, 0o755);
+
+      const generated = runCliWithEnvironment(
+        app,
+        {
+          ...process.env,
+          PATH: `${binRoot}${delimiter}${process.env.PATH ?? ""}`,
+        },
+        "generate",
+        "--json"
+      );
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
 
   it("preserves workspace authorization failures without repeating source analysis", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));

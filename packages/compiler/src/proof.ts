@@ -24,8 +24,10 @@ import {
   compareCanonicalStrings,
   sha256,
 } from "./canonical";
+import type * as AnalyzeSourcesModule from "./analyze-sources";
 import {
   loadConventionCatalog,
+  validateConventionEnvironment,
   verifyLoadedConventionCatalog,
 } from "./catalog";
 import type { ConventionOptions, LoadedConventionCatalog } from "./catalog";
@@ -45,6 +47,16 @@ import {
 import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
 import { captureProviderResolutionFrontier } from "./provider-resolution-identity";
+import { collectConventionSourceFiles } from "./source-discovery";
+import type * as OwnershipModule from "./ownership";
+
+type AuthorizationOptions = ConventionOptions &
+  Readonly<{ validateEnvironment?: boolean }>;
+
+type SemanticModules = Readonly<{
+  analyze: typeof AnalyzeSourcesModule;
+  ownership: typeof OwnershipModule;
+}>;
 
 export class IntlSourceAuthorizationError extends Error {
   override readonly name = "IntlSourceAuthorizationError";
@@ -373,16 +385,14 @@ function packageIdentity(
 async function createConventionCheckReceipt(
   packageRoot: string,
   loaded: LoadedConventionCatalog,
-  finalVerificationOptions: ConventionOptions
+  finalVerificationOptions: AuthorizationOptions,
+  semanticModules: Promise<SemanticModules>
 ): Promise<
   Readonly<{
     receipt: IntlCheckReceiptV2;
     verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
   }>
 > {
-  const { analyzeConventionSourceFiles, collectConventionSourceFiles } =
-    await import("./analyze-sources");
-  const { resolveConventionSourceUniverse } = await import("./ownership");
   const root = resolve(loaded.repositoryRoot);
   const verificationBefore = await verifyLoadedConventionCatalog(loaded, {
     collectEnvironment: false,
@@ -391,6 +401,8 @@ async function createConventionCheckReceipt(
     root,
     loaded.discovery.output
   );
+  const { analyze, ownership } = await semanticModules;
+  const { resolveConventionSourceUniverse } = ownership;
   const universe = await resolveConventionSourceUniverse(
     root,
     loaded.checkProjects,
@@ -398,24 +410,31 @@ async function createConventionCheckReceipt(
     discoveredFiles
   );
   const sourceFiles = universe.files.map(({ absolute }) => absolute);
-  const beforeSources = await Promise.all(
-    sourceFiles.map(
-      async (file) => [file, sha256(await readFile(file, "utf8"))] as const
-    )
-  );
   const generationReceiptPath = join(
     root,
     loaded.discovery.output,
     "catalog-generation-receipt.v1.json"
   );
-  const generationReceiptBefore = sha256(
-    await readFile(generationReceiptPath, "utf8")
-  );
-  const applicationBefore = await computeApplicationPackageIdentity(root);
-  const immutableBefore = await computeImmutableIntegrityIdentity();
-  const analysis = await analyzeConventionSourceFiles(
+  const [
+    beforeSources,
+    generationReceiptBefore,
+    applicationBefore,
+    immutableBefore,
+  ] = await Promise.all([
+    Promise.all(
+      sourceFiles.map(
+        async (file) => [file, sha256(await readFile(file, "utf8"))] as const
+      )
+    ),
+    readFile(generationReceiptPath, "utf8").then(sha256),
+    computeApplicationPackageIdentity(root),
+    computeImmutableIntegrityIdentity(),
+  ]);
+  const analysis = await analyze.analyzeLoadedConventionSourceFiles(
+    loaded,
     root,
-    sourceFiles,
+    loaded.discovery.output,
+    universe.files,
     universe.workspaceRoot
   );
   if (analysis.diagnostics.length > 0) {
@@ -449,14 +468,23 @@ async function createConventionCheckReceipt(
     throw new Error("Mirai Intl finite semantic provider budget was exceeded");
   }
   const afterLoaded = await loadConventionCatalog(packageRoot);
-  const verification = await verifyLoadedConventionCatalog(
-    afterLoaded,
-    finalVerificationOptions
-  );
-  const afterDiscoveredFiles = await collectConventionSourceFiles(
-    root,
-    afterLoaded.discovery.output
-  );
+  let verificationOptions: ConventionOptions = {};
+  if (finalVerificationOptions.validateEnvironment) {
+    verificationOptions = { collectEnvironment: false };
+  } else if (finalVerificationOptions.collectEnvironment !== undefined) {
+    verificationOptions = {
+      collectEnvironment: finalVerificationOptions.collectEnvironment,
+    };
+  }
+  const [verification, afterDiscoveredFiles] = await Promise.all([
+    Promise.all([
+      finalVerificationOptions.validateEnvironment
+        ? validateConventionEnvironment(afterLoaded)
+        : Promise.resolve(),
+      verifyLoadedConventionCatalog(afterLoaded, verificationOptions),
+    ]).then(([, result]) => result),
+    collectConventionSourceFiles(root, afterLoaded.discovery.output),
+  ]);
   const afterUniverse = await resolveConventionSourceUniverse(
     root,
     afterLoaded.checkProjects,
@@ -476,27 +504,55 @@ async function createConventionCheckReceipt(
       "Mirai Intl source universe changed while source analysis ran"
     );
   }
-  const afterSources = await Promise.all(
-    afterUniverse.files.map(
-      async ({ absolute }) =>
-        [absolute, sha256(await readFile(absolute, "utf8"))] as const
-    )
-  );
+  const providerInputs = [
+    ...new Map(
+      analysis.evidence
+        .flatMap((evidence) => [...evidence.declarations, ...evidence.libs])
+        .filter((entry) => !entry.path.startsWith("@typescript/lib/"))
+        .map((entry) => [entry.path, entry] as const)
+    ).values(),
+  ];
+  const [
+    afterSources,
+    projectManifestAfter,
+    providerInputHashes,
+    generationReceiptHash,
+    application,
+    immutable,
+  ] = await Promise.all([
+    Promise.all(
+      afterUniverse.files.map(
+        async ({ absolute }) =>
+          [absolute, sha256(await readFile(absolute, "utf8"))] as const
+      )
+    ),
+    Promise.all(
+      universe.projects.flatMap((project) =>
+        project.configManifest.map(async (entry) => ({
+          hash: sha256(
+            await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
+          ),
+          path: entry.path,
+        }))
+      )
+    ),
+    Promise.all(
+      providerInputs.map(async (entry) => ({
+        actual: sha256(
+          await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
+        ),
+        expected: entry.hash,
+      }))
+    ),
+    readFile(generationReceiptPath, "utf8").then(sha256),
+    computeApplicationPackageIdentity(root),
+    computeImmutableIntegrityIdentity(),
+  ]);
   if (canonicalJson(beforeSources) !== canonicalJson(afterSources)) {
     throw new Error(
       "Mirai Intl source inputs changed while source analysis ran"
     );
   }
-  const projectManifestAfter = await Promise.all(
-    universe.projects.flatMap((project) =>
-      project.configManifest.map(async (entry) => ({
-        hash: sha256(
-          await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
-        ),
-        path: entry.path,
-      }))
-    )
-  );
   const projectManifestBefore = universe.projects.flatMap((project) =>
     project.configManifest.map(({ hash, path }) => ({ hash, path }))
   );
@@ -507,26 +563,13 @@ async function createConventionCheckReceipt(
       "Mirai Intl TypeScript project configuration changed while source analysis ran"
     );
   }
-  for (const entry of analysis.evidence.flatMap((evidence) => [
-    ...evidence.declarations,
-    ...evidence.libs,
-  ])) {
-    if (entry.path.startsWith("@typescript/lib/")) {
-      continue;
-    }
-    if (
-      sha256(
-        await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
-      ) !== entry.hash
-    ) {
+  for (const { actual, expected } of providerInputHashes) {
+    if (actual !== expected) {
       throw new Error(
         "Mirai Intl semantic provider inputs changed while source analysis ran"
       );
     }
   }
-  const generationReceiptHash = sha256(
-    await readFile(generationReceiptPath, "utf8")
-  );
   if (
     generationReceiptHash !== generationReceiptBefore ||
     verification.write.contentHash !== verificationBefore.write.contentHash
@@ -535,13 +578,11 @@ async function createConventionCheckReceipt(
       "Mirai Intl generated catalog changed while source analysis ran"
     );
   }
-  const application = await computeApplicationPackageIdentity(root);
   if (canonicalJson(application) !== canonicalJson(applicationBefore)) {
     throw new Error(
       "Mirai Intl application package inputs changed while source analysis ran"
     );
   }
-  const immutable = await computeImmutableIntegrityIdentity();
   if (canonicalJson(immutable) !== canonicalJson(immutableBefore)) {
     throw new Error(
       "Mirai Intl compiler dependency inputs changed while source analysis ran"
@@ -682,7 +723,7 @@ async function createConventionCheckReceipt(
  */
 export async function authorizeConventionCatalog(
   packageRoot: string,
-  finalVerificationOptions: ConventionOptions = {}
+  finalVerificationOptions: AuthorizationOptions = {}
 ): Promise<
   Readonly<{
     receipt: IntlCheckReceiptV2;
@@ -692,6 +733,10 @@ export async function authorizeConventionCatalog(
   const root = resolve(packageRoot);
   const destination = conventionCheckReceiptPath(root);
   try {
+    const semanticModules = Promise.all([
+      import("./analyze-sources"),
+      import("./ownership"),
+    ]).then(([analyze, ownership]) => ({ analyze, ownership }));
     // Proof is the production authority entrypoint. It must be able to
     // materialize the immutable content-addressed payload after a clean clone,
     // while a matching catalog remains a writer no-op.
@@ -699,7 +744,8 @@ export async function authorizeConventionCatalog(
     const authorization = await createConventionCheckReceipt(
       root,
       ensured.loaded,
-      finalVerificationOptions
+      finalVerificationOptions,
+      semanticModules
     );
     await writeReceipt(destination, authorization.receipt);
     await rm(join(root, ".mirai-intl", "check-receipt.v1.json"), {

@@ -20,15 +20,6 @@ import {
 import { parseCanonicalCatalogCurrentPointer } from "./generation-snapshot";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
 import {
-  authorizeConventionCatalog,
-  discoverEmittedModules,
-  finalizeBuildProof,
-  finalizeBuildProofTargets,
-  IntlSourceAuthorizationError,
-  proveConventionCatalog,
-  writeProvisionalBuildProof,
-} from "./proof";
-import {
   colorEnabled,
   emitReport,
   failedSummary,
@@ -437,10 +428,13 @@ function catalogDiagnostic(
 }
 
 async function checkWorkspace(output: ReporterOptions): Promise<void> {
+  const proofModule = import("./proof");
   const workspaceRoot = await realpath(
     await nearestWorkspaceRoot(process.cwd())
   );
   const roots = await discoverWorkspaceCatalogs(workspaceRoot);
+  const { authorizeConventionCatalog, IntlSourceAuthorizationError } =
+    await proofModule;
   const diagnostics: Array<CliDiagnostic> = [];
   const catalogs: Array<{
     authorization?: IntlSemanticAuthorizationObservationV2 &
@@ -455,7 +449,9 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
   for (const root of roots) {
     const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
     try {
-      const { receipt, verification } = await authorizeConventionCatalog(root);
+      const { receipt, verification } = await authorizeConventionCatalog(root, {
+        validateEnvironment: true,
+      });
       const summary = catalogSummary(verification);
       messageCount += summary.messageCount ?? 0;
       catalogs.push({
@@ -794,6 +790,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "prove") {
+    const { proveConventionCatalog } = await import("./proof");
     const result = await proveConventionCatalog(process.cwd());
     await report(
       command,
@@ -809,6 +806,11 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "finalize-proof") {
+    const {
+      discoverEmittedModules,
+      finalizeBuildProof,
+      finalizeBuildProofTargets,
+    } = await import("./proof");
     const targetValues = optionValues("--target");
     const multiTarget =
       targetValues.length > 1 ||
@@ -882,6 +884,8 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "prove-artifact") {
+    const { discoverEmittedModules, writeProvisionalBuildProof } =
+      await import("./proof");
     const target = option("--target");
     const artifactRoot = option("--artifact-root");
     const mapRoot = option("--map-root") ?? artifactRoot;

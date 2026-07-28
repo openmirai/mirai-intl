@@ -44,11 +44,15 @@ vi.mock("../src/analyze-sources", async (importOriginal) => {
   const actual = await importOriginal<typeof AnalyzeSources>();
   return {
     ...actual,
-    analyzeConventionSourceFiles: async (
-      ...arguments_: Parameters<typeof actual.analyzeConventionSourceFiles>
+    analyzeLoadedConventionSourceFiles: async (
+      ...arguments_: Parameters<
+        typeof actual.analyzeLoadedConventionSourceFiles
+      >
     ) => {
       instrumentation.analysisCalls += 1;
-      const result = await actual.analyzeConventionSourceFiles(...arguments_);
+      const result = await actual.analyzeLoadedConventionSourceFiles(
+        ...arguments_
+      );
       await instrumentation.mutateAfterAnalysis?.();
       return result;
     },
@@ -122,9 +126,9 @@ describe("compiler-owned catalog snapshots", () => {
         collectEnvironment: false,
       });
 
-      // Phase 1 removes the generation/report/verification recompiles. Source
-      // analysis still owns one independent catalog load until Phase 2.
-      expect(instrumentation.compileCalls).toBe(3);
+      // Authorization reuses the ensured and resolved source snapshots while
+      // retaining an independent post-analysis catalog verification.
+      expect(instrumentation.compileCalls).toBe(2);
       expect(instrumentation.analysisCalls).toBe(1);
       expect(await readFile(conventionCheckReceiptPath(root), "utf8")).toBe(
         `${canonicalJson(authorization.receipt)}\n`
@@ -177,7 +181,7 @@ describe("compiler-owned catalog snapshots", () => {
         "Mirai Intl source inputs changed while source analysis ran"
       );
       await expectReceiptRemoved(root);
-      expect(instrumentation.compileCalls).toBe(3);
+      expect(instrumentation.compileCalls).toBe(2);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

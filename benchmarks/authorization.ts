@@ -35,6 +35,7 @@ import {
   PERFORMANCE_REFERENCE,
   performanceGate,
   productionCandidateIdentity,
+  measurementTimeoutMilliseconds,
   rawStatistics,
   releaseAcceptance,
   rssSamplingSchedule,
@@ -786,7 +787,7 @@ function runCli(
     killSignal: "SIGKILL",
     maxBuffer: childOutputLimit,
     shell: false,
-    timeout: 180_000,
+    timeout: measurementTimeoutMilliseconds(surface),
   });
   if (result.error || result.status !== 0 || result.signal) {
     throw new Error(

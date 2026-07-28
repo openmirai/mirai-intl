@@ -21,6 +21,7 @@ import {
   engineOrder,
   EVALUATOR_SOURCE_PATHS,
   FROZEN_PRODUCTION_CANDIDATE,
+  measurementTimeoutMilliseconds,
   pairedBlockStatistics,
   PERFORMANCE_REFERENCE,
   performanceGate,
@@ -311,6 +312,9 @@ describe("authorization evaluator methodology", () => {
     expect(timing).not.toContain("--import");
     expect(typescript).not.toContain("/tmp/rss.mjs");
     expect(rss).not.toContain("/tmp/profiler.mjs");
+    expect(measurementTimeoutMilliseconds("timing")).toBe(180_000);
+    expect(measurementTimeoutMilliseconds("typescript")).toBe(180_000);
+    expect(measurementTimeoutMilliseconds("rss")).toBe(600_000);
   });
 
   it("pins the complete nine-file evaluator identity", () => {

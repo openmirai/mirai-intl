@@ -1,11 +1,12 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { relative, resolve, sep } from "node:path";
 
 import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
 import { compareCanonicalStrings, sha256 } from "./canonical";
 import { loadConventionCatalog } from "./catalog";
 import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
 import { resolveConventionSourceUniverse } from "./ownership";
+import { collectConventionSourceFiles } from "./source-discovery";
 import { transformMiraiIntlOwnerBatch } from "./transform";
 import type {
   MiraiIntlSemanticBatchObservation,
@@ -13,18 +14,6 @@ import type {
   MiraiIntlTransformOptions,
 } from "./transform";
 import ts from "typescript";
-
-const SKIP_DIRECTORY_NAMES = new Set([
-  ".git",
-  ".next",
-  ".turbo",
-  ".vercel",
-  "coverage",
-  "dist",
-  "node_modules",
-]);
-
-const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/u;
 
 export type ConventionSourceDiagnostic = Readonly<{
   file: string;
@@ -130,50 +119,7 @@ function applyExactExceptions(
   return accepted;
 }
 
-export async function collectConventionSourceFiles(
-  root: string,
-  generatedRelative: string
-): Promise<Array<string>> {
-  const generatedPrefix = generatedRelative.split(/[\\/]/u).join(sep);
-  const files: Array<string> = [];
-
-  const visit = async (directory: string): Promise<void> => {
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name.startsWith(".") && entry.name !== ".") {
-        if (entry.isDirectory() || entry.isSymbolicLink()) {
-          continue;
-        }
-      }
-      const absolute = join(directory, entry.name);
-      const relativePath = relative(root, absolute);
-      if (entry.isDirectory()) {
-        if (
-          SKIP_DIRECTORY_NAMES.has(entry.name) ||
-          relativePath === generatedPrefix ||
-          relativePath.startsWith(`${generatedPrefix}${sep}`)
-        ) {
-          continue;
-        }
-        await visit(absolute);
-        continue;
-      }
-      if (!entry.isFile() || !SOURCE_EXTENSION.test(entry.name)) {
-        continue;
-      }
-      if (
-        relativePath === generatedPrefix ||
-        relativePath.startsWith(`${generatedPrefix}${sep}`)
-      ) {
-        continue;
-      }
-      files.push(absolute);
-    }
-  };
-
-  await visit(root);
-  return files.toSorted(compareCanonicalStrings);
-}
+export { collectConventionSourceFiles } from "./source-discovery";
 
 export async function analyzeConventionSources(
   packageRoot: string,
@@ -231,7 +177,8 @@ export async function analyzeConventionSourceFiles(
   );
 }
 
-async function analyzeLoadedConventionSourceFiles(
+/** @internal Analyze an already-loaded, already-resolved source universe. */
+export async function analyzeLoadedConventionSourceFiles(
   loaded: Awaited<ReturnType<typeof loadConventionCatalog>>,
   root: string,
   generatedDirectory: string,
