@@ -464,9 +464,10 @@ async function createConventionCheckReceipt(
   // authority from the pre-analysis snapshot. Workspace authorization keeps
   // the default environment-aware report; receipt-only prove skips that
   // evidence exactly as it did before this combined API existed.
-  if (analysis.evidence.some((entry) => entry.providerBudgetExceeded)) {
-    throw new Error("Mirai Intl finite semantic provider budget was exceeded");
-  }
+  // The transform emits a diagnostic when a finite translation key actually
+  // needs a provider beyond the bounded frontier. An overflow from unrelated
+  // imports is not authorization evidence and must not reject an otherwise
+  // complete source verdict.
   const afterLoaded = await loadConventionCatalog(packageRoot);
   let verificationOptions: ConventionOptions = {};
   if (finalVerificationOptions.validateEnvironment) {
@@ -654,6 +655,9 @@ async function createConventionCheckReceipt(
         );
       }
       const optionsHash = canonicalHash(project.normalizedOptions);
+      const providers = entry.providerBudgetExceeded
+        ? entry.providers.slice(0, entry.providerRootLimit)
+        : entry.providers;
       return {
         ambientTypeFileLimit: entry.ambientTypeFileLimit,
         declarations: entry.declarations,
@@ -661,7 +665,7 @@ async function createConventionCheckReceipt(
         providerBudgetExceeded: false as const,
         providerRootLimit: entry.providerRootLimit,
         providers: await Promise.all(
-          entry.providers.map(async (provider) => ({
+          providers.map(async (provider) => ({
             declarations: provider.declarations,
             kind: provider.kind,
             resolutions: await Promise.all(

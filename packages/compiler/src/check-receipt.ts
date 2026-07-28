@@ -288,7 +288,7 @@ export async function verifyConventionBuildReceipt(
   const reconstructedProjects = await Promise.all(
     receipt.projects.map(async (project) => ({
       project,
-      rootFiles: await reconstructProjectRootFiles(workspace, project),
+      rootFiles: await reconstructProjectRootFiles(workspace, project, root),
     }))
   );
   for (const { project, rootFiles } of reconstructedProjects) {

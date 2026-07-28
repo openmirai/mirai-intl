@@ -262,7 +262,8 @@ function mergeConfig(
  */
 export async function reconstructProjectRootFiles(
   workspaceRoot: string,
-  project: IntlCheckProjectV2
+  project: IntlCheckProjectV2,
+  packageRoot: string = workspaceRoot
 ): Promise<ReadonlyArray<string>> {
   const root = resolve(workspaceRoot);
   const manifests = new Map(
@@ -318,7 +319,8 @@ export async function reconstructProjectRootFiles(
     resolved.set(path, effective);
     return effective;
   };
-  const effective = visit(project.path);
+  const projectPath = workspacePath(root, resolve(packageRoot, project.path));
+  const effective = visit(projectPath);
   const extensions = effective.allowJs ? SOURCE_EXTENSION : /\.[cm]?tsx?$/u;
   const explicitFiles = effective.files
     ? await Promise.all(

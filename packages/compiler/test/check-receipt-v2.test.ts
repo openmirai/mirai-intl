@@ -222,6 +222,38 @@ afterEach(async () => {
 });
 
 describe("V2 build receipt verification", () => {
+  it("authorizes a resolved key when unrelated provider traversal exceeds the finite budget", async () => {
+    const root = await fixture();
+    await writeFile(
+      join(root, "node_modules/@example/provider/index.d.ts"),
+      [
+        'export declare const key: "greeting";',
+        'import "./provider-0";',
+        "",
+      ].join("\n")
+    );
+    for (let index = 0; index < 66; index += 1) {
+      await writeFile(
+        join(root, `node_modules/@example/provider/provider-${index}.d.ts`),
+        index === 65 ? "export {};\n" : `import "./provider-${index + 1}";\n`
+      );
+    }
+
+    const receipt = await proveConventionCatalog(root);
+    const { verifyConventionBuildReceipt } =
+      await import("../src/check-receipt");
+
+    expect(
+      Math.max(
+        ...receipt.providerClosures.map((closure) => closure.providers.length)
+      )
+    ).toBeLessThanOrEqual(64);
+    await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
+      buildReceiptVerifications: 1,
+      buildSemanticAnalysisRuns: 0,
+    });
+  }, 60_000);
+
   it("writes deterministic V2 authority and verifies with zero semantic runs", async () => {
     const root = await fixture();
     const first = await proveConventionCatalog(root);
@@ -499,6 +531,16 @@ describe("V2 build receipt verification", () => {
   it("binds hoisted workspace resolution changes into evidence and receipt invalidation", async () => {
     const { packageRoot, workspaceRoot } = await workspaceFixture();
     const missing = await proveConventionCatalog(packageRoot);
+    expect(missing.projects[0]?.path).toBe("tsconfig.json");
+    expect(missing.sources[0]?.owner).toBe("tsconfig.json");
+    const { verifyConventionBuildReceipt } =
+      await import("../src/check-receipt");
+    await expect(
+      verifyConventionBuildReceipt(packageRoot)
+    ).resolves.toMatchObject({
+      buildReceiptVerifications: 1,
+      buildSemanticAnalysisRuns: 0,
+    });
     const missingResolution = missing.providerClosures
       .find((closure) => closure.source === "packages/app/src/page.ts")
       ?.providers.flatMap((provider) => provider.resolutions)
