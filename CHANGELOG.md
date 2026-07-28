@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/openmirai/mirai-intl/compare/v0.3.1...v0.3.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **compiler:** qualify workspace build receipts ([b71075c](https://github.com/openmirai/mirai-intl/commit/b71075c024045ac146574f16d78244fac2d64e57))
+
 ## [0.3.1](https://github.com/openmirai/mirai-intl/compare/v0.3.0...v0.3.1) (2026-07-28)
 
 
