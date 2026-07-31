@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.5](https://github.com/openmirai/mirai-intl/compare/v0.3.4...v0.3.5) (2026-08-01)
+
+### Bug Fixes
+
+- **compiler:** reconstruct broad TypeScript include patterns without absorbing siblings of explicitly included external files
+
 ## [0.3.4](https://github.com/openmirai/mirai-intl/compare/v0.3.3...v0.3.4) (2026-08-01)
 
 ### Bug Fixes

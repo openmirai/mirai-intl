@@ -353,34 +353,43 @@ export async function reconstructProjectRootFiles(
     typeof effective.outDir?.value === "string"
       ? resolve(effective.outDir.origin, effective.outDir.value)
       : undefined;
-  const expansionRoots = [
-    ...new Set(include.map((pattern) => expansionRoot(includeOrigin, pattern))),
-  ];
-  const candidates = [
-    ...new Set(
-      (
-        await Promise.all(
-          expansionRoots.map(async (directory) => {
-            const stat = await lstat(directory).catch(() => undefined);
-            return stat?.isDirectory() && !stat.isSymbolicLink()
-              ? enumerateFiles(directory)
-              : [];
-          })
-        )
-      ).flat()
-    ),
-  ];
-  const includedFiles = candidates
+  const candidateFiles = new Map<string, Promise<ReadonlyArray<string>>>();
+  const enumerateCandidates = (
+    directory: string
+  ): Promise<ReadonlyArray<string>> => {
+    const existing = candidateFiles.get(directory);
+    if (existing) {
+      return existing;
+    }
+    const pending = lstat(directory)
+      .catch(() => undefined)
+      .then((stat) =>
+        stat?.isDirectory() && !stat.isSymbolicLink()
+          ? enumerateFiles(directory)
+          : []
+      );
+    candidateFiles.set(directory, pending);
+    return pending;
+  };
+  const includedFiles = (
+    await Promise.all(
+      include.map(async (pattern) => {
+        const directory = expansionRoot(includeOrigin, pattern);
+        const matcher = includeMatcher(pattern);
+        return (await enumerateCandidates(directory)).filter((file) => {
+          const includedPath = relative(includeOrigin, file)
+            .split(sep)
+            .join("/");
+          return matcher.test(includedPath);
+        });
+      })
+    )
+  )
+    .flat()
     .filter((file) => {
       if (
         !extensions.test(file) ||
         (outDir && file.startsWith(`${outDir}${sep}`))
-      ) {
-        return false;
-      }
-      const includedPath = relative(includeOrigin, file).split(sep).join("/");
-      if (
-        !include.some((pattern) => includeMatcher(pattern).test(includedPath))
       ) {
         return false;
       }
