@@ -49,7 +49,11 @@ function canonicalEntries(
   );
 }
 
-export function canonicalJson(value: unknown): string {
+function encodeCanonicalJson(
+  value: unknown,
+  encodedObjects: WeakMap<object, string>,
+  encodedStrings: Map<string, string>
+): string {
   if (value === null) {
     return "null";
   }
@@ -60,10 +64,26 @@ export function canonicalJson(value: unknown): string {
     return canonicalNumber(value);
   }
   if (typeof value === "string") {
-    return JSON.stringify(value.normalize("NFC"));
+    const cached = encodedStrings.get(value);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const encoded = JSON.stringify(value.normalize("NFC"));
+    encodedStrings.set(value, encoded);
+    return encoded;
   }
   if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
+    const cached = encodedObjects.get(value);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const encoded = `[${value
+      .map((entry) =>
+        encodeCanonicalJson(entry, encodedObjects, encodedStrings)
+      )
+      .join(",")}]`;
+    encodedObjects.set(value, encoded);
+    return encoded;
   }
 
   if (typeof value !== "object") {
@@ -73,17 +93,47 @@ export function canonicalJson(value: unknown): string {
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError("Canonical JSON requires plain objects");
   }
+  const cached = encodedObjects.get(value);
+  if (cached !== undefined) {
+    return cached;
+  }
   const entries = canonicalEntries(value);
-  return `{${entries
+  const encoded = `{${entries
     .map(
       ([key, entry]) =>
-        `${JSON.stringify(key.normalize("NFC"))}:${canonicalJson(entry)}`
+        `${JSON.stringify(key.normalize("NFC"))}:${encodeCanonicalJson(entry, encodedObjects, encodedStrings)}`
     )
     .join(",")}}`;
+  encodedObjects.set(value, encoded);
+  return encoded;
 }
 
-export function sha256(value: string): Sha256 {
-  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+export function canonicalJson(value: unknown): string {
+  // Receipts intentionally intern repeated immutable structures. Encoding a
+  // shared object once per canonicalization preserves byte-for-byte output
+  // while avoiding repeated traversal of the same provider/frontier graph.
+  return encodeCanonicalJson(value, new WeakMap(), new Map());
+}
+
+export function sha256(value: string | Uint8Array): Sha256 {
+  const hash = createHash("sha256");
+  if (typeof value === "string") {
+    hash.update(value, "utf8");
+  } else {
+    hash.update(value);
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
+export function decodeUtf8Fatal(value: Uint8Array, context: string): string {
+  try {
+    return new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(value);
+  } catch {
+    throw new Error(`${context} must contain valid UTF-8`);
+  }
 }
 
 export function canonicalHash(value: unknown): Sha256 {

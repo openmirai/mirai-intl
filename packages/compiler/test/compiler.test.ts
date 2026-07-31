@@ -22,6 +22,8 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+import { composeCatalog } from "../src/compose";
+import type { ComposedMessage, CompositionResult } from "../src/compose";
 import { writeArtifactSet } from "./non-authoritative-writer";
 
 const stablePaths = [
@@ -60,6 +62,154 @@ function sourceWith(message: MessageSource): CatalogSource {
     messages: [message],
     replacements: [],
   };
+}
+
+function textMessage(path: string, provenance: string): MessageSource {
+  return {
+    kind: "text",
+    path,
+    provenance,
+    resultSchema: { type: "string" },
+    translations: { en: path, th: path },
+    valuesSchema: emptyObjectSchema,
+  };
+}
+
+function comparePaths(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+}
+
+function priorPairwiseComposeCatalog(source: CatalogSource): CompositionResult {
+  const replacements = source.replacements ?? [];
+  const replacementByPath = new Map(
+    replacements.map((replacement) => [replacement.exactKey, replacement])
+  );
+  const messages = new Map<string, ComposedMessage>();
+  const provenance: Array<CompositionResult["provenance"][number]> = [];
+
+  const add = (message: ComposedMessage): void => {
+    for (const existing of messages.values()) {
+      if (
+        existing.path !== message.path &&
+        (existing.path.startsWith(`${message.path}.`) ||
+          message.path.startsWith(`${existing.path}.`))
+      ) {
+        throw new Error(
+          `Object/leaf collision between ${existing.path} (${existing.provenance}) and ${message.path} (${message.provenance})`
+        );
+      }
+    }
+
+    const existing = messages.get(message.path);
+    if (!existing) {
+      messages.set(message.path, message);
+      provenance.push({
+        action: "add",
+        path: message.path,
+        source: message.provenance,
+      });
+      return;
+    }
+
+    const replacement = replacementByPath.get(message.path);
+    if (!replacement) {
+      throw new Error(
+        `Collision at ${message.path}: ${existing.provenance} conflicts with ${message.provenance}`
+      );
+    }
+    messages.set(message.path, message);
+    provenance.push({
+      action: "replace",
+      base: existing.provenance,
+      path: message.path,
+      replacement,
+      source: message.provenance,
+    });
+  };
+
+  for (const mounted of source.fragments ?? []) {
+    const prefix = mounted.at.join(".");
+    for (const message of mounted.fragment.messages) {
+      add({
+        ...message,
+        owner: {
+          fragmentHash: mounted.fragment.hash,
+          fragmentId: mounted.fragment.id,
+          fragmentVersion: mounted.fragment.version,
+          type: "fragment",
+        },
+        path: prefix ? `${prefix}.${message.path}` : message.path,
+      });
+    }
+  }
+  for (const message of source.messages) {
+    add({ ...message, owner: { type: "app" } });
+  }
+
+  const usedReplacements = new Set(
+    provenance
+      .filter((entry) => entry.action === "replace")
+      .map((entry) => entry.path)
+  );
+  for (const replacement of replacements) {
+    if (!usedReplacements.has(replacement.exactKey)) {
+      throw new Error(
+        `Replacement ${replacement.exactKey} does not resolve one exact overlap`
+      );
+    }
+  }
+
+  const orderedMessages = [...messages.values()].toSorted((left, right) =>
+    comparePaths(left.path, right.path)
+  );
+  return {
+    identity: {
+      messageOwners: orderedMessages.map(({ owner, path }) => ({
+        owner,
+        path,
+      })),
+      replacements: [...replacements].toSorted((left, right) =>
+        comparePaths(left.exactKey, right.exactKey)
+      ),
+    },
+    messages: orderedMessages,
+    provenance,
+  };
+}
+
+function seededShuffle<T>(
+  values: ReadonlyArray<T>,
+  seed: number
+): ReadonlyArray<T> {
+  let state = seed >>> 0;
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [
+      shuffled[swapIndex] as T,
+      shuffled[index] as T,
+    ];
+  }
+  return shuffled;
+}
+
+function thrownMessage(action: () => unknown): string {
+  try {
+    action();
+  } catch (error) {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    throw error;
+  }
+  throw new Error("Expected composition to fail");
 }
 
 function replacementFixture(): Readonly<{
@@ -599,6 +749,251 @@ describe("catalog compiler fixture", () => {
     expect(() => compileCatalog(source)).toThrowError(
       /Collision at CartCard\.applyCoupon: learner\/locales\/en\.json:42 conflicts with packages\/shared\/locales\/en\.json:17/u
     );
+  });
+
+  it("preserves insertion-order provenance for ancestor and descendant collisions", () => {
+    expect(() =>
+      compileCatalog({
+        ...catalogFixtureSource,
+        fragments: [],
+        messages: [
+          textMessage("checkout.zeta.label", "first-descendant.json:1"),
+          textMessage("checkout.alpha.label", "second-descendant.json:1"),
+          textMessage("checkout", "incoming-ancestor.json:1"),
+        ],
+        replacements: [],
+      })
+    ).toThrowError(
+      "Object/leaf collision between checkout.zeta.label (first-descendant.json:1) and checkout (incoming-ancestor.json:1)"
+    );
+
+    expect(() =>
+      compileCatalog({
+        ...catalogFixtureSource,
+        fragments: [],
+        messages: [
+          textMessage("checkout", "existing-ancestor.json:1"),
+          textMessage("checkout.zeta.label", "incoming-descendant.json:1"),
+        ],
+        replacements: [],
+      })
+    ).toThrowError(
+      "Object/leaf collision between checkout (existing-ancestor.json:1) and checkout.zeta.label (incoming-descendant.json:1)"
+    );
+  });
+
+  it("matches the frozen pairwise oracle across deterministic randomized composition orders", () => {
+    for (let seed = 1; seed <= 16; seed += 1) {
+      const mountedContent = {
+        id: `@mirai/property-fragment-${seed}`,
+        locales: ["en", "th"],
+        messages: Array.from({ length: 7 }, (_, index) =>
+          textMessage(
+            `panel${index}.résumé`,
+            `fragments/property-${seed}.json:${index + 1}`
+          )
+        ),
+        version: "1.0.0",
+      } satisfies IntlFragmentContent;
+      const mountedFragment = {
+        ...mountedContent,
+        hash: hashIntlFragmentContent(mountedContent),
+      } satisfies IntlFragment;
+      const independentMessages = seededShuffle(
+        Array.from({ length: 41 }, (_, index) =>
+          textMessage(
+            `application${Math.floor(index / 7)}.section${index % 7}.label`,
+            `apps/property-${seed}.json:${index + 1}`
+          )
+        ),
+        seed
+      );
+      const validSource = {
+        ...catalogFixtureSource,
+        formatterVersions: {},
+        fragments: [mount(mountedFragment, { at: ["mounted", "équipe"] })],
+        messages: independentMessages,
+        replacements: [],
+      } satisfies CatalogSource;
+
+      expect(composeCatalog(validSource)).toEqual(
+        priorPairwiseComposeCatalog(validSource)
+      );
+
+      const descendantFirstSource = {
+        ...validSource,
+        fragments: [],
+        messages: [
+          ...seededShuffle(
+            [
+              textMessage(
+                "collision.zeta.label",
+                `collision/${seed}-zeta.json:1`
+              ),
+              textMessage(
+                "collision.alpha.label",
+                `collision/${seed}-alpha.json:1`
+              ),
+              textMessage(
+                "collision.middle.deep.label",
+                `collision/${seed}-middle.json:1`
+              ),
+            ],
+            seed
+          ),
+          textMessage("collision", `collision/${seed}-ancestor.json:1`),
+        ],
+      } satisfies CatalogSource;
+      expect(thrownMessage(() => composeCatalog(descendantFirstSource))).toBe(
+        thrownMessage(() => priorPairwiseComposeCatalog(descendantFirstSource))
+      );
+
+      const ancestorFirstSource = {
+        ...validSource,
+        fragments: [],
+        messages: [
+          textMessage("collision", `collision/${seed}-ancestor.json:1`),
+          seededShuffle(
+            [
+              textMessage(
+                "collision.zeta.label",
+                `collision/${seed}-zeta.json:1`
+              ),
+              textMessage(
+                "collision.alpha.label",
+                `collision/${seed}-alpha.json:1`
+              ),
+            ],
+            seed
+          )[0] as MessageSource,
+        ],
+      } satisfies CatalogSource;
+      expect(thrownMessage(() => composeCatalog(ancestorFirstSource))).toBe(
+        thrownMessage(() => priorPairwiseComposeCatalog(ancestorFirstSource))
+      );
+
+      const replacementBase = textMessage(
+        "résumé.label",
+        `fragments/replacement-${seed}.json:1`
+      );
+      const replacementContent = {
+        id: `@mirai/replacement-fragment-${seed}`,
+        locales: ["en", "th"],
+        messages: [replacementBase],
+        version: "1.0.0",
+      } satisfies IntlFragmentContent;
+      const replacementFragment = {
+        ...replacementContent,
+        hash: hashIntlFragmentContent(replacementContent),
+      } satisfies IntlFragment;
+      const exactKey = `checkout.seed${seed}.résumé.label`;
+      const replacementMessage = {
+        ...replacementBase,
+        path: exactKey,
+        provenance: `apps/replacement-${seed}.json:1`,
+        translations: {
+          en: `replacement-${seed}`,
+          th: `replacement-${seed}`,
+        },
+      } satisfies MessageSource;
+      const replacement = {
+        base: {
+          fragmentId: replacementFragment.id,
+          hash: replacementFragment.hash,
+          version: replacementFragment.version,
+        },
+        exactKey,
+        provenance: {
+          decision: `ADR-${seed}`,
+          owner: "property-test",
+          source: "frozen-pairwise-oracle",
+        },
+        reason: "Exercise replacement state before a later prefix collision",
+      } satisfies ReplacementDeclaration;
+      const replacementSource = {
+        ...validSource,
+        fragments: [
+          mount(replacementFragment, { at: ["checkout", `seed${seed}`] }),
+        ],
+        messages: [replacementMessage],
+        replacements: [replacement],
+      } satisfies CatalogSource;
+      const replacementResult = composeCatalog(replacementSource);
+
+      expect(replacementResult).toEqual(
+        priorPairwiseComposeCatalog(replacementSource)
+      );
+      expect(replacementResult.provenance.at(-1)).toEqual({
+        action: "replace",
+        base: replacementBase.provenance,
+        path: exactKey,
+        replacement,
+        source: replacementMessage.provenance,
+      });
+
+      const postReplacementCollisionSource = {
+        ...replacementSource,
+        messages: [
+          replacementMessage,
+          textMessage(
+            `${exactKey}.detail`,
+            `apps/replacement-${seed}-descendant.json:1`
+          ),
+        ],
+      } satisfies CatalogSource;
+      const expectedDiagnostic = thrownMessage(() =>
+        priorPairwiseComposeCatalog(postReplacementCollisionSource)
+      );
+
+      expect(
+        thrownMessage(() => composeCatalog(postReplacementCollisionSource))
+      ).toBe(expectedDiagnostic);
+      expect(expectedDiagnostic).toContain(replacementMessage.provenance);
+    }
+  });
+
+  it("keeps successful composition canonically sorted without changing provenance order", () => {
+    const output = compileCatalog({
+      ...catalogFixtureSource,
+      formatterVersions: {},
+      fragments: [],
+      messages: [
+        textMessage("zeta.label", "zeta.json:1"),
+        textMessage("alpha.label", "alpha.json:1"),
+        textMessage("middle.deep.label", "middle.json:1"),
+      ],
+      replacements: [],
+    });
+
+    expect(output.composition.messages.map(({ path }) => path)).toEqual([
+      "alpha.label",
+      "middle.deep.label",
+      "zeta.label",
+    ]);
+    expect(output.composition.provenance.map(({ path }) => path)).toEqual([
+      "zeta.label",
+      "alpha.label",
+      "middle.deep.label",
+    ]);
+  });
+
+  it("composes a production-shaped wide catalog without false prefix collisions", () => {
+    const messages = Array.from({ length: 8_541 }, (_, index) => {
+      const group = Math.floor(index / 37);
+      const path = `namespace${group}.section${index % 37}.message${index}`;
+      return textMessage(path, `generated/catalog-${index}.json:1`);
+    });
+
+    const output = compileCatalog({
+      ...catalogFixtureSource,
+      formatterVersions: {},
+      fragments: [],
+      messages,
+      replacements: [],
+    });
+
+    expect(output.composition.messages).toHaveLength(messages.length);
+    expect(output.composition.provenance).toHaveLength(messages.length);
   });
 
   it("accepts one exact replacement with verified content identity and provenance", () => {

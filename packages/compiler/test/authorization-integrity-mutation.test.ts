@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mutation = vi.hoisted(() => ({
   afterAnalysis: undefined as undefined | (() => Promise<void>),
   enabled: false,
+  enableAfterAnalysis: true,
   matchedReads: 0,
   pattern: undefined as RegExp | undefined,
 }));
@@ -54,7 +55,9 @@ vi.mock("../src/analyze-sources", async (importOriginal) => {
         ...arguments_
       );
       await mutation.afterAnalysis?.();
-      mutation.enabled = true;
+      if (mutation.enableAfterAnalysis) {
+        mutation.enabled = true;
+      }
       return result;
     },
   };
@@ -63,7 +66,9 @@ vi.mock("../src/analyze-sources", async (importOriginal) => {
 import {
   authorizeConventionCatalog,
   conventionCheckReceiptPath,
+  verifyConventionCheckReceipt,
 } from "../src/proof";
+import { conventionCheckReceiptSelectorPath } from "../src/check-receipt";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -108,11 +113,39 @@ async function fixture(): Promise<string> {
 beforeEach(() => {
   mutation.afterAnalysis = undefined;
   mutation.enabled = false;
+  mutation.enableAfterAnalysis = true;
   mutation.matchedReads = 0;
   mutation.pattern = undefined;
 });
 
 describe("complete authorization integrity mutation barrier", () => {
+  it("preserves the prior active receipt when publication is interrupted", async () => {
+    const root = await fixture();
+    try {
+      const prior = await authorizeConventionCatalog(root, {
+        collectEnvironment: false,
+      });
+      const receiptPath = conventionCheckReceiptSelectorPath(root);
+      const before = await readFile(receiptPath);
+
+      await expect(
+        authorizeConventionCatalog(root, {
+          beforePublicationBarrier() {
+            throw new Error("simulated publication interruption");
+          },
+          collectEnvironment: false,
+        })
+      ).rejects.toThrow("simulated publication interruption");
+
+      expect(await readFile(receiptPath)).toEqual(before);
+      await expect(verifyConventionCheckReceipt(root)).resolves.toEqual(
+        prior.receipt
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it.each([
     ["compiler module", /\/packages\/compiler\/src\/proof\.ts$/u],
     [
@@ -146,6 +179,85 @@ describe("complete authorization integrity mutation barrier", () => {
     },
     60_000
   );
+
+  it.each([
+    [
+      "application manifest",
+      async (root: string) => {
+        await writeJson(join(root, "package.json"), {
+          dependencies: { vite: "8.1.4" },
+          name: "@example/integrity-barrier",
+          version: "2.0.0",
+        });
+      },
+    ],
+    [
+      "workspace lockfile",
+      async (root: string) => {
+        await writeFile(
+          join(root, "pnpm-lock.yaml"),
+          "lockfileVersion: '9.0'\n# delayed mutation\n",
+          "utf8"
+        );
+      },
+    ],
+  ] as const)(
+    "rejects a delayed-publication %s mutation",
+    async (label, mutate) => {
+      const root = await fixture();
+      if (label === "workspace lockfile") {
+        await writeFile(
+          join(root, "pnpm-lock.yaml"),
+          "lockfileVersion: '9.0'\n",
+          "utf8"
+        );
+      }
+      mutation.enableAfterAnalysis = false;
+      try {
+        await expect(
+          authorizeConventionCatalog(root, {
+            beforePublicationBarrier: () => mutate(root),
+            collectEnvironment: false,
+          })
+        ).rejects.toThrow(
+          label === "application manifest"
+            ? "Mirai Intl package authority manifest is stale"
+            : "publication fingerprint changed before receipt publication: application package identity"
+        );
+        await expect(
+          readFile(conventionCheckReceiptPath(root), "utf8")
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
+  it("rejects a delayed-publication compiler identity mutation", async () => {
+    const root = await fixture();
+    mutation.enableAfterAnalysis = false;
+    mutation.pattern = /\/packages\/compiler\/src\/proof\.ts$/u;
+    try {
+      await expect(
+        authorizeConventionCatalog(root, {
+          beforePublicationBarrier() {
+            mutation.enabled = true;
+          },
+          collectEnvironment: false,
+        })
+      ).rejects.toThrow(
+        "publication fingerprint changed before receipt publication: compiler dependency identity"
+      );
+      expect(mutation.matchedReads).toBeGreaterThan(0);
+      await expect(
+        readFile(conventionCheckReceiptPath(root), "utf8")
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      mutation.enabled = false;
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
 
   it.each([
     [

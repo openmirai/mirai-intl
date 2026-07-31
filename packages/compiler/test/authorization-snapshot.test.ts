@@ -10,6 +10,7 @@ import {
   buildIntlCheckReceiptV2,
   buildSourceAuthorizationSnapshot,
   canonicalIntlCheckReceiptV2Bytes,
+  createAuthorizationSnapshotCanonicalizationMetrics,
   parseCanonicalIntlCheckReceiptV2,
   parseIntlBuildVerificationCountersV2,
   parseIntlCheckReceiptV2,
@@ -272,6 +273,110 @@ describe("source authorization snapshots", () => {
       sourceFiles: 2,
     });
     expect(parseSourceAuthorizationSnapshot(snapshot)).toEqual(snapshot);
+  });
+
+  it("interns repeated immutable authority identities within one build", () => {
+    const metrics = createAuthorizationSnapshotCanonicalizationMetrics();
+    const snapshot = buildSourceAuthorizationSnapshot(input(), metrics);
+    const receiptMetrics = createAuthorizationSnapshotCanonicalizationMetrics();
+    const value = buildIntlCheckReceiptV2(snapshot, receiptMetrics);
+    const byteMetrics = createAuthorizationSnapshotCanonicalizationMetrics();
+
+    expect(metrics.fileIdentityReuses).toBeGreaterThan(0);
+    expect(metrics.fileListReuses).toBeGreaterThan(0);
+    expect(metrics.canonicalPathComputations).toBeLessThan(
+      metrics.fileIdentityComputations + metrics.fileIdentityReuses + 20
+    );
+    expect(receiptMetrics.trustedSnapshotReuses).toBe(1);
+    expect(canonicalIntlCheckReceiptV2Bytes(value, byteMetrics)).toBe(
+      `${canonicalJson(value)}\n`
+    );
+    expect(byteMetrics.trustedReceiptReuses).toBe(1);
+  });
+
+  it("freezes trusted values and fully validates external copies", () => {
+    const snapshot = buildSourceAuthorizationSnapshot(input());
+    const value = buildIntlCheckReceiptV2(snapshot);
+
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.providerClosures)).toBe(true);
+    expect(Object.isFrozen(snapshot.providerClosures[0]?.providers)).toBe(true);
+    expect(Object.isFrozen(value)).toBe(true);
+
+    const copiedSnapshot = clone(snapshot);
+    const firstSource = copiedSnapshot.sources[0];
+    if (!firstSource) {
+      throw new Error("Expected a source fixture");
+    }
+    const changedSnapshot = {
+      ...copiedSnapshot,
+      sources: copiedSnapshot.sources.map((source, index) =>
+        index === 0
+          ? {
+              ...firstSource,
+              providerClosureHash: hash("mutated trusted handoff"),
+            }
+          : source
+      ),
+    };
+    expect(() => buildIntlCheckReceiptV2(changedSnapshot)).toThrow(
+      "matching provider closure"
+    );
+
+    const copiedReceipt = clone(value);
+    expect(canonicalIntlCheckReceiptV2Bytes(copiedReceipt)).toBe(
+      canonicalIntlCheckReceiptV2Bytes(value)
+    );
+    const changedReceipt = {
+      ...copiedReceipt,
+      sourceAuthorizationHash: hash("mutated copied receipt"),
+    };
+    expect(() => canonicalIntlCheckReceiptV2Bytes(changedReceipt)).toThrow(
+      "does not bind every other receipt field"
+    );
+  });
+
+  it("keeps fail-closed build-input validation on the direct canonical path", () => {
+    const copiedInput = clone(input());
+    const ownerProject = copiedInput.projects[0];
+    const ownerConfig = ownerProject?.configManifest[0];
+    if (!ownerProject || !ownerConfig) {
+      throw new Error("Expected an owner config fixture");
+    }
+    const unsortedReferences = {
+      ...copiedInput,
+      projects: copiedInput.projects.map((project, index) =>
+        index === 0
+          ? {
+              ...ownerProject,
+              configManifest: [
+                {
+                  ...ownerConfig,
+                  references: ["z.json", "a.json"],
+                },
+              ],
+            }
+          : project
+      ),
+    };
+    expect(() => buildSourceAuthorizationSnapshot(unsortedReferences)).toThrow(
+      "must be canonically sorted"
+    );
+
+    const copiedExtraSourceField = clone(input());
+    const firstSource = copiedExtraSourceField.sources[0];
+    if (!firstSource) {
+      throw new Error("Expected a source fixture");
+    }
+    const extraSourceField = {
+      ...copiedExtraSourceField,
+      sources: copiedExtraSourceField.sources.map((source, index) =>
+        index === 0 ? { ...firstSource, unexpected: true } : source
+      ),
+    };
+    expect(() => buildSourceAuthorizationSnapshot(extraSourceField)).toThrow(
+      "unexpected or missing fields"
+    );
   });
 
   it("orders Unicode authority identities without locale collation", () => {

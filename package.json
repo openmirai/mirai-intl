@@ -1,6 +1,6 @@
 {
   "name": "@openmirai/mirai-intl",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "repository": {
     "type": "git",
@@ -13,6 +13,7 @@
   "scripts": {
     "benchmark": "tsx benchmarks/run.ts",
     "benchmark:authorization": "corepack pnpm benchmark:performance -- --scenario turbo-workspace",
+    "benchmark:gate25": "corepack pnpm benchmark:performance -- --gate=2.5",
     "benchmark:performance": "tsx benchmarks/authorization.ts",
     "prebenchmark:performance": "corepack pnpm build",
     "build": "tsdown",

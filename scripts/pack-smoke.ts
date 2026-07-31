@@ -623,20 +623,40 @@ run(
   receiptAppRoot,
   60_000
 );
+async function selectedAuthorityReceiptPath(app: string): Promise<string> {
+  const authorityRoot = join(app, ".mirai-intl/authority");
+  const selector = JSON.parse(
+    await readFile(join(app, ".mirai-intl/check-receipt.current.json"), "utf8")
+  ) as Readonly<{ authoritySetHash?: string; schemaVersion?: number }>;
+  if (selector.schemaVersion !== 2 || !selector.authoritySetHash) {
+    throw new Error(
+      "Packed CLI did not activate a schema-2 authority selector"
+    );
+  }
+  const setDigest = selector.authoritySetHash.replace(/^sha256:/u, "");
+  const authoritySet = JSON.parse(
+    await readFile(join(authorityRoot, "sets/v1", `${setDigest}.json`), "utf8")
+  ) as Readonly<{
+    receipt?: Readonly<{ hash?: string; schemaVersion?: number }>;
+  }>;
+  if (authoritySet.receipt?.schemaVersion !== 3 || !authoritySet.receipt.hash) {
+    throw new Error("Packed CLI did not select V3 authorization authority");
+  }
+  const receiptDigest = authoritySet.receipt.hash.replace(/^sha256:/u, "");
+  return join(authorityRoot, "receipts/v3", `${receiptDigest}.json`);
+}
+const receiptPath = await selectedAuthorityReceiptPath(receiptAppRoot);
 const persistedAuthorizationReceipt = JSON.parse(
-  await readFile(
-    join(receiptAppRoot, ".mirai-intl/check-receipt.v2.json"),
-    "utf8"
-  )
+  await readFile(receiptPath, "utf8")
 ) as {
   schemaVersion: number;
   sources: ReadonlyArray<unknown>;
 };
 if (
-  persistedAuthorizationReceipt.schemaVersion !== 2 ||
+  persistedAuthorizationReceipt.schemaVersion !== 3 ||
   persistedAuthorizationReceipt.sources.length !== 1
 ) {
-  throw new Error("Packed CLI did not produce one complete V2 authorization");
+  throw new Error("Packed CLI did not produce one complete V3 authorization");
 }
 const authorizationEvidence = {
   semanticAuthorizationRuns: 1,
@@ -665,19 +685,22 @@ const buildVerification = JSON.parse(
   receipt: { schemaVersion: number };
 };
 if (
-  buildVerification.receipt.schemaVersion !== 2 ||
+  buildVerification.receipt.schemaVersion !== 3 ||
   buildVerification.buildReceiptVerifications < 1 ||
   buildVerification.buildSemanticAnalysisRuns !== 0
 ) {
-  throw new Error("Packed build verifier did not consume V2 without semantics");
+  throw new Error("Packed build verifier did not consume V3 without semantics");
 }
 type PackedReceipt = Readonly<{
   providerClosures: ReadonlyArray<
-    Readonly<{ declarations: ReadonlyArray<Readonly<{ path: string }>> }>
+    Readonly<{ declarations: ReadonlyArray<number> }>
   >;
   sources: ReadonlyArray<Readonly<{ file: string; hash: string }>>;
+  tables: Readonly<{
+    files: ReadonlyArray<Readonly<{ path: string }>>;
+  }>;
   typescript: Readonly<{
-    libs: ReadonlyArray<Readonly<{ path: string }>>;
+    libs: ReadonlyArray<number>;
   }>;
 }>;
 type PackedGenerationReceipt = Readonly<{
@@ -688,7 +711,6 @@ type PackedGenerationReceipt = Readonly<{
     }>;
   }>;
 }>;
-const receiptPath = join(receiptAppRoot, ".mirai-intl/check-receipt.v2.json");
 const receiptSource = await readFile(receiptPath, "utf8");
 const packedReceipt = JSON.parse(receiptSource) as PackedReceipt;
 const generationReceiptPath = join(
@@ -702,9 +724,9 @@ const packedGenerationReceipt = JSON.parse(
 const mutationRoot = join(temporaryRoot, "receipt-mutations");
 const receiptNegativeMatrix = [
   "v1",
-  "malformed-v2",
-  "noncanonical-v2",
-  "tampered-v2",
+  "malformed-v3",
+  "noncanonical-v3",
+  "tampered-v3",
   "stale-source",
   "stale-config",
   "stale-provider",
@@ -732,7 +754,7 @@ const expectReceiptRejection = async (
 await expectReceiptRejection(
   "v1",
   async (app) => {
-    await rm(join(app, ".mirai-intl/check-receipt.v2.json"));
+    await rm(join(app, ".mirai-intl/check-receipt.current.json"));
     await writeFile(
       join(app, ".mirai-intl/check-receipt.v1.json"),
       '{"schemaVersion":1}\n',
@@ -742,39 +764,39 @@ await expectReceiptRejection(
   /V1 is unsupported/u
 );
 await expectReceiptRejection(
-  "malformed-v2",
-  (app) =>
-    writeFile(join(app, ".mirai-intl/check-receipt.v2.json"), "{\n", "utf8"),
-  /V2 must contain valid JSON/u
+  "malformed-v3",
+  async (app) =>
+    writeFile(await selectedAuthorityReceiptPath(app), "{\n", "utf8"),
+  /selected immutable check receipt V3 hash is stale or corrupt/u
 );
 await expectReceiptRejection(
-  "noncanonical-v2",
-  (app) =>
+  "noncanonical-v3",
+  async (app) =>
     writeFile(
-      join(app, ".mirai-intl/check-receipt.v2.json"),
+      await selectedAuthorityReceiptPath(app),
       `${JSON.stringify(packedReceipt, null, 2)}\n`,
       "utf8"
     ),
-  /must use canonical JSON/u
+  /selected immutable check receipt V3 hash is stale or corrupt/u
 );
 await expectReceiptRejection(
-  "tampered-v2",
+  "tampered-v3",
   async (app) => {
     const tampered = structuredClone(packedReceipt) as unknown as {
       sources: Array<{ file: string; hash: string }>;
     };
     const source = tampered.sources[0];
     if (!source) {
-      throw new Error("Packed V2 receipt has no bound source");
+      throw new Error("Packed V3 receipt has no bound source");
     }
     source.hash = `sha256:${"0".repeat(64)}`;
     await writeFile(
-      join(app, ".mirai-intl/check-receipt.v2.json"),
+      await selectedAuthorityReceiptPath(app),
       `${canonicalJson(tampered)}\n`,
       "utf8"
     );
   },
-  /does not bind|authorization hash|source is stale or corrupt/iu
+  /selected immutable check receipt V3 hash is stale or corrupt/u
 );
 await expectReceiptRejection(
   "stale-source",
@@ -784,7 +806,7 @@ await expectReceiptRejection(
       "export const stale = true;\n",
       "utf8"
     ),
-  /source is stale or corrupt/u
+  /(?:source|V3 bound file) is stale or corrupt/u
 );
 await expectReceiptRejection(
   "stale-config",
@@ -794,13 +816,17 @@ await expectReceiptRejection(
       '{"compilerOptions":{"strict":true},"include":["src/**/*.ts"]}\n',
       "utf8"
     ),
-  /TypeScript config is stale or corrupt/u
+  /TypeScript config is stale or corrupt|(?:V3 bound file|classifier control) is stale or corrupt/u
 );
-const providerDeclaration = packedReceipt.providerClosures.flatMap(
+const providerDeclarationReference = packedReceipt.providerClosures.flatMap(
   ({ declarations }) => declarations
 )[0];
+const providerDeclaration =
+  providerDeclarationReference === undefined
+    ? undefined
+    : packedReceipt.tables.files[providerDeclarationReference];
 if (!providerDeclaration) {
-  throw new Error("Packed V2 receipt has no bound provider declaration");
+  throw new Error("Packed V3 receipt has no bound provider declaration");
 }
 await expectReceiptRejection(
   "stale-provider",
@@ -810,7 +836,7 @@ await expectReceiptRejection(
       "export interface ReceiptProvider { readonly changed: true; }\n",
       "utf8"
     ),
-  /provider declaration is stale or corrupt/u
+  /provider declaration is stale or corrupt|(?:V3 bound file|classifier control) is stale or corrupt/u
 );
 await expectReceiptRejection(
   "stale-generation-receipt",
@@ -820,7 +846,7 @@ await expectReceiptRejection(
       `${generationReceiptSource} `,
       "utf8"
     ),
-  /generation receipt is stale or (?:corrupt|tampered)/iu
+  /generation receipt is stale or (?:corrupt|tampered)|(?:V3 bound file|classifier control) is stale or corrupt/iu
 );
 const payloadEntry = packedGenerationReceipt.payload.manifest.entries[0];
 if (!payloadEntry) {
@@ -839,7 +865,7 @@ await expectReceiptRejection(
       "tampered payload\n",
       "utf8"
     ),
-  /Generated artifact directory.*corrupt|generated payload is corrupt/iu
+  /Generated artifact directory.*corrupt|generated payload is corrupt|(?:V3 bound file|classifier control) is stale or corrupt/iu
 );
 await expectReceiptRejection(
   "stale-control",
@@ -849,11 +875,15 @@ await expectReceiptRejection(
       "// tampered selector\n",
       "utf8"
     ),
-  /stable facade.*catalog lock is stale or tampered|generated facade or catalog lock is corrupt/iu
+  /stable facade.*catalog lock is stale or tampered|generated facade or catalog lock is corrupt|(?:V3 bound file|classifier control) is stale or corrupt/iu
 );
-const typescriptLib = packedReceipt.typescript.libs[0];
+const typescriptLibReference = packedReceipt.typescript.libs[0];
+const typescriptLib =
+  typescriptLibReference === undefined
+    ? undefined
+    : packedReceipt.tables.files[typescriptLibReference];
 if (!typescriptLib) {
-  throw new Error("Packed V2 receipt has no bound TypeScript lib");
+  throw new Error("Packed V3 receipt has no bound TypeScript lib");
 }
 const packedCompilerEntry = await realpath(
   packedIntlRequire.resolve("@openmirai/intl-compiler")
@@ -932,7 +962,7 @@ await writeFile(
       },
       checksums,
       compilerPublicApi: true,
-      receiptV2: {
+      receiptV3: {
         authorization: authorizationEvidence,
         build: {
           buildReceiptVerifications:
@@ -972,7 +1002,7 @@ process.stdout.write(
     installed: true,
     nodeNextTypecheck: true,
     privateDescriptorLowering: true,
-    receiptV2: {
+    receiptV3: {
       authorization: authorizationEvidence,
       build: {
         buildReceiptVerifications: buildVerification.buildReceiptVerifications,

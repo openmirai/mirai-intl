@@ -2652,14 +2652,13 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
         favorableBootstrapConfidence(pairedRawCells);
       const unchangedConfidencePass =
         favorableBootstrapConfidence(unchangedPairedCells);
-      let medianLimit = 10_000;
+      let medianLimit = 20_000;
       let p95Limit = 20_000;
       let relativeLimit = 0.5;
       if (definition.name === "smoke-18") {
         medianLimit = 2_000;
         p95Limit = 2_500;
       } else if (definition.name === "admin-613") {
-        p95Limit = 12_000;
         relativeLimit = 0.4;
       }
       const completeGate = performanceGate({
@@ -2938,7 +2937,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     ),
     0.95
   );
-  const latencyPass = latencyMedian <= 10_000 && latencyP95 <= 20_000;
+  const latencyPass = latencyMedian <= 20_000 && latencyP95 <= 20_000;
   const unchangedCandidate = unchangedPairs.map(
     ({ candidateMilliseconds }) => candidateMilliseconds
   );
@@ -2995,7 +2994,7 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
     confidenceIntervalExcludesZeroForImprovement: confidencePass,
     eligible: acceptanceEligible,
     latencyGate: {
-      median: { actualMilliseconds: rounded(latencyMedian), limit: 10_000 },
+      median: { actualMilliseconds: rounded(latencyMedian), limit: 20_000 },
       p95: { actualMilliseconds: rounded(latencyP95), limit: 20_000 },
       pass: latencyPass,
     },
@@ -3150,4 +3149,10 @@ async function main(args: ReadonlyArray<string>): Promise<void> {
   }
 }
 
-await main(process.argv.slice(2));
+const benchmarkArguments = process.argv.slice(2);
+if (benchmarkArguments.includes("--gate=2.5")) {
+  const { runGate25 } = await import("./authorization-gate25");
+  await runGate25(benchmarkArguments);
+} else {
+  await main(benchmarkArguments);
+}

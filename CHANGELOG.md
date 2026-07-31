@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.3](https://github.com/openmirai/mirai-intl/compare/v0.3.2...v0.3.3) (2026-08-01)
+
+### Features
+
+- **compiler:** activate fail-closed V3 source authority and atomic workspace receipts
+
+### Performance Improvements
+
+- **compiler:** classify sources before semantic analysis and authorize workspace catalogs concurrently
+
+### Bug Fixes
+
+- **compiler:** verify exact content-addressed authority in build and packaged-consumer paths
+
 ## [0.3.2](https://github.com/openmirai/mirai-intl/compare/v0.3.1...v0.3.2) (2026-07-28)
 
 

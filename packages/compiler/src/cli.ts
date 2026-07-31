@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import {
   basename,
@@ -48,7 +49,8 @@ type Command =
   | "finalize-proof"
   | "generate"
   | "prove-artifact"
-  | "prove";
+  | "prove"
+  | "verify";
 
 const commands = [
   "generate",
@@ -56,6 +58,7 @@ const commands = [
   "check",
   "catalog-check",
   "prove",
+  "verify",
   "prove-artifact",
   "finalize-proof",
   "contract",
@@ -220,10 +223,11 @@ function reporterOptions(command: Command): ReporterOptions {
   if (
     hasFlag("--workspace") &&
     command !== "check" &&
-    command !== "catalog-check"
+    command !== "catalog-check" &&
+    command !== "verify"
   ) {
     throw new CliUsageError(
-      "--workspace is only supported by check and catalog-check"
+      "--workspace is only supported by check, catalog-check, and verify"
     );
   }
   const formats = optionValues("--format");
@@ -428,13 +432,10 @@ function catalogDiagnostic(
 }
 
 async function checkWorkspace(output: ReporterOptions): Promise<void> {
-  const proofModule = import("./proof");
   const workspaceRoot = await realpath(
     await nearestWorkspaceRoot(process.cwd())
   );
   const roots = await discoverWorkspaceCatalogs(workspaceRoot);
-  const { authorizeConventionCatalog, IntlSourceAuthorizationError } =
-    await proofModule;
   const diagnostics: Array<CliDiagnostic> = [];
   const catalogs: Array<{
     authorization?: IntlSemanticAuthorizationObservationV2 &
@@ -444,46 +445,58 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
     report?: unknown;
     root: string;
   }> = [];
-  let messageCount = 0;
-
-  for (const root of roots) {
-    const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
-    try {
-      const { receipt, verification } = await authorizeConventionCatalog(root, {
-        validateEnvironment: true,
-      });
-      const summary = catalogSummary(verification);
-      messageCount += summary.messageCount ?? 0;
-      catalogs.push({
-        diagnostics: [],
-        report: verification,
-        receipt,
-        root: workspacePath,
-      });
-    } catch (error) {
-      const catalogDiagnostics =
-        error instanceof IntlSourceAuthorizationError
-          ? sourceDiagnostics(error.diagnostics, root).map((diagnostic) => ({
-              ...diagnostic,
-              ...(diagnostic.file
-                ? {
-                    file:
-                      workspacePath === "."
-                        ? diagnostic.file
-                        : `${workspacePath}/${diagnostic.file}`,
-                  }
-                : {}),
-            }))
-          : [catalogDiagnostic(error, "check --workspace", workspacePath)];
-      diagnostics.push(...catalogDiagnostics);
-      catalogs.push({
-        diagnostics: catalogDiagnostics,
-        ...(error instanceof IntlSourceAuthorizationError
-          ? { authorization: error.observation }
-          : {}),
-        root: workspacePath,
-      });
+  const messageCount: number | undefined = undefined;
+  const weightedRoots = await Promise.all(
+    roots.map(async (root, index) => {
+      const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
+      return {
+        index,
+        root,
+        weight:
+          (workspacePath.startsWith("packages/") ? 1_000_000_000 : 0) +
+          (await workspaceCatalogSourceWeight(root)),
+      };
+    })
+  );
+  const ordered = weightedRoots.toSorted(
+    (left, right) => right.weight - left.weight || left.index - right.index
+  );
+  const workerCount = Math.min(
+    ordered.length,
+    workspaceAuthorizationWorkerCount()
+  );
+  const authorized = Array.from({ length: roots.length }) as Array<
+    Awaited<ReturnType<typeof authorizeWorkspaceCatalogChild>>
+  >;
+  if (ordered.length === 1) {
+    const [entry] = ordered;
+    if (entry) {
+      authorized[entry.index] = await authorizeWorkspaceCatalogInProcess(
+        entry.root,
+        workspaceRoot
+      );
     }
+  } else {
+    let cursor = 0;
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        for (;;) {
+          const entry = ordered[cursor];
+          cursor += 1;
+          if (!entry) {
+            return;
+          }
+          authorized[entry.index] = await authorizeWorkspaceCatalogChild(
+            entry.root,
+            workspaceRoot
+          );
+        }
+      })
+    );
+  }
+  for (const catalog of authorized) {
+    catalogs.push(catalog);
+    diagnostics.push(...catalog.diagnostics);
   }
 
   const observations = catalogs.flatMap(({ authorization, receipt }) => {
@@ -532,6 +545,257 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
     `${catalogs.length} catalogs${messageSummary(messageCount)}${authorizationSummary(
       result.authorization
     )}`,
+    diagnostics
+  );
+  if (diagnostics.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
+function workspaceAuthorizationWorkerCount(): number {
+  const raw = process.env.MIRAI_INTL_WORKSPACE_WORKERS;
+  if (raw === undefined) {
+    return 4;
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 8) {
+    throw new CliUsageError(
+      "MIRAI_INTL_WORKSPACE_WORKERS must be an integer from 1 through 8"
+    );
+  }
+  return value;
+}
+
+async function workspaceCatalogSourceWeight(root: string): Promise<number> {
+  let count = 0;
+  const visit = async (directory: string): Promise<void> => {
+    const entries = await readdir(directory, { withFileTypes: true });
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.isSymbolicLink()) {
+          return;
+        }
+        if (entry.isDirectory()) {
+          if (!workspaceSkipDirectories.has(entry.name)) {
+            await visit(join(directory, entry.name));
+          }
+          return;
+        }
+        if (entry.isFile() && /\.[cm]?[jt]sx?$/u.test(entry.name)) {
+          count += 1;
+        }
+      })
+    );
+  };
+  await visit(root);
+  return count;
+}
+
+async function authorizeWorkspaceCatalogChild(
+  root: string,
+  workspaceRoot: string
+): Promise<{
+  authorization?: IntlSemanticAuthorizationObservationV2 &
+    Readonly<{ checkerProjects: number; ownerProjects: number }>;
+  diagnostics: Array<CliDiagnostic>;
+  root: string;
+}> {
+  const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
+  const cli = process.argv[1];
+  if (!cli) {
+    throw new Error("Mirai Intl CLI executable path is unavailable");
+  }
+  const reportFile = join(root, ".mirai-intl", "check.json");
+  const child = spawn(
+    process.execPath,
+    [
+      ...process.execArgv,
+      cli,
+      "prove",
+      "--format=json",
+      `--report-file=${reportFile}`,
+    ],
+    {
+      cwd: root,
+      env: { ...process.env, MIRAI_INTL_WORKSPACE_CHILD: "1" },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  );
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  const status = await new Promise<
+    Readonly<{ code: number | null; signal: NodeJS.Signals | null }>
+  >((resolveStatus, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolveStatus({ code, signal }));
+  });
+  let childReport: CliReport | undefined;
+  try {
+    childReport = JSON.parse(stdout) as CliReport;
+  } catch {
+    // The explicit process failure below retains stderr when the child could
+    // not reach the canonical reporter.
+  }
+  const childDiagnostics = (childReport?.diagnostics ?? []).map(
+    (diagnostic) => ({
+      ...diagnostic,
+      ...(diagnostic.file
+        ? {
+            file:
+              workspacePath === "."
+                ? diagnostic.file
+                : `${workspacePath}/${diagnostic.file}`,
+          }
+        : {}),
+    })
+  );
+  if (
+    status.code !== 0 ||
+    status.signal !== null ||
+    childReport?.success !== true
+  ) {
+    return {
+      diagnostics:
+        childDiagnostics.length > 0
+          ? childDiagnostics
+          : [
+              catalogDiagnostic(
+                new Error(
+                  `authorization worker failed (status=${String(status.code)}, signal=${String(status.signal)}): ${stderr.trim() || stdout.trim() || "no output"}`
+                ),
+                "check --workspace",
+                workspacePath
+              ),
+            ],
+      root: workspacePath,
+    };
+  }
+  const summary = childReport.summary ?? {};
+  return {
+    authorization: {
+      checkerProjects: finiteNumber(summary.checkerProjects) ?? 0,
+      ownerProjects: finiteNumber(summary.ownerProjects) ?? 0,
+      semanticAuthorizationRuns:
+        finiteNumber(summary.semanticAuthorizationRuns) ?? 0,
+      semanticFilesAnalyzed: finiteNumber(summary.semanticFilesAnalyzed) ?? 0,
+    },
+    diagnostics: [],
+    root: workspacePath,
+  };
+}
+
+async function authorizeWorkspaceCatalogInProcess(
+  root: string,
+  workspaceRoot: string
+): ReturnType<typeof authorizeWorkspaceCatalogChild> {
+  const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
+  const { authorizeConventionCatalog, IntlSourceAuthorizationError } =
+    await import("./proof");
+  try {
+    const { receipt } = await authorizeConventionCatalog(root, {
+      collectEnvironment: false,
+      validateEnvironment: true,
+    });
+    return {
+      authorization: {
+        checkerProjects: receipt.counters.checkerProjects,
+        ownerProjects: receipt.counters.ownerProjects,
+        semanticAuthorizationRuns: receipt.counters.semanticAuthorizationRuns,
+        semanticFilesAnalyzed: receipt.counters.semanticFilesAnalyzed,
+      },
+      diagnostics: [],
+      root: workspacePath,
+    };
+  } catch (error) {
+    if (error instanceof IntlSourceAuthorizationError) {
+      return {
+        authorization: error.observation,
+        diagnostics: sourceDiagnostics(error.diagnostics, root).map(
+          (diagnostic) => ({
+            ...diagnostic,
+            ...(diagnostic.file && workspacePath !== "."
+              ? { file: `${workspacePath}/${diagnostic.file}` }
+              : {}),
+          })
+        ),
+        root: workspacePath,
+      };
+    }
+    return {
+      diagnostics: [
+        catalogDiagnostic(error, "check --workspace", workspacePath),
+      ],
+      root: workspacePath,
+    };
+  }
+}
+
+async function verifyWorkspace(output: ReporterOptions): Promise<void> {
+  const { verifyConventionBuildReceipt } = await import("./check-receipt");
+  const workspaceRoot = await realpath(
+    await nearestWorkspaceRoot(process.cwd())
+  );
+  const roots = await discoverWorkspaceCatalogs(workspaceRoot);
+  const diagnostics: Array<CliDiagnostic> = [];
+  const catalogs: Array<{
+    build?: IntlBuildVerificationCountersV2;
+    diagnostics: Array<CliDiagnostic>;
+    root: string;
+  }> = [];
+  for (const root of roots) {
+    const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
+    try {
+      const verification = await verifyConventionBuildReceipt(root);
+      catalogs.push({
+        build: verification,
+        diagnostics: [],
+        root: workspacePath,
+      });
+    } catch (error) {
+      const catalogDiagnostics = [
+        catalogDiagnostic(error, "verify --workspace", workspacePath),
+      ];
+      diagnostics.push(...catalogDiagnostics);
+      catalogs.push({ diagnostics: catalogDiagnostics, root: workspacePath });
+    }
+  }
+  const semanticBuildRuns = catalogs.reduce<number>(
+    (total, catalog) => total + (catalog.build?.buildSemanticAnalysisRuns ?? 0),
+    0
+  );
+  if (semanticBuildRuns !== 0) {
+    throw new Error("Mirai Intl build verification invoked semantic analysis");
+  }
+  const build: IntlBuildVerificationCountersV2 = {
+    buildReceiptVerifications: catalogs.reduce<number>(
+      (total, catalog) =>
+        total + (catalog.build?.buildReceiptVerifications ?? 0),
+      0
+    ),
+    buildSemanticAnalysisRuns: 0,
+  };
+  await report(
+    "verify",
+    {
+      build,
+      catalogs: catalogs.map((catalog) => ({
+        diagnostics: catalog.diagnostics,
+        root: catalog.root,
+        valid: catalog.diagnostics.length === 0,
+      })),
+      valid: diagnostics.length === 0,
+    },
+    output,
+    `${catalogs.length} catalogs${buildVerificationSummary(build)}`,
     diagnostics
   );
   if (diagnostics.length > 0) {
@@ -651,7 +915,11 @@ function reportSummary(
       });
     }
   }
-  if (command === "prove-artifact" || command === "finalize-proof") {
+  if (
+    command === "prove-artifact" ||
+    command === "finalize-proof" ||
+    command === "verify"
+  ) {
     copyNumber("buildReceiptVerifications", build);
     copyNumber("buildSemanticAnalysisRuns", build);
   }
@@ -690,7 +958,7 @@ async function main(): Promise<void> {
   const command = process.argv[2] as Command | undefined;
   if (!command || !commands.includes(command)) {
     throw new CliUsageError(
-      "Usage: mirai-intl <generate|ensure|check|catalog-check|prove|prove-artifact|finalize-proof|contract|explain> [--format <stylish|json>] [--json]"
+      "Usage: mirai-intl <generate|ensure|check|catalog-check|prove|verify|prove-artifact|finalize-proof|contract|explain> [--format <stylish|json>] [--json]"
     );
   }
   activeCommand = command;
@@ -701,6 +969,21 @@ async function main(): Promise<void> {
   activeReporter = reporter;
   if (command === "check" && hasFlag("--workspace")) {
     await checkWorkspace(reporter);
+    return;
+  }
+  if (command === "verify" && hasFlag("--workspace")) {
+    await verifyWorkspace(reporter);
+    return;
+  }
+  if (command === "verify") {
+    const { verifyConventionBuildReceipt } = await import("./check-receipt");
+    const result = await verifyConventionBuildReceipt(process.cwd());
+    await report(
+      command,
+      { build: result, receipt: result.receipt },
+      reporter,
+      buildVerificationSummary(result).slice(3)
+    );
     return;
   }
 
@@ -952,6 +1235,7 @@ function validationFailure(command: Command, message: string): boolean {
     command === "check" ||
     command === "catalog-check" ||
     command === "prove" ||
+    command === "verify" ||
     command === "prove-artifact" ||
     command === "finalize-proof"
   ) {

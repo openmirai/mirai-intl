@@ -7,10 +7,10 @@ import type {
   Sha256,
 } from "@openmirai/intl-abi";
 
-import { compareCanonicalStrings, sha256 } from "./canonical";
+import { compareCanonicalStrings, decodeUtf8Fatal, sha256 } from "./canonical";
 
 export type ProviderResolutionFrontierInput = Readonly<{
-  controlPaths: ReadonlyArray<string>;
+  controlFiles: ReadonlyArray<IntlCheckFileIdentityV2>;
   from: string;
   packageName: string | null;
   packageVersion: string | null;
@@ -82,16 +82,19 @@ export async function captureProviderResolutionFrontier(
       );
     }
   }
-  const controlFiles = await Promise.all(
-    [...new Set(input.controlPaths)]
-      .map((path) => confinedPath(root, path))
-      .toSorted(compareCanonicalStrings)
-      .map(
-        async (path): Promise<IntlCheckFileIdentityV2> => ({
-          hash: sha256(await readFile(resolve(root, path), "utf8")),
-          path,
-        })
-      )
+  const controlFilesByPath = new Map<string, IntlCheckFileIdentityV2>();
+  for (const entry of input.controlFiles) {
+    const path = confinedPath(root, entry.path);
+    const existing = controlFilesByPath.get(path);
+    if (existing && existing.hash !== entry.hash) {
+      throw new Error(
+        `Provider resolution control changed while resolving ${input.specifier}`
+      );
+    }
+    controlFilesByPath.set(path, { hash: entry.hash, path });
+  }
+  const controlFiles = [...controlFilesByPath.values()].toSorted(
+    (left, right) => compareCanonicalStrings(left.path, right.path)
   );
   const realpaths = input.realpaths
     .filter((entry) => resolve(entry.path) !== root)
@@ -133,6 +136,23 @@ export async function verifyProviderResolutionFrontier(
     );
   }
   const root = resolve(workspaceRoot);
+  for (const control of resolution.controlFiles) {
+    const path = resolve(root, control.path);
+    const bytes = await readFile(path).catch(() => undefined);
+    if (
+      !bytes ||
+      confinedPath(root, path) !== control.path ||
+      sha256(bytes) !== control.hash
+    ) {
+      throw new Error(
+        `Mirai Intl provider resolution frontier is stale (control): ${resolution.specifier}`
+      );
+    }
+    decodeUtf8Fatal(
+      bytes,
+      `Mirai Intl provider resolution control ${control.path}`
+    );
+  }
   for (const probe of resolution.probes) {
     const current = await present(resolve(root, probe.path), probe.kind);
     if (current !== probe.present) {

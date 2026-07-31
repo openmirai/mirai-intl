@@ -173,7 +173,8 @@ async function workspaceAnalysisInstrumentation(
       "  const loaded = nextLoad(url, context);",
       '  if (loaded.format !== "module" || !url.includes("/packages/compiler/dist/analyze-sources-")) return loaded;',
       '  const source = typeof loaded.source === "string" ? loaded.source : Buffer.from(loaded.source).toString("utf8");',
-      '  const transformed = source.replace("async function analyzeLoadedConventionSourceFiles(loaded, root, generatedDirectory, sourceFiles, workspaceRoot = root, options = {}) {", "async function analyzeLoadedConventionSourceFiles(loaded, root, generatedDirectory, sourceFiles, workspaceRoot = root, options = {}) {\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;");',
+      '  const signature = "async function analyzeLoadedConventionSourceFiles(loaded, root, generatedDirectory, sourceFiles, workspaceRoot = root, options = {}, preparedSources, classifierProjectControls) {";',
+      "  const transformed = source.replace(signature, `${signature}\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;`);",
       '  if (source.includes("async function analyzeLoadedConventionSourceFiles(") && transformed === source) throw new Error("Failed to instrument workspace source analysis");',
       "  return { ...loaded, source: transformed === source ? source : `${transformed}\\nglobalThis.__miraiWorkspaceAnalysisInstrumented = true;\\n` };",
       "}",
@@ -317,12 +318,25 @@ describe("convention-only CLI", () => {
       expect(checked.stdout).not.toMatch(
         /"(?:compiled|environment|loaded|proof|receipt|report|sources)":/u
       );
-      await expect(
-        readFile(join(app, ".mirai-intl/check-receipt.v2.json"), "utf8")
-      ).resolves.toContain('"schemaVersion":2');
-      await expect(
-        readFile(join(shared, ".mirai-intl/check-receipt.v2.json"), "utf8")
-      ).resolves.toContain('"schemaVersion":2');
+      const verified = runCli(
+        workspace,
+        "verify",
+        "--workspace",
+        "--format=json"
+      );
+      expect(verified.status, `${verified.stdout}${verified.stderr}`).toBe(0);
+      expect(verified.stderr).toBe("");
+      expect(JSON.parse(verified.stdout)).toEqual({
+        command: "verify",
+        diagnostics: [],
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          buildReceiptVerifications: 2,
+          buildSemanticAnalysisRuns: 0,
+          valid: true,
+        },
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
@@ -1240,6 +1254,59 @@ describe("convention-only CLI", () => {
     }
   }, 180_000);
 
+  it("verifies selected authority without loading TypeScript or semantic analysis", async () => {
+    const root = await createConventionApp();
+    const instrumentationRoot = await mkdtemp(
+      join(tmpdir(), "mirai-intl-verify-instrumentation-")
+    );
+    try {
+      const publishedCli = await requireBuiltCli();
+      const proved = spawnSync(process.execPath, [publishedCli, "prove"], {
+        cwd: root,
+        encoding: "utf8",
+        env: process.env,
+        shell: false,
+        timeout: 60_000,
+      });
+      expect(proved.status, `${proved.stdout}${proved.stderr}`).toBe(0);
+      const instrumentation = await ensureInstrumentation(instrumentationRoot);
+      const verified = spawnSync(
+        process.execPath,
+        ["--import", instrumentation.hook, publishedCli, "verify", "--json"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+      expect(verified.status, `${verified.stdout}${verified.stderr}`).toBe(0);
+      expect(JSON.parse(verified.stdout)).toMatchObject({
+        command: "verify",
+        success: true,
+        summary: {
+          buildReceiptVerifications: 1,
+          buildSemanticAnalysisRuns: 0,
+          valid: true,
+        },
+      });
+      expect(
+        JSON.parse(await readFile(instrumentation.report, "utf8"))
+      ).toMatchObject({
+        analyzeSourcesLoaded: false,
+        programs: 0,
+        transformLoaded: false,
+        typescriptLoaded: false,
+      });
+    } finally {
+      await Promise.all([
+        rm(root, { force: true, recursive: true }),
+        rm(instrumentationRoot, { force: true, recursive: true }),
+      ]);
+    }
+  }, 180_000);
+
   it.each([
     ["--config", "intl.config.json"],
     ["--out", "generated"],
@@ -1303,11 +1370,11 @@ describe("convention-only CLI", () => {
         },
       });
       await expect(verifyConventionCheckReceipt(root)).resolves.toMatchObject({
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
       await writeFile(join(root, "src", "page.ts"), "export const page = 2;\n");
       await expect(verifyConventionCheckReceipt(root)).rejects.toThrow(
-        /source is stale or corrupt/u
+        /bound file is stale or corrupt/u
       );
     } finally {
       await rm(root, { force: true, recursive: true });

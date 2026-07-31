@@ -1,27 +1,36 @@
+import { lstatSync, readFileSync } from "node:fs";
 import {
   lstat,
+  link,
+  realpath,
   readdir,
   readFile,
   mkdir,
+  open,
   rename,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { performance } from "node:perf_hooks";
 
 import { RUNTIME_ABI } from "@openmirai/intl-abi";
 import type {
   IntlBuildProofTargetV1,
   IntlBuildProofV1,
   IntlCheckPackageIdentityV2,
+  IntlCheckReceipt,
+  IntlCheckReceiptSelectorV2,
   IntlCheckReceiptV2,
   IntlSemanticAuthorizationObservationV2,
+  PackageAuthoritySetV1,
 } from "@openmirai/intl-abi";
 
 import {
   canonicalHash,
   canonicalJson,
   compareCanonicalStrings,
+  decodeUtf8Fatal,
   sha256,
 } from "./canonical";
 import type * as AnalyzeSourcesModule from "./analyze-sources";
@@ -32,12 +41,27 @@ import {
 } from "./catalog";
 import type { ConventionOptions, LoadedConventionCatalog } from "./catalog";
 import {
+  assertTrustedIntlCheckReceiptV3ClassifierAuthorityBinding,
+  buildIntlCheckReceiptV3FromClassifierProjections,
+  buildIntlCheckReceiptV3FromNativeInputs,
   buildIntlCheckReceiptV2,
   buildSourceAuthorizationSnapshot,
   canonicalIntlCheckReceiptV2Bytes,
+  parseCanonicalIntlCheckReceiptV2,
 } from "./authorization-snapshot";
+import type { IntlCheckReceiptV3ClassifierAuthorityBinding } from "./authorization-snapshot";
+import { parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3 } from "./classifier-authority";
 import {
-  conventionCheckReceiptPath,
+  createMiraiIntlClassifierWorkspaceTransactionV3,
+  revalidateMiraiIntlClassifierFinalizedTransactionForCommitV3,
+} from "./classifier-candidate";
+import type { MiraiIntlClassifierFinalizedTransactionV3 } from "./classifier-candidate";
+import {
+  canonicalPackageAuthoritySetV1Bytes,
+  conventionCheckReceiptSelectorPath,
+  conventionPackageAuthorityReceiptPath,
+  conventionPackageAuthoritySetPath,
+  conventionPackageClassifierAuthorityPath,
   verifyConventionBuildReceipt,
 } from "./check-receipt";
 import {
@@ -46,12 +70,39 @@ import {
 } from "./integrity-identity";
 import type { ResolvedPackageIdentity } from "./integrity-identity";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
-import { captureProviderResolutionFrontier } from "./provider-resolution-identity";
+import {
+  captureProviderResolutionFrontier,
+  verifyProviderResolutionFrontier,
+} from "./provider-resolution-identity";
+import type { ProviderResolutionFrontierInput } from "./provider-resolution-identity";
 import { collectConventionSourceFiles } from "./source-discovery";
 import type * as OwnershipModule from "./ownership";
 
 type AuthorizationOptions = ConventionOptions &
-  Readonly<{ validateEnvironment?: boolean }>;
+  Readonly<{
+    /** @internal Deterministic mutation-barrier tests only. */
+    beforePublicationBarrier?: () => Promise<void> | void;
+    /** @internal Deterministic dormant-V3 interruption tests only. */
+    dormantV3PublicationBoundary?: (
+      boundary:
+        | "before-selector-rename"
+        | "selector-renamed"
+        | "v2-receipt-installed"
+        | "v2-set-installed"
+        | "v3-authority-installed"
+        | "v3-receipt-installed"
+        | "v3-set-installed"
+    ) => Promise<void> | void;
+    /** @internal Materialize the dormant V3 DAG while retaining V2 authority. */
+    dormantV3?: boolean;
+    /** @internal Recheck every non-classifier publication fingerprint. */
+    dormantV3PublicationFingerprintVerification?: () => Promise<void>;
+    /** @internal Absolute monotonic publication deadline from performance.now(). */
+    dormantV3PublicationDeadlineMs?: number;
+    /** @internal Deterministic monotonic clock for publication cutoff tests. */
+    dormantV3PublicationNow?: () => number;
+    validateEnvironment?: boolean;
+  }>;
 
 type SemanticModules = Readonly<{
   analyze: typeof AnalyzeSourcesModule;
@@ -149,7 +200,7 @@ type BuildProofReceipts = Readonly<{
  */
 async function buildProofReceipts(
   root: string,
-  receipt: IntlCheckReceiptV2
+  receipt: IntlCheckReceipt
 ): Promise<BuildProofReceipts> {
   const loaded = await loadConventionCatalog(root);
   const dependencies = new Map<string, string>();
@@ -350,25 +401,616 @@ async function readProof(path: string): Promise<IntlBuildProofV1> {
   return proof;
 }
 
-async function writeReceipt(
-  path: string,
-  receipt: IntlCheckReceiptV2
+function isMissingArtifactPath(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    Reflect.get(error, "code") === "ENOENT"
+  );
+}
+
+function packageArtifactDirectorySegments(
+  packageRoot: string,
+  directory: string
+): Readonly<{ root: string; segments: ReadonlyArray<string> }> {
+  const root = resolve(packageRoot);
+  const target = resolve(directory);
+  const withinRoot = relative(root, target);
+  if (
+    isAbsolute(withinRoot) ||
+    withinRoot === ".." ||
+    withinRoot.startsWith(`..${sep}`)
+  ) {
+    throw new Error("Mirai Intl artifact directory escapes the package root");
+  }
+  return {
+    root,
+    segments: withinRoot === "" ? [] : withinRoot.split(sep),
+  };
+}
+
+function assertPackageArtifactDirectoryEntry(
+  entry: Awaited<ReturnType<typeof lstat>>,
+  path: string
+): void {
+  if (entry.isSymbolicLink() || !entry.isDirectory()) {
+    throw new Error(
+      `Mirai Intl artifact parent must be a non-symlink directory: ${path}`
+    );
+  }
+}
+
+async function ensurePackageArtifactDirectory(
+  packageRoot: string,
+  directory: string
 ): Promise<void> {
-  const content = canonicalIntlCheckReceiptV2Bytes(receipt);
-  const existing = await readFile(path, "utf8").catch(() => undefined);
-  // A matching proof is a verified no-op: downstream cache keys can retain
-  // inode/mtime stability while callers still receive fresh input validation.
-  if (existing === content) {
+  const { root, segments } = packageArtifactDirectorySegments(
+    packageRoot,
+    directory
+  );
+  let current = root;
+  const rootEntry = await lstat(root);
+  assertPackageArtifactDirectoryEntry(rootEntry, root);
+  for (const segment of segments) {
+    current = join(current, segment);
+    let entry = await lstat(current).catch((error: unknown) => {
+      if (isMissingArtifactPath(error)) {
+        return undefined;
+      }
+      throw error;
+    });
+    if (!entry) {
+      await mkdir(current).catch((error: unknown) => {
+        if (
+          !(error instanceof Error) ||
+          !("code" in error) ||
+          Reflect.get(error, "code") !== "EEXIST"
+        ) {
+          throw error;
+        }
+      });
+      entry = await lstat(current);
+    }
+    assertPackageArtifactDirectoryEntry(entry, current);
+  }
+}
+
+function assertPackageArtifactDirectorySync(
+  packageRoot: string,
+  directory: string
+): void {
+  const { root, segments } = packageArtifactDirectorySegments(
+    packageRoot,
+    directory
+  );
+  let current = root;
+  assertPackageArtifactDirectoryEntry(lstatSync(root), root);
+  for (const segment of segments) {
+    current = join(current, segment);
+    assertPackageArtifactDirectoryEntry(lstatSync(current), current);
+  }
+}
+
+type DormantV3PublicationBoundary = Parameters<
+  NonNullable<AuthorizationOptions["dormantV3PublicationBoundary"]>
+>[0];
+
+type ImmutableAuthorizationObject = Readonly<{
+  afterInstall: DormantV3PublicationBoundary;
+  bytes: string;
+  name: string;
+  path: string;
+  verify: (bytes: string) => void;
+}>;
+
+async function syncDirectory(path: string): Promise<void> {
+  const directory = await open(path, "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+async function assertRegularArtifact(
+  path: string,
+  name: string
+): Promise<void> {
+  const entry = await lstat(path).catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  });
+  if (entry && (entry.isSymbolicLink() || !entry.isFile())) {
+    throw new Error(`${name} must be a non-symlink regular file`);
+  }
+}
+
+async function installImmutableAuthorizationObject(
+  packageRoot: string,
+  artifact: ImmutableAuthorizationObject,
+  observe?: AuthorizationOptions["dormantV3PublicationBoundary"]
+): Promise<void> {
+  artifact.verify(artifact.bytes);
+  await ensurePackageArtifactDirectory(packageRoot, dirname(artifact.path));
+  await assertRegularArtifact(artifact.path, artifact.name);
+  const verifyInstalled = async (): Promise<void> => {
+    await assertRegularArtifact(artifact.path, artifact.name);
+    const existing = await readFile(artifact.path, "utf8");
+    if (existing !== artifact.bytes) {
+      throw new Error(`${artifact.name} immutable object is corrupt`);
+    }
+    artifact.verify(existing);
+  };
+  const existing = await readFile(artifact.path, "utf8").catch(
+    (error: unknown) => {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  );
+  if (existing !== undefined) {
+    await verifyInstalled();
+    await observe?.(artifact.afterInstall);
     return;
   }
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  const temporary = `${artifact.path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
   try {
-    await writeFile(temporary, content, "utf8");
-    await rename(temporary, path);
+    await ensurePackageArtifactDirectory(packageRoot, dirname(temporary));
+    const handle = await open(temporary, "wx", 0o600);
+    try {
+      await handle.writeFile(artifact.bytes, "utf8");
+      await handle.datasync();
+    } finally {
+      await handle.close();
+    }
+    const staged = await readFile(temporary, "utf8");
+    if (staged !== artifact.bytes) {
+      throw new Error(`${artifact.name} changed while staged`);
+    }
+    artifact.verify(staged);
+    await ensurePackageArtifactDirectory(packageRoot, dirname(artifact.path));
+    await link(temporary, artifact.path).catch(async (error: unknown) => {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "EEXIST"
+      ) {
+        await verifyInstalled();
+        return;
+      }
+      throw error;
+    });
+    await verifyInstalled();
+    await syncDirectory(dirname(artifact.path));
+    await observe?.(artifact.afterInstall);
   } finally {
     await rm(temporary, { force: true });
   }
+}
+
+function dormantV2SelectorBytes(authoritySetHash: `sha256:${string}`): string {
+  const selector = {
+    authoritySetHash,
+    schemaVersion: 2,
+  } as const satisfies IntlCheckReceiptSelectorV2;
+  return `${canonicalJson(selector)}\n`;
+}
+
+function verifyDormantV2SelectorBytes(
+  source: string,
+  authoritySetHash: `sha256:${string}`
+): void {
+  let value: unknown;
+  try {
+    value = JSON.parse(source) as unknown;
+  } catch {
+    throw new Error("Mirai Intl dormant V2 selector must contain valid JSON");
+  }
+  const expected = {
+    authoritySetHash,
+    schemaVersion: 2,
+  } as const satisfies IntlCheckReceiptSelectorV2;
+  if (
+    source !== `${canonicalJson(expected)}\n` ||
+    canonicalJson(value) !== canonicalJson(expected)
+  ) {
+    throw new Error("Mirai Intl dormant V2 selector is invalid");
+  }
+}
+
+function packageAuthorityRoot(manifestPath: string): string {
+  if (manifestPath === "package.json") {
+    return ".";
+  }
+  const suffix = "/package.json";
+  if (!manifestPath.endsWith(suffix)) {
+    throw new Error(
+      "Mirai Intl package authority manifest path must end in package.json"
+    );
+  }
+  return manifestPath.slice(0, -suffix.length);
+}
+
+async function packageAuthorityIdentity(
+  packageRoot: string,
+  workspaceRoot: string,
+  receipt: IntlCheckReceipt
+): Promise<PackageAuthoritySetV1["package"]> {
+  const manifest =
+    receipt.schemaVersion === 2
+      ? receipt.application.packageManifest
+      : receipt.tables.files[receipt.application.packageManifest];
+  if (!manifest) {
+    throw new Error(
+      "Mirai Intl package authority receipt has no package manifest identity"
+    );
+  }
+  const root = packageAuthorityRoot(manifest.path);
+  if (
+    (await realpath(resolve(workspaceRoot, root))) !==
+    (await realpath(packageRoot))
+  ) {
+    throw new Error(
+      "Mirai Intl package authority root does not match its sealed receipt"
+    );
+  }
+  const bytes = await readFile(resolve(workspaceRoot, manifest.path));
+  let value: unknown;
+  try {
+    value = JSON.parse(decodeUtf8Fatal(bytes, "Mirai Intl package manifest"));
+  } catch {
+    throw new Error("Mirai Intl package authority manifest is invalid");
+  }
+  const manifestHash =
+    receipt.schemaVersion === 2
+      ? sha256(Buffer.from(canonicalJson(value), "utf8"))
+      : sha256(bytes);
+  if (manifestHash !== manifest.hash) {
+    throw new Error("Mirai Intl package authority manifest is stale");
+  }
+  const name =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Reflect.get(value, "name")
+      : undefined;
+  if (typeof name !== "string" || name.length === 0) {
+    throw new Error("Mirai Intl package authority manifest has no name");
+  }
+  return { manifestHash: manifest.hash, name, root };
+}
+
+async function writePackageAuthoritySelector(
+  root: string,
+  bytes: string,
+  authoritySetHash: `sha256:${string}`,
+  finalized: MiraiIntlClassifierFinalizedTransactionV3,
+  options: Pick<
+    AuthorizationOptions,
+    | "dormantV3PublicationBoundary"
+    | "dormantV3PublicationDeadlineMs"
+    | "dormantV3PublicationFingerprintVerification"
+    | "dormantV3PublicationNow"
+  >
+): Promise<void> {
+  const selectorPath = conventionCheckReceiptSelectorPath(root);
+  const verify = (source: string): void =>
+    verifyDormantV2SelectorBytes(source, authoritySetHash);
+  const verifyLive = async (): Promise<void> => {
+    if (!options.dormantV3PublicationFingerprintVerification) {
+      throw new Error(
+        "Mirai Intl dormant V3 publication requires fingerprint verification"
+      );
+    }
+    await options.dormantV3PublicationFingerprintVerification();
+    await revalidateMiraiIntlClassifierFinalizedTransactionForCommitV3(
+      finalized
+    );
+  };
+  const verifyCommitBarrier = (stagedPath: string): void => {
+    const now = options.dormantV3PublicationNow ?? (() => performance.now());
+    if (
+      options.dormantV3PublicationDeadlineMs === undefined ||
+      now() >= options.dormantV3PublicationDeadlineMs
+    ) {
+      throw new Error("Mirai Intl dormant V3 publication deadline expired");
+    }
+    assertPackageArtifactDirectorySync(root, dirname(stagedPath));
+    const staged = readFileSync(stagedPath, "utf8");
+    if (staged !== bytes) {
+      throw new Error(
+        "Mirai Intl package authority selector changed at commit barrier"
+      );
+    }
+    verify(staged);
+  };
+  verify(bytes);
+  await ensurePackageArtifactDirectory(root, dirname(selectorPath));
+  await assertRegularArtifact(
+    selectorPath,
+    "Mirai Intl package authority selector"
+  );
+  const existing = await readFile(selectorPath, "utf8").catch(
+    (error: unknown) => {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  );
+  if (existing === bytes) {
+    verify(existing);
+    await options.dormantV3PublicationBoundary?.("before-selector-rename");
+    await verifyLive();
+    verifyCommitBarrier(selectorPath);
+    try {
+      await options.dormantV3PublicationBoundary?.("selector-renamed");
+    } catch {
+      // An identical selector was already committed before this observer.
+    }
+    return;
+  }
+  const temporary = `${selectorPath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  try {
+    await ensurePackageArtifactDirectory(root, dirname(temporary));
+    const handle = await open(temporary, "wx", 0o600);
+    try {
+      await handle.writeFile(bytes, "utf8");
+      await handle.datasync();
+    } finally {
+      await handle.close();
+    }
+    const reread = await readFile(temporary, "utf8");
+    if (reread !== bytes) {
+      throw new Error(
+        "Mirai Intl package authority selector changed during publication"
+      );
+    }
+    verify(reread);
+    await options.dormantV3PublicationBoundary?.("before-selector-rename");
+    await verifyLive();
+    verifyCommitBarrier(temporary);
+    await rename(temporary, selectorPath);
+    await syncDirectory(dirname(selectorPath)).catch(() => {
+      // The selector rename is already committed and cannot be rolled back.
+    });
+  } finally {
+    await rm(temporary, { force: true });
+  }
+  try {
+    await options.dormantV3PublicationBoundary?.("selector-renamed");
+  } catch {
+    // Selector rename is the commit point; post-commit observers cannot revoke it.
+  }
+}
+
+/**
+ * Persist a fully cross-bound dormant V3 DAG while activating only the
+ * content-addressed V2 authority set. The schema-2 selector rename is the sole
+ * package-local commit point; fixed receipt names are not mutated here.
+ *
+ * @internal Dormant V3 publication transaction.
+ */
+export async function publishDormantConventionAuthorityV3(
+  packageRoot: string,
+  workspaceRoot: string,
+  v2Receipt: IntlCheckReceiptV2 | null,
+  binding: IntlCheckReceiptV3ClassifierAuthorityBinding,
+  finalized: MiraiIntlClassifierFinalizedTransactionV3,
+  options: Pick<
+    AuthorizationOptions,
+    | "dormantV3PublicationBoundary"
+    | "dormantV3PublicationDeadlineMs"
+    | "dormantV3PublicationFingerprintVerification"
+    | "dormantV3PublicationNow"
+  > &
+    Readonly<{ activateV3?: boolean }> = {}
+): Promise<void> {
+  const root = resolve(packageRoot);
+  assertTrustedIntlCheckReceiptV3ClassifierAuthorityBinding(binding);
+  const v2Bytes = v2Receipt
+    ? canonicalIntlCheckReceiptV2Bytes(v2Receipt)
+    : undefined;
+  const authorityEnvelope =
+    parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3(
+      binding.authorityBytes
+    );
+  const receipt = binding.receipt;
+  const packageAuthority = await packageAuthorityIdentity(
+    root,
+    workspaceRoot,
+    v2Receipt ?? receipt
+  );
+  const v2ReceiptHash = v2Bytes ? sha256(Buffer.from(v2Bytes)) : undefined;
+  const v2Set = v2ReceiptHash
+    ? ({
+        classifierAuthority: null,
+        package: packageAuthority,
+        receipt: { hash: v2ReceiptHash, schemaVersion: 2 },
+        schemaVersion: 1,
+      } as const satisfies PackageAuthoritySetV1)
+    : undefined;
+  const v2SetBytes = v2Set
+    ? canonicalPackageAuthoritySetV1Bytes(v2Set)
+    : undefined;
+  const v2SetHash = v2SetBytes ? sha256(Buffer.from(v2SetBytes)) : undefined;
+  const v3Set = {
+    classifierAuthority: {
+      hash: binding.authorityHash,
+      schemaVersion: 3,
+    },
+    package: packageAuthority,
+    receipt: { hash: binding.receiptHash, schemaVersion: 3 },
+    schemaVersion: 1,
+  } as const satisfies PackageAuthoritySetV1;
+  const v3SetBytes = canonicalPackageAuthoritySetV1Bytes(v3Set);
+  const v3SetHash = sha256(Buffer.from(v3SetBytes));
+  if (!options.dormantV3PublicationFingerprintVerification) {
+    throw new Error(
+      "Mirai Intl dormant V3 publication requires fingerprint verification"
+    );
+  }
+  // Immutable objects are content-addressed and inert until the selector
+  // rename. Revalidate exactly at that commit point instead of repeating the
+  // same full workspace scan before staging objects that cannot become live.
+  if (
+    v2Receipt &&
+    v2Bytes &&
+    v2ReceiptHash &&
+    v2Set &&
+    v2SetBytes &&
+    v2SetHash
+  ) {
+    await installImmutableAuthorizationObject(
+      root,
+      {
+        afterInstall: "v2-receipt-installed",
+        bytes: v2Bytes,
+        name: "Mirai Intl immutable check receipt V2",
+        path: conventionPackageAuthorityReceiptPath(root, 2, v2ReceiptHash),
+        verify(bytes) {
+          if (
+            canonicalIntlCheckReceiptV2Bytes(
+              parseCanonicalIntlCheckReceiptV2(bytes)
+            ) !== v2Bytes
+          ) {
+            throw new Error("Mirai Intl immutable check receipt V2 is invalid");
+          }
+        },
+      },
+      options.dormantV3PublicationBoundary
+    );
+    await installImmutableAuthorizationObject(
+      root,
+      {
+        afterInstall: "v2-set-installed",
+        bytes: v2SetBytes,
+        name: "Mirai Intl immutable package authority set V2",
+        path: conventionPackageAuthoritySetPath(root, v2SetHash),
+        verify(bytes) {
+          if (bytes !== canonicalPackageAuthoritySetV1Bytes(v2Set)) {
+            throw new Error(
+              "Mirai Intl immutable package authority set V2 is invalid"
+            );
+          }
+        },
+      },
+      options.dormantV3PublicationBoundary
+    );
+  }
+  await installImmutableAuthorizationObject(
+    root,
+    {
+      afterInstall: "v3-authority-installed",
+      bytes: binding.authorityBytes,
+      name: "Mirai Intl immutable classifier authority V3",
+      path: conventionPackageClassifierAuthorityPath(
+        root,
+        binding.authorityHash
+      ),
+      verify(bytes) {
+        const parsed =
+          parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3(bytes);
+        if (
+          sha256(Buffer.from(bytes)) !== binding.authorityHash ||
+          canonicalJson(parsed) !== canonicalJson(authorityEnvelope)
+        ) {
+          throw new Error(
+            "Mirai Intl immutable classifier authority V3 is invalid"
+          );
+        }
+      },
+    },
+    options.dormantV3PublicationBoundary
+  );
+  await installImmutableAuthorizationObject(
+    root,
+    {
+      afterInstall: "v3-receipt-installed",
+      bytes: binding.receiptBytes,
+      name: "Mirai Intl immutable check receipt V3",
+      path: conventionPackageAuthorityReceiptPath(root, 3, binding.receiptHash),
+      verify(bytes) {
+        if (sha256(Buffer.from(bytes)) !== binding.receiptHash) {
+          throw new Error("Mirai Intl immutable check receipt V3 is invalid");
+        }
+      },
+    },
+    options.dormantV3PublicationBoundary
+  );
+  await installImmutableAuthorizationObject(
+    root,
+    {
+      afterInstall: "v3-set-installed",
+      bytes: v3SetBytes,
+      name: "Mirai Intl immutable package authority set V3",
+      path: conventionPackageAuthoritySetPath(root, v3SetHash),
+      verify(bytes) {
+        if (bytes !== canonicalPackageAuthoritySetV1Bytes(v3Set)) {
+          throw new Error(
+            "Mirai Intl immutable package authority set V3 is invalid"
+          );
+        }
+      },
+    },
+    options.dormantV3PublicationBoundary
+  );
+  await writePackageAuthoritySelector(
+    root,
+    dormantV2SelectorBytes(
+      options.activateV3
+        ? v3SetHash
+        : (v2SetHash ??
+            (() => {
+              throw new Error("Mirai Intl V2 activation requires a V2 set");
+            })())
+    ),
+    options.activateV3
+      ? v3SetHash
+      : (v2SetHash ??
+          (() => {
+            throw new Error("Mirai Intl V2 activation requires a V2 set");
+          })()),
+    finalized,
+    options
+  );
+}
+
+async function verifyRawWorkspaceFiles(
+  workspaceRoot: string,
+  entries: ReadonlyArray<Readonly<{ hash: `sha256:${string}`; path: string }>>
+): Promise<void> {
+  const root = resolve(workspaceRoot);
+  await Promise.all(
+    [
+      ...new Map(
+        entries
+          .filter((entry) => !entry.path.startsWith("@typescript/lib/"))
+          .map((entry) => [entry.path, entry])
+      ).values(),
+    ].map(async (entry) => {
+      const path = resolve(root, entry.path);
+      const bytes = await readFile(path);
+      decodeUtf8Fatal(bytes, `Mirai Intl publication input ${entry.path}`);
+      if (
+        transactionWorkspacePath(root, path) !== entry.path ||
+        sha256(bytes) !== entry.hash
+      ) {
+        throw new Error(
+          `Mirai Intl publication input changed before receipt publication: ${entry.path}`
+        );
+      }
+    })
+  );
 }
 
 function packageIdentity(
@@ -382,6 +1024,371 @@ function packageIdentity(
   };
 }
 
+type CapturedProviderResolution = Awaited<
+  ReturnType<typeof captureProviderResolutionFrontier>
+>;
+
+function mergeProviderResolutionFrontiers(
+  left: ProviderResolutionFrontierInput,
+  right: ProviderResolutionFrontierInput
+): ProviderResolutionFrontierInput {
+  if (
+    left.from !== right.from ||
+    left.specifier !== right.specifier ||
+    left.packageName !== right.packageName ||
+    left.packageVersion !== right.packageVersion
+  ) {
+    throw new Error(
+      `Conflicting semantic provider resolution identity: ${left.from} -> ${left.specifier}`
+    );
+  }
+  const merge = <T>(
+    leftEntries: ReadonlyArray<T>,
+    rightEntries: ReadonlyArray<T>,
+    identity: (entry: T) => string,
+    value: (entry: T) => string
+  ): ReadonlyArray<T> => {
+    const entries = new Map<string, T>();
+    for (const entry of [...leftEntries, ...rightEntries]) {
+      const key = identity(entry);
+      const existing = entries.get(key);
+      if (existing && value(existing) !== value(entry)) {
+        throw new Error(
+          `Conflicting semantic provider resolution frontier: ${left.from} -> ${left.specifier}`
+        );
+      }
+      entries.set(key, entry);
+    }
+    return [...entries.values()].toSorted((a, b) =>
+      compareCanonicalStrings(identity(a), identity(b))
+    );
+  };
+  return {
+    controlFiles: merge(
+      left.controlFiles,
+      right.controlFiles,
+      ({ path }) => path,
+      ({ hash }) => hash
+    ),
+    from: left.from,
+    packageName: left.packageName,
+    packageVersion: left.packageVersion,
+    probes: merge(
+      left.probes,
+      right.probes,
+      ({ kind, path }) => `${path}\u0000${kind}`,
+      ({ present }) => String(present)
+    ),
+    realpaths: merge(
+      left.realpaths,
+      right.realpaths,
+      ({ path }) => path,
+      ({ target }) => target
+    ),
+    specifier: left.specifier,
+  };
+}
+
+type ProviderFrontierTransaction = Readonly<{
+  capture: (
+    optionsHash: CapturedProviderResolution["optionsHash"],
+    input: ProviderResolutionFrontierInput
+  ) => Promise<CapturedProviderResolution>;
+  recheck: () => Promise<void>;
+}>;
+
+type TransactionPathLedger = Readonly<{
+  directories: ReadonlyArray<
+    Readonly<{
+      entries: ReadonlyArray<
+        Readonly<{
+          kind: "directory" | "file" | "other";
+          name: string;
+          symbolicLink: boolean;
+        }>
+      >;
+      path: string;
+      present: boolean;
+      target: string | null;
+    }>
+  >;
+  files: ReadonlyArray<
+    Readonly<{
+      path: string;
+      present: boolean;
+      target: string | null;
+    }>
+  >;
+}>;
+
+function transactionWorkspacePath(workspaceRoot: string, file: string): string {
+  const path = relative(workspaceRoot, resolve(file)).split(sep).join("/");
+  if (!path || path.startsWith("../") || isAbsolute(path)) {
+    throw new Error(
+      `Provider resolution frontier escapes its workspace root: ${file}`
+    );
+  }
+  return path.normalize("NFC");
+}
+
+async function captureTransactionPathLedger(
+  workspaceRoot: string,
+  files: ReadonlyArray<string>,
+  directories: ReadonlyArray<string>
+): Promise<TransactionPathLedger> {
+  const root = resolve(workspaceRoot);
+  const uniqueFiles = [
+    ...new Set(
+      files.map((path) => resolve(path)).filter((path) => path !== root)
+    ),
+  ].toSorted(compareCanonicalStrings);
+  const uniqueDirectories = [
+    ...new Set(
+      directories.map((path) => resolve(path)).filter((path) => path !== root)
+    ),
+  ].toSorted(compareCanonicalStrings);
+  return {
+    directories: await Promise.all(
+      uniqueDirectories.map(async (path) => {
+        const entry = await lstat(path).catch((error: unknown) => {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            return undefined;
+          }
+          throw error;
+        });
+        if (!entry) {
+          return {
+            entries: [],
+            path: transactionWorkspacePath(root, path),
+            present: false,
+            target: null,
+          };
+        }
+        if (entry.isSymbolicLink() || !entry.isDirectory()) {
+          throw new Error(
+            `Mirai Intl transaction directory is not a regular directory: ${path}`
+          );
+        }
+        const target = await realpath(path);
+        return {
+          entries: (await readdir(path, { withFileTypes: true }))
+            // `.mirai-intl` is the transaction's own package-local output.
+            // Keep watching every sibling entry so a concurrent source or
+            // config addition remains fatal, but do not make the commit
+            // fingerprint self-invalidating when immutable authority objects
+            // are installed before the selector rename.
+            .filter((child) => child.name !== ".mirai-intl")
+            .map((child) => {
+              let kind: "directory" | "file" | "other" = "other";
+              if (child.isDirectory()) {
+                kind = "directory";
+              } else if (child.isFile()) {
+                kind = "file";
+              }
+              return {
+                kind,
+                name: child.name.normalize("NFC"),
+                symbolicLink: child.isSymbolicLink(),
+              };
+            })
+            .toSorted((left, right) =>
+              compareCanonicalStrings(left.name, right.name)
+            ),
+          path: transactionWorkspacePath(root, path),
+          present: true,
+          target: transactionWorkspacePath(root, target),
+        };
+      })
+    ),
+    files: await Promise.all(
+      uniqueFiles.map(async (path) => {
+        const entry = await lstat(path).catch((error: unknown) => {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            return undefined;
+          }
+          throw error;
+        });
+        if (!entry) {
+          return {
+            path: transactionWorkspacePath(root, path),
+            present: false,
+            target: null,
+          };
+        }
+        if (entry.isSymbolicLink() || !entry.isFile()) {
+          throw new Error(
+            `Mirai Intl transaction input is not a regular file: ${path}`
+          );
+        }
+        return {
+          path: transactionWorkspacePath(root, path),
+          present: true,
+          target: transactionWorkspacePath(root, await realpath(path)),
+        };
+      })
+    ),
+  };
+}
+
+function transactionLedgerDifference(
+  before: TransactionPathLedger,
+  after: TransactionPathLedger
+): string | undefined {
+  const entries = (
+    ledger: TransactionPathLedger
+  ): ReadonlyMap<string, string> =>
+    new Map([
+      ...ledger.directories.map(
+        (entry) => [`directory:${entry.path}`, canonicalJson(entry)] as const
+      ),
+      ...ledger.files.map(
+        (entry) => [`file:${entry.path}`, canonicalJson(entry)] as const
+      ),
+    ]);
+  const beforeEntries = entries(before);
+  const afterEntries = entries(after);
+  return [...new Set([...beforeEntries.keys(), ...afterEntries.keys()])]
+    .toSorted(compareCanonicalStrings)
+    .find((key) => beforeEntries.get(key) !== afterEntries.get(key));
+}
+
+/**
+ * Capture each exact provider-resolution identity once while assembling one
+ * immutable authorization snapshot. The cache intentionally dies with the
+ * transaction; a final uncached pass revalidates the live filesystem.
+ */
+function createProviderFrontierTransaction(
+  workspaceRoot: string,
+  snapshotIdentity: `sha256:${string}`
+): ProviderFrontierTransaction {
+  const root = resolve(workspaceRoot);
+  const captures = new Map<
+    string,
+    Readonly<{
+      input: ProviderResolutionFrontierInput;
+      inputIdentity: string;
+      optionsHash: CapturedProviderResolution["optionsHash"];
+      result: Promise<CapturedProviderResolution>;
+    }>
+  >();
+  const inputIdentities = new WeakMap<
+    ProviderResolutionFrontierInput,
+    Readonly<{ from: string; identity: string; specifier: string }>
+  >();
+  const inputIdentity = (
+    input: ProviderResolutionFrontierInput
+  ): Readonly<{ from: string; identity: string; specifier: string }> => {
+    const existing = inputIdentities.get(input);
+    if (existing) {
+      return existing;
+    }
+    const canonicalInput = {
+      controlFiles: input.controlFiles
+        .map((entry) => ({
+          hash: entry.hash,
+          path: transactionWorkspacePath(root, entry.path),
+        }))
+        .toSorted((left, right) =>
+          compareCanonicalStrings(left.path, right.path)
+        ),
+      from: transactionWorkspacePath(root, input.from),
+      packageName: input.packageName,
+      packageVersion: input.packageVersion,
+      probes: input.probes
+        .filter((probe) => resolve(probe.path) !== root)
+        .map((probe) => ({
+          kind: probe.kind,
+          path: transactionWorkspacePath(root, probe.path),
+          present: probe.present,
+        }))
+        .toSorted((left, right) =>
+          compareCanonicalStrings(
+            `${left.path}\u0000${left.kind}`,
+            `${right.path}\u0000${right.kind}`
+          )
+        ),
+      realpaths: input.realpaths
+        .filter((entry) => resolve(entry.path) !== root)
+        .map((entry) => ({
+          path: transactionWorkspacePath(root, entry.path),
+          target: transactionWorkspacePath(root, entry.target),
+        }))
+        .toSorted((left, right) =>
+          compareCanonicalStrings(left.path, right.path)
+        ),
+      specifier: input.specifier,
+    };
+    const identity = {
+      from: canonicalInput.from,
+      identity: canonicalJson(canonicalInput),
+      specifier: canonicalInput.specifier,
+    };
+    inputIdentities.set(input, identity);
+    return identity;
+  };
+  return {
+    capture(optionsHash, input) {
+      const canonicalInput = inputIdentity(input);
+      const transactionKey = canonicalJson({
+        from: canonicalInput.from,
+        optionsHash,
+        snapshotIdentity,
+        specifier: canonicalInput.specifier,
+      });
+      const existing = captures.get(transactionKey);
+      if (existing) {
+        if (existing.inputIdentity !== canonicalInput.identity) {
+          throw new Error(
+            `Conflicting semantic provider resolution identity: ${canonicalInput.from} -> ${canonicalInput.specifier}`
+          );
+        }
+        return existing.result;
+      }
+      const result = captureProviderResolutionFrontier(
+        root,
+        optionsHash,
+        input
+      );
+      captures.set(transactionKey, {
+        input,
+        inputIdentity: canonicalInput.identity,
+        optionsHash,
+        result,
+      });
+      return result;
+    },
+    async recheck() {
+      await Promise.all(
+        [...captures.values()].map(async ({ optionsHash, result }) => {
+          const expected = await result;
+          await verifyProviderResolutionFrontier(root, optionsHash, expected);
+        })
+      );
+    },
+  };
+}
+
+function internStructural<T extends object>(
+  pool: Map<string, object>,
+  value: T
+): T {
+  const identity = canonicalJson(value);
+  const existing = pool.get(identity);
+  if (existing) {
+    return existing as T;
+  }
+  pool.set(identity, value);
+  return value;
+}
+
 async function createConventionCheckReceipt(
   packageRoot: string,
   loaded: LoadedConventionCatalog,
@@ -389,10 +1396,23 @@ async function createConventionCheckReceipt(
   semanticModules: Promise<SemanticModules>
 ): Promise<
   Readonly<{
-    receipt: IntlCheckReceiptV2;
+    receipt: IntlCheckReceipt;
     verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
   }>
 > {
+  const profileStarted = performance.now();
+  let profilePrior = profileStarted;
+  const profilePhases: Array<
+    Readonly<{ milliseconds: number; phase: string }>
+  > = [];
+  const markProfilePhase = (phase: string): void => {
+    if (process.env.MIRAI_INTL_INTERNAL_AUTHORIZATION_PROFILE !== "1") {
+      return;
+    }
+    const now = performance.now();
+    profilePhases.push({ milliseconds: now - profilePrior, phase });
+    profilePrior = now;
+  };
   const root = resolve(loaded.repositoryRoot);
   const verificationBefore = await verifyLoadedConventionCatalog(loaded, {
     collectEnvironment: false,
@@ -409,37 +1429,108 @@ async function createConventionCheckReceipt(
     loaded.discovery.output,
     discoveredFiles
   );
-  const sourceFiles = universe.files.map(({ absolute }) => absolute);
+  markProfilePhase("verify-and-resolve-universe");
   const generationReceiptPath = join(
     root,
     loaded.discovery.output,
     "catalog-generation-receipt.v1.json"
   );
   const [
-    beforeSources,
+    sourceSnapshots,
     generationReceiptBefore,
     applicationBefore,
     immutableBefore,
   ] = await Promise.all([
-    Promise.all(
-      sourceFiles.map(
-        async (file) => [file, sha256(await readFile(file, "utf8"))] as const
-      )
-    ),
-    readFile(generationReceiptPath, "utf8").then(sha256),
+    analyze.loadConventionSourceSnapshots(universe.files),
+    readFile(generationReceiptPath).then(sha256),
     computeApplicationPackageIdentity(root),
     computeImmutableIntegrityIdentity(),
   ]);
-  const analysis = await analyze.analyzeLoadedConventionSourceFiles(
-    loaded,
-    root,
-    loaded.discovery.output,
-    universe.files,
-    universe.workspaceRoot
+  const projectManifestBefore = universe.projects.flatMap((project) =>
+    project.configManifest.map(({ hash, path }) => ({ hash, path }))
   );
-  if (analysis.diagnostics.length > 0) {
+  const transactionInputFiles = [
+    ...sourceSnapshots.map(({ absolute }) => absolute),
+    ...universe.projects.flatMap((project) =>
+      project.configManifest.map((entry) =>
+        resolve(universe.workspaceRoot, entry.path)
+      )
+    ),
+    ...loaded.watch.files.map((path) => resolve(root, path)),
+    generationReceiptPath,
+    join(root, "package.json"),
+    ...(applicationBefore.lock
+      ? [join(universe.workspaceRoot, applicationBefore.lock.name)]
+      : []),
+  ];
+  const transactionInputDirectories = [
+    ...transactionInputFiles.map(dirname),
+    ...loaded.watch.roots.map((path) => resolve(root, path)),
+  ];
+  const transactionLedgerBefore = await captureTransactionPathLedger(
+    universe.workspaceRoot,
+    transactionInputFiles,
+    transactionInputDirectories
+  );
+  markProfilePhase("snapshot-and-input-ledger");
+  const classifierTransaction =
+    await createMiraiIntlClassifierWorkspaceTransactionV3(
+      universe.workspaceRoot
+    );
+  const classifierProjectControls = new Map(
+    universe.projects
+      .filter((project) => project.role === "owner")
+      .map(
+        (project) =>
+          [
+            project.path,
+            project.configManifest.map(({ hash, path }) => ({
+              hash,
+              path: resolve(universe.workspaceRoot, path),
+            })),
+          ] as const
+      )
+  );
+  const analyzeSources = (
+    options: AnalyzeSourcesModule.AnalyzeConventionSourcesOptions
+  ) =>
+    analyze.analyzeLoadedConventionSourceFiles(
+      loaded,
+      root,
+      loaded.discovery.output,
+      universe.files,
+      universe.workspaceRoot,
+      options,
+      sourceSnapshots,
+      classifierProjectControls
+    );
+  const [classifierQualification, analysis] = finalVerificationOptions.dormantV3
+    ? await Promise.all([
+        analyzeSources({
+          classifier: {
+            mode: "approved",
+            transaction: classifierTransaction,
+          },
+        }),
+        // Dormant V3 must not weaken the selected V2 receipt. Preserve its
+        // complete semantic closure while qualifying the classifier in
+        // parallel over the exact same sealed source snapshots.
+        analyzeSources({}),
+      ])
+    : await analyzeSources({
+        classifier: {
+          mode: "approved",
+          transaction: classifierTransaction,
+        },
+      }).then((filtered) => [filtered, filtered] as const);
+  const failedAnalysis =
+    classifierQualification && classifierQualification.diagnostics.length > 0
+      ? classifierQualification
+      : analysis;
+  markProfilePhase("classifier-and-semantic-analysis");
+  if (failedAnalysis.diagnostics.length > 0) {
     throw new IntlSourceAuthorizationError(
-      analysis.diagnostics.map((diagnostic) => ({
+      failedAnalysis.diagnostics.map((diagnostic) => ({
         ...diagnostic,
         file: (isAbsolute(diagnostic.file)
           ? relative(root, diagnostic.file)
@@ -456,55 +1547,19 @@ async function createConventionCheckReceipt(
           (project) => project.role === "owner"
         ).length,
         semanticAuthorizationRuns: 1,
-        semanticFilesAnalyzed: analysis.filesAnalyzed,
+        semanticFilesAnalyzed: failedAnalysis.classifierProgramFiles.length,
       }
     );
   }
-  // Reload after semantic analysis so catalog/source mutations cannot inherit
-  // authority from the pre-analysis snapshot. Workspace authorization keeps
-  // the default environment-aware report; receipt-only prove skips that
-  // evidence exactly as it did before this combined API existed.
-  // The transform emits a diagnostic when a finite translation key actually
-  // needs a provider beyond the bounded frontier. An overflow from unrelated
-  // imports is not authorization evidence and must not reject an otherwise
-  // complete source verdict.
-  const afterLoaded = await loadConventionCatalog(packageRoot);
-  let verificationOptions: ConventionOptions = {};
-  if (finalVerificationOptions.validateEnvironment) {
-    verificationOptions = { collectEnvironment: false };
-  } else if (finalVerificationOptions.collectEnvironment !== undefined) {
-    verificationOptions = {
-      collectEnvironment: finalVerificationOptions.collectEnvironment,
-    };
-  }
-  const [verification, afterDiscoveredFiles] = await Promise.all([
-    Promise.all([
-      finalVerificationOptions.validateEnvironment
-        ? validateConventionEnvironment(afterLoaded)
-        : Promise.resolve(),
-      verifyLoadedConventionCatalog(afterLoaded, verificationOptions),
-    ]).then(([, result]) => result),
-    collectConventionSourceFiles(root, afterLoaded.discovery.output),
-  ]);
-  const afterUniverse = await resolveConventionSourceUniverse(
-    root,
-    afterLoaded.checkProjects,
-    afterLoaded.discovery.output,
-    afterDiscoveredFiles
-  );
   const universeIdentity = (value: typeof universe): unknown => ({
     files: value.files.map(({ file, owner }) => ({ file, owner })),
     projects: value.projects,
     workspaceRoot: value.workspaceRoot,
   });
-  if (
-    canonicalJson(universeIdentity(universe)) !==
-    canonicalJson(universeIdentity(afterUniverse))
-  ) {
-    throw new Error(
-      "Mirai Intl source universe changed while source analysis ran"
-    );
-  }
+  // The transform emits a diagnostic when a finite translation key actually
+  // needs a provider beyond the bounded frontier. An overflow from unrelated
+  // imports is not authorization evidence and must not reject an otherwise
+  // complete source verdict.
   const providerInputs = [
     ...new Map(
       analysis.evidence
@@ -513,82 +1568,39 @@ async function createConventionCheckReceipt(
         .map((entry) => [entry.path, entry] as const)
     ).values(),
   ];
-  const [
-    afterSources,
-    projectManifestAfter,
-    providerInputHashes,
-    generationReceiptHash,
-    application,
-    immutable,
-  ] = await Promise.all([
-    Promise.all(
-      afterUniverse.files.map(
-        async ({ absolute }) =>
-          [absolute, sha256(await readFile(absolute, "utf8"))] as const
-      )
-    ),
-    Promise.all(
-      universe.projects.flatMap((project) =>
-        project.configManifest.map(async (entry) => ({
-          hash: sha256(
-            await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
-          ),
-          path: entry.path,
-        }))
-      )
-    ),
-    Promise.all(
-      providerInputs.map(async (entry) => ({
-        actual: sha256(
-          await readFile(resolve(universe.workspaceRoot, entry.path), "utf8")
-        ),
-        expected: entry.hash,
-      }))
-    ),
-    readFile(generationReceiptPath, "utf8").then(sha256),
-    computeApplicationPackageIdentity(root),
-    computeImmutableIntegrityIdentity(),
-  ]);
-  if (canonicalJson(beforeSources) !== canonicalJson(afterSources)) {
-    throw new Error(
-      "Mirai Intl source inputs changed while source analysis ran"
-    );
-  }
-  const projectManifestBefore = universe.projects.flatMap((project) =>
-    project.configManifest.map(({ hash, path }) => ({ hash, path }))
+  const sourceSnapshotHashes = sourceSnapshots.map(
+    ({ absolute, sourceHash }) => [absolute, sourceHash] as const
   );
-  if (
-    canonicalJson(projectManifestAfter) !== canonicalJson(projectManifestBefore)
-  ) {
-    throw new Error(
-      "Mirai Intl TypeScript project configuration changed while source analysis ran"
-    );
-  }
-  for (const { actual, expected } of providerInputHashes) {
-    if (actual !== expected) {
-      throw new Error(
-        "Mirai Intl semantic provider inputs changed while source analysis ran"
-      );
-    }
-  }
-  if (
-    generationReceiptHash !== generationReceiptBefore ||
-    verification.write.contentHash !== verificationBefore.write.contentHash
-  ) {
-    throw new Error(
-      "Mirai Intl generated catalog changed while source analysis ran"
-    );
-  }
-  if (canonicalJson(application) !== canonicalJson(applicationBefore)) {
-    throw new Error(
-      "Mirai Intl application package inputs changed while source analysis ran"
-    );
-  }
-  if (canonicalJson(immutable) !== canonicalJson(immutableBefore)) {
-    throw new Error(
-      "Mirai Intl compiler dependency inputs changed while source analysis ran"
-    );
-  }
+  const providerInputFiles = providerInputs.map((entry) =>
+    resolve(universe.workspaceRoot, entry.path)
+  );
+  const providerLedgerBefore = await captureTransactionPathLedger(
+    universe.workspaceRoot,
+    providerInputFiles,
+    providerInputFiles.map(dirname)
+  );
+  const snapshotIdentity = canonicalHash({
+    application: applicationBefore,
+    generationReceiptHash: generationReceiptBefore,
+    immutable: immutableBefore,
+    projectManifest: projectManifestBefore,
+    providerInputs: providerInputs.map((entry) => ({
+      hash: entry.hash,
+      path: entry.path,
+    })),
+    sources: sourceSnapshotHashes.map(([file, hash]) => ({
+      file: transactionWorkspacePath(universe.workspaceRoot, file),
+      hash,
+    })),
+    universe: universeIdentity(universe),
+    verificationContentHash: verificationBefore.write.contentHash,
+  });
+  const providerFrontiers = createProviderFrontierTransaction(
+    universe.workspaceRoot,
+    snapshotIdentity
+  );
+  const structuralFilePool = new Map<string, object>();
+  const structuralProviderPool = new Map<string, object>();
   const workspacePackagePath = relative(
     universe.workspaceRoot,
     join(root, "package.json")
@@ -597,24 +1609,28 @@ async function createConventionCheckReceipt(
     .join("/");
   const applicationIdentity = {
     packageManifest: {
-      hash: application.packageJsonHash,
+      hash: finalVerificationOptions.dormantV3
+        ? applicationBefore.packageJsonHash
+        : sha256(await readFile(join(root, "package.json"))),
       path: workspacePackagePath,
     },
-    workspaceLockfile: application.lock
+    workspaceLockfile: applicationBefore.lock
       ? {
-          hash: application.lock.hash,
-          path: application.lock.name,
+          hash: applicationBefore.lock.hash,
+          path: applicationBefore.lock.name,
         }
       : {
-          hash: application.packageJsonHash,
+          hash: finalVerificationOptions.dormantV3
+            ? applicationBefore.packageJsonHash
+            : sha256(await readFile(join(root, "package.json"))),
           path: workspacePackagePath,
         },
   };
-  const sourceHashes = new Map(afterSources);
+  const sourceHashes = new Map(sourceSnapshotHashes);
   const packagePrefix = relative(universe.workspaceRoot, root)
     .split(sep)
     .join("/");
-  const exceptions = afterLoaded.checkExceptions.map((exception) => ({
+  const exceptions = loaded.checkExceptions.map((exception) => ({
     ...exception,
     file:
       packagePrefix === ""
@@ -640,6 +1656,36 @@ async function createConventionCheckReceipt(
   const projectByPath = new Map(
     universe.projects.map((project) => [project.path, project])
   );
+  const mergedProviderFrontiers = new Map<
+    string,
+    ProviderResolutionFrontierInput
+  >();
+  for (const entry of analysis.evidence) {
+    const owner = ownerBySource.get(entry.source);
+    const project = owner ? projectByPath.get(owner) : undefined;
+    if (!project) {
+      throw new Error(
+        `Semantic provider closure has no owning check project: ${entry.source}`
+      );
+    }
+    const optionsHash = canonicalHash(project.normalizedOptions);
+    for (const resolution of entry.providers.flatMap(
+      (provider) => provider.resolutions
+    )) {
+      const key = canonicalJson([
+        optionsHash,
+        resolution.from,
+        resolution.specifier,
+      ]);
+      const existing = mergedProviderFrontiers.get(key);
+      mergedProviderFrontiers.set(
+        key,
+        existing
+          ? mergeProviderResolutionFrontiers(existing, resolution)
+          : resolution
+      );
+    }
+  }
   const providerClosures = await Promise.all(
     analysis.evidence.map(async (entry) => {
       const owner = ownerBySource.get(entry.source);
@@ -660,25 +1706,41 @@ async function createConventionCheckReceipt(
         : entry.providers;
       return {
         ambientTypeFileLimit: entry.ambientTypeFileLimit,
-        declarations: entry.declarations,
-        libs: entry.libs,
+        declarations: entry.declarations.map((declaration) =>
+          internStructural(structuralFilePool, declaration)
+        ),
+        libs: entry.libs.map((lib) =>
+          internStructural(structuralFilePool, lib)
+        ),
         providerBudgetExceeded: false as const,
         providerRootLimit: entry.providerRootLimit,
         providers: await Promise.all(
-          providers.map(async (provider) => ({
-            declarations: provider.declarations,
-            kind: provider.kind,
-            resolutions: await Promise.all(
-              provider.resolutions.map((resolution) =>
-                captureProviderResolutionFrontier(
-                  universe.workspaceRoot,
-                  optionsHash,
-                  resolution
-                )
-              )
-            ),
-            root: provider.root,
-          }))
+          providers.map(async (provider) =>
+            internStructural(structuralProviderPool, {
+              declarations: provider.declarations.map((declaration) =>
+                internStructural(structuralFilePool, declaration)
+              ),
+              kind: provider.kind,
+              resolutions: await Promise.all(
+                provider.resolutions.map((resolution) => {
+                  const merged = mergedProviderFrontiers.get(
+                    canonicalJson([
+                      optionsHash,
+                      resolution.from,
+                      resolution.specifier,
+                    ])
+                  );
+                  if (!merged) {
+                    throw new Error(
+                      `Missing semantic provider resolution frontier: ${resolution.from} -> ${resolution.specifier}`
+                    );
+                  }
+                  return providerFrontiers.capture(optionsHash, merged);
+                })
+              ),
+              root: provider.root,
+            })
+          )
         ),
         source: entry.source,
       };
@@ -686,21 +1748,24 @@ async function createConventionCheckReceipt(
   );
   const loadedLibs = new Map(
     analysis.evidence.flatMap((entry) =>
-      entry.libs.map((file) => [file.path, file] as const)
+      entry.libs.map(
+        (file) =>
+          [file.path, internStructural(structuralFilePool, file)] as const
+      )
     )
   );
-  const snapshot = buildSourceAuthorizationSnapshot({
+  const snapshotInput = {
     application: applicationIdentity,
     artifactAbi,
-    compilerManifest: immutable.compiler.modules.entries.map(
+    compilerManifest: immutableBefore.compiler.modules.entries.map(
       ({ hash, path }) => ({ hash, path })
     ),
     exceptions,
-    generationReceiptHash,
-    icu: packageIdentity(immutable.icuParser),
+    generationReceiptHash: generationReceiptBefore,
+    icu: packageIdentity(immutableBefore.icuParser),
     observedCounters: {
       semanticAuthorizationRuns: 1,
-      semanticFilesAnalyzed: analysis.filesAnalyzed,
+      semanticFilesAnalyzed: providerClosures.length,
     },
     projects: universe.projects,
     providerClosures,
@@ -710,11 +1775,287 @@ async function createConventionCheckReceipt(
       libs: [...loadedLibs.values()].toSorted((left, right) =>
         compareCanonicalStrings(left.path, right.path)
       ),
-      package: packageIdentity(immutable.typescript),
+      package: packageIdentity(immutableBefore.typescript),
     },
-  });
+  } as const;
+  markProfilePhase("provider-frontiers-and-snapshot-input");
+  const receiptV2 = finalVerificationOptions.dormantV3
+    ? buildIntlCheckReceiptV2(buildSourceAuthorizationSnapshot(snapshotInput))
+    : undefined;
+  // Assemble only from the sealed transaction. The sole live filesystem pass
+  // happens after assembly and immediately before atomic publication.
+  const afterLoaded = await loadConventionCatalog(packageRoot);
+  let verificationOptions: ConventionOptions = {};
+  if (finalVerificationOptions.validateEnvironment) {
+    verificationOptions = { collectEnvironment: false };
+  } else if (finalVerificationOptions.collectEnvironment !== undefined) {
+    verificationOptions = {
+      collectEnvironment: finalVerificationOptions.collectEnvironment,
+    };
+  }
+  const [verification, afterDiscoveredFiles] = await Promise.all([
+    Promise.all([
+      finalVerificationOptions.validateEnvironment
+        ? validateConventionEnvironment(afterLoaded)
+        : Promise.resolve(),
+      verifyLoadedConventionCatalog(afterLoaded, verificationOptions),
+    ]).then(([, result]) => result),
+    collectConventionSourceFiles(root, afterLoaded.discovery.output),
+  ]);
+  const afterUniverse = await resolveConventionSourceUniverse(
+    root,
+    afterLoaded.checkProjects,
+    afterLoaded.discovery.output,
+    afterDiscoveredFiles
+  );
+  const projectManifestAfter = afterUniverse.projects.flatMap((project) =>
+    project.configManifest.map(({ hash, path }) => ({ hash, path }))
+  );
+  const [
+    afterSources,
+    finalProviderInputHashes,
+    generationReceiptHash,
+    application,
+    immutable,
+    transactionLedgerAfter,
+    providerLedgerAfter,
+  ] = await Promise.all([
+    Promise.all(
+      afterUniverse.files.map(async ({ absolute }) => {
+        const bytes = await readFile(absolute);
+        decodeUtf8Fatal(bytes, `Mirai Intl source ${absolute}`);
+        return [absolute, sha256(bytes)] as const;
+      })
+    ),
+    Promise.all(
+      providerInputs.map(async (entry) => ({
+        actual: sha256(
+          await readFile(resolve(universe.workspaceRoot, entry.path))
+        ),
+        expected: entry.hash,
+      }))
+    ),
+    readFile(
+      join(
+        root,
+        afterLoaded.discovery.output,
+        "catalog-generation-receipt.v1.json"
+      )
+    ).then(sha256),
+    computeApplicationPackageIdentity(root),
+    computeImmutableIntegrityIdentity(),
+    captureTransactionPathLedger(
+      universe.workspaceRoot,
+      transactionInputFiles,
+      transactionInputDirectories
+    ),
+    captureTransactionPathLedger(
+      universe.workspaceRoot,
+      providerInputFiles,
+      providerInputFiles.map(dirname)
+    ),
+    providerFrontiers.recheck(),
+  ]);
+  if (
+    canonicalJson(universeIdentity(universe)) !==
+    canonicalJson(universeIdentity(afterUniverse))
+  ) {
+    throw new Error(
+      "Mirai Intl source universe changed while source analysis ran"
+    );
+  }
+  if (canonicalJson(sourceSnapshotHashes) !== canonicalJson(afterSources)) {
+    throw new Error(
+      "Mirai Intl source inputs changed while source analysis ran"
+    );
+  }
+  if (
+    canonicalJson(projectManifestAfter) !== canonicalJson(projectManifestBefore)
+  ) {
+    throw new Error(
+      "Mirai Intl TypeScript project configuration changed while source analysis ran"
+    );
+  }
+  for (const { actual, expected } of finalProviderInputHashes) {
+    if (actual !== expected) {
+      throw new Error(
+        "Mirai Intl semantic provider inputs changed while source analysis ran"
+      );
+    }
+  }
+  if (
+    generationReceiptHash !== generationReceiptBefore ||
+    verification.write.contentHash !== verificationBefore.write.contentHash
+  ) {
+    throw new Error(
+      "Mirai Intl generated catalog changed while source analysis ran"
+    );
+  }
+  if (canonicalJson(application) !== canonicalJson(applicationBefore)) {
+    throw new Error(
+      "Mirai Intl application package inputs changed while source analysis ran"
+    );
+  }
+  if (canonicalJson(immutable) !== canonicalJson(immutableBefore)) {
+    throw new Error(
+      "Mirai Intl compiler dependency inputs changed while source analysis ran"
+    );
+  }
+  const transactionLedgerMutation = transactionLedgerDifference(
+    transactionLedgerBefore,
+    transactionLedgerAfter
+  );
+  const providerLedgerMutation = transactionLedgerDifference(
+    providerLedgerBefore,
+    providerLedgerAfter
+  );
+  if (transactionLedgerMutation || providerLedgerMutation) {
+    throw new Error(
+      `Mirai Intl filesystem transaction ledger changed while source analysis ran: ${
+        transactionLedgerMutation ?? providerLedgerMutation
+      }`
+    );
+  }
+  markProfilePhase("post-analysis-live-verification");
+  const classifierFinalized = await classifierTransaction.finalize();
+  const v3Binding = receiptV2
+    ? buildIntlCheckReceiptV3FromClassifierProjections(
+        receiptV2,
+        classifierFinalized.authorities.map((authority, index) => {
+          const projection = classifierFinalized.receiptProjections[index];
+          if (!projection) {
+            throw new Error(
+              "Mirai Intl classifier finalized projection coverage is incomplete"
+            );
+          }
+          return { authority, projection };
+        })
+      )
+    : buildIntlCheckReceiptV3FromNativeInputs(
+        snapshotInput,
+        classifierFinalized.authorities.map((authority, index) => {
+          const projection = classifierFinalized.receiptProjections[index];
+          if (!projection) {
+            throw new Error(
+              "Mirai Intl classifier finalized projection coverage is incomplete"
+            );
+          }
+          return { authority, projection };
+        })
+      );
+  markProfilePhase("v3-receipt-and-authority-binding");
+  const receipt: IntlCheckReceipt = receiptV2 ?? v3Binding.receipt;
+  await finalVerificationOptions.beforePublicationBarrier?.();
+  // The earlier final pass includes slow structural checks. Rehash the complete
+  // receipt-bound workspace byte set and recapture its path identity only
+  // after those checks finish, immediately before the atomic receipt rename.
+  // This catches a mutation that lands after one of the earlier concurrent
+  // hashes. Non-cooperative writers can still race the final read-to-rename
+  // interval; build-time receipt verification remains the consumer authority.
+  const publicationEntries = [
+    ...snapshotInput.projects.flatMap((project) => project.configManifest),
+    ...snapshotInput.sources.map(({ file, hash }) => ({ hash, path: file })),
+    ...snapshotInput.providerClosures.flatMap((closure) => [
+      ...closure.declarations,
+      ...closure.libs,
+      ...closure.providers.flatMap((provider) =>
+        provider.resolutions.flatMap((resolution) => resolution.controlFiles)
+      ),
+    ]),
+  ];
+  const verifyPublicationFingerprint = async (): Promise<void> => {
+    const [
+      publicationLedger,
+      publicationProviderLedger,
+      publicationGenerationReceiptHash,
+      publicationApplication,
+      publicationImmutable,
+    ] = await Promise.all([
+      captureTransactionPathLedger(
+        universe.workspaceRoot,
+        transactionInputFiles,
+        transactionInputDirectories
+      ),
+      captureTransactionPathLedger(
+        universe.workspaceRoot,
+        providerInputFiles,
+        providerInputFiles.map(dirname)
+      ),
+      readFile(generationReceiptPath).then(sha256),
+      computeApplicationPackageIdentity(root),
+      computeImmutableIntegrityIdentity(),
+      verifyRawWorkspaceFiles(universe.workspaceRoot, publicationEntries),
+      providerFrontiers.recheck(),
+    ]);
+    const publicationLedgerMutation = transactionLedgerDifference(
+      transactionLedgerBefore,
+      publicationLedger
+    );
+    const publicationProviderLedgerMutation = transactionLedgerDifference(
+      providerLedgerBefore,
+      publicationProviderLedger
+    );
+    let publicationMutation =
+      publicationLedgerMutation ?? publicationProviderLedgerMutation;
+    if (
+      !publicationMutation &&
+      publicationGenerationReceiptHash !== generationReceiptBefore
+    ) {
+      publicationMutation = generationReceiptPath;
+    }
+    if (
+      !publicationMutation &&
+      canonicalJson(publicationApplication) !== canonicalJson(applicationBefore)
+    ) {
+      publicationMutation = "application package identity";
+    }
+    if (
+      !publicationMutation &&
+      canonicalJson(publicationImmutable) !== canonicalJson(immutableBefore)
+    ) {
+      publicationMutation = "compiler dependency identity";
+    }
+    if (publicationMutation) {
+      throw new Error(
+        `Mirai Intl publication fingerprint changed before receipt publication: ${publicationMutation}`
+      );
+    }
+  };
+  await publishDormantConventionAuthorityV3(
+    resolve(packageRoot),
+    universe.workspaceRoot,
+    receiptV2 ?? null,
+    v3Binding,
+    classifierFinalized,
+    {
+      activateV3: !finalVerificationOptions.dormantV3,
+      ...(finalVerificationOptions.dormantV3PublicationBoundary
+        ? {
+            dormantV3PublicationBoundary:
+              finalVerificationOptions.dormantV3PublicationBoundary,
+          }
+        : {}),
+      dormantV3PublicationDeadlineMs:
+        finalVerificationOptions.dormantV3PublicationDeadlineMs ??
+        (finalVerificationOptions.dormantV3PublicationNow?.() ??
+          performance.now()) + 20_000,
+      dormantV3PublicationFingerprintVerification: verifyPublicationFingerprint,
+      dormantV3PublicationNow:
+        finalVerificationOptions.dormantV3PublicationNow ??
+        (() => performance.now()),
+    }
+  );
+  markProfilePhase("atomic-publication");
+  if (process.env.MIRAI_INTL_INTERNAL_AUTHORIZATION_PROFILE === "1") {
+    process.stderr.write(
+      `MIRAI_INTL_AUTHORIZATION_PROFILE=${JSON.stringify({
+        phases: profilePhases,
+        totalMilliseconds: performance.now() - profileStarted,
+      })}\n`
+    );
+  }
   return {
-    receipt: buildIntlCheckReceiptV2(snapshot),
+    receipt,
     verification,
   };
 }
@@ -730,45 +2071,45 @@ export async function authorizeConventionCatalog(
   finalVerificationOptions: AuthorizationOptions = {}
 ): Promise<
   Readonly<{
-    receipt: IntlCheckReceiptV2;
+    receipt: IntlCheckReceipt;
     verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
   }>
 > {
+  const profileStarted = performance.now();
   const root = resolve(packageRoot);
-  const destination = conventionCheckReceiptPath(root);
-  try {
-    const semanticModules = Promise.all([
-      import("./analyze-sources"),
-      import("./ownership"),
-    ]).then(([analyze, ownership]) => ({ analyze, ownership }));
-    // Proof is the production authority entrypoint. It must be able to
-    // materialize the immutable content-addressed payload after a clean clone,
-    // while a matching catalog remains a writer no-op.
-    const ensured = await ensureMiraiIntlCatalog({ root });
-    const authorization = await createConventionCheckReceipt(
-      root,
-      ensured.loaded,
-      finalVerificationOptions,
-      semanticModules
+  const semanticModules = Promise.all([
+    import("./analyze-sources"),
+    import("./ownership"),
+  ]).then(([analyze, ownership]) => ({ analyze, ownership }));
+  // Proof is the production authority entrypoint. It must be able to
+  // materialize the immutable content-addressed payload after a clean clone,
+  // while a matching catalog remains a writer no-op.
+  const ensured = await ensureMiraiIntlCatalog({ root });
+  if (process.env.MIRAI_INTL_INTERNAL_AUTHORIZATION_PROFILE === "1") {
+    process.stderr.write(
+      `MIRAI_INTL_ENSURE_PROFILE=${JSON.stringify({ milliseconds: performance.now() - profileStarted })}\n`
     );
-    await writeReceipt(destination, authorization.receipt);
-    await rm(join(root, ".mirai-intl", "check-receipt.v1.json"), {
-      force: true,
-    });
-    return authorization;
-  } catch (error) {
-    await rm(destination, { force: true });
-    throw error;
   }
+  const authorization = await createConventionCheckReceipt(
+    root,
+    ensured.loaded,
+    finalVerificationOptions,
+    semanticModules
+  );
+  await rm(join(root, ".mirai-intl", "check-receipt.v1.json"), {
+    force: true,
+  });
+  return authorization;
 }
 
 /** Materialize, verify and atomically persist deterministic source authority. */
 export async function proveConventionCatalog(
   packageRoot: string
-): Promise<IntlCheckReceiptV2> {
+): Promise<IntlCheckReceipt> {
   return (
     await authorizeConventionCatalog(packageRoot, {
       collectEnvironment: false,
+      validateEnvironment: process.env.MIRAI_INTL_WORKSPACE_CHILD === "1",
     })
   ).receipt;
 }
@@ -776,7 +2117,7 @@ export async function proveConventionCatalog(
 /** Reject a missing, stale, malformed, or non-canonical source receipt. */
 export async function verifyConventionCheckReceipt(
   packageRoot: string
-): Promise<IntlCheckReceiptV2> {
+): Promise<IntlCheckReceipt> {
   return (await verifyConventionBuildReceipt(packageRoot)).receipt;
 }
 

@@ -19,12 +19,48 @@ export const EVALUATOR_SOURCE_PATHS = [
   "benchmarks/authorization-methodology.ts",
   "benchmarks/authorization-ensure-client.ts",
   "benchmarks/authorization-ensure-worker.ts",
+  "benchmarks/authorization-gate25.ts",
+  "benchmarks/authorization-gate25-child.ts",
+  "benchmarks/authorization-gate25-parity.ts",
+  "benchmarks/authorization-gate25-workspace.ts",
   "benchmarks/authorization-profiler.mjs",
   "benchmarks/authorization-profiler-loader.mjs",
   "benchmarks/authorization-typescript-shim.mjs",
   "benchmarks/authorization-mutation-fs-shim.mjs",
   "benchmarks/authorization-rss-probe.mjs",
 ] as const;
+
+export const GATE_25_LIMITS = {
+  completeMaximumMilliseconds: 16_000,
+  completeMedianMilliseconds: 8_000,
+  peakRssBytes: Math.floor(1.75 * 1024 * 1024 * 1024),
+  semanticP95Milliseconds: 8_000,
+} as const;
+
+export type Gate25Sample = Readonly<{
+  completeMilliseconds: number;
+  inputHash: string;
+  parityPass: boolean;
+  peakRssBytes: number;
+  programCount: number;
+  semanticMilliseconds: number;
+  sourceCount: number;
+}>;
+
+export type Gate25PoolAssessment = Readonly<{
+  completeMaximumMilliseconds: number;
+  completeMedianMilliseconds: number;
+  completePass: boolean;
+  inputHashPass: boolean;
+  parityPass: boolean;
+  pass: boolean;
+  peakRssBytes: number;
+  programCountPass: boolean;
+  rssPass: boolean;
+  semanticP95Milliseconds: number;
+  semanticPass: boolean;
+  sourceCountPass: boolean;
+}>;
 
 const PRODUCTION_PACKAGES = [
   "abi",
@@ -36,16 +72,16 @@ const PRODUCTION_PACKAGES = [
 
 export const FROZEN_PRODUCTION_CANDIDATE = {
   compilerCliHash:
-    "sha256:aa97adfd589bc990a0fe01fe8fb886cf67cb9cb1789e0a5534b6b4c983d3935b",
+    "sha256:4210340f1917d185daab7ce093fddf1d8414b6983ded4b924b0f96ebbfbc6f3e",
   dist: {
-    fileCount: 119,
-    hash: "sha256:96cdb5b918c938b996ea2511fc3b09f533958153ce69ce81980b0defb5dcbebf",
+    fileCount: 122,
+    hash: "sha256:27cf3c198ed47049b65d8146f4aaf9683af7da0be54bbebfc8e65139708be6f8",
   },
   lockfileHash:
     "sha256:b3b8c41512bbabdf6dda03ee6cfc4de6b62617f2fa0e87577859b588a5c38de8",
   source: {
-    fileCount: 85,
-    hash: "sha256:e0bf7600e1e06733409e5fd674fb0ddc92ed237e340f132641364fa8265eabe3",
+    fileCount: 91,
+    hash: "sha256:65ef112cd5932aa12d65f9a891181d1965904ff9d7516d661cb270387067ca53",
   },
 } as const;
 
@@ -478,6 +514,72 @@ export function rawStatistics(values: ReadonlyArray<number>): Readonly<{
     medianMilliseconds: median(values),
     p95Milliseconds: percentile(values, 0.95),
   };
+}
+
+export function gate25PoolAssessment(
+  samples: ReadonlyArray<Gate25Sample>
+): Gate25PoolAssessment {
+  if (samples.length === 0) {
+    throw new Error("Gate 2.5 requires at least one unretried cold sample");
+  }
+  const inputHashes = new Set(samples.map(({ inputHash }) => inputHash));
+  const sourceCounts = new Set(samples.map(({ sourceCount }) => sourceCount));
+  const complete = samples.map(
+    ({ completeMilliseconds }) => completeMilliseconds
+  );
+  const semantic = samples.map(
+    ({ semanticMilliseconds }) => semanticMilliseconds
+  );
+  const completeMedianMilliseconds = median(complete);
+  const completeMaximumMilliseconds = Math.max(...complete);
+  const semanticP95Milliseconds = percentile(semantic, 0.95);
+  const peakRssBytes = Math.max(
+    ...samples.map((sample) => sample.peakRssBytes)
+  );
+  const parityPass = samples.every((sample) => sample.parityPass);
+  const inputHashPass = inputHashes.size === 1;
+  const sourceCountPass =
+    sourceCounts.size === 1 && (samples[0]?.sourceCount ?? 0) > 0;
+  const programCountPass = samples.every(
+    ({ programCount }) => programCount > 0
+  );
+  const semanticPass =
+    semanticP95Milliseconds <= GATE_25_LIMITS.semanticP95Milliseconds;
+  const completePass =
+    completeMedianMilliseconds <= GATE_25_LIMITS.completeMedianMilliseconds &&
+    completeMaximumMilliseconds <= GATE_25_LIMITS.completeMaximumMilliseconds;
+  const rssPass = peakRssBytes <= GATE_25_LIMITS.peakRssBytes;
+  return {
+    completeMaximumMilliseconds,
+    completeMedianMilliseconds,
+    completePass,
+    inputHashPass,
+    parityPass,
+    pass:
+      parityPass &&
+      inputHashPass &&
+      sourceCountPass &&
+      programCountPass &&
+      semanticPass &&
+      completePass &&
+      rssPass,
+    peakRssBytes,
+    programCountPass,
+    rssPass,
+    semanticP95Milliseconds,
+    semanticPass,
+    sourceCountPass,
+  };
+}
+
+export function smallestPassingGate25Pool(
+  assessments: ReadonlyArray<
+    Readonly<{ assessment: Gate25PoolAssessment; poolSize: number }>
+  >
+): number | undefined {
+  return assessments
+    .filter(({ assessment, poolSize }) => assessment.pass && poolSize >= 1)
+    .toSorted((left, right) => left.poolSize - right.poolSize)[0]?.poolSize;
 }
 
 export function performanceGate(
