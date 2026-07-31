@@ -1,7 +1,9 @@
 import {
   cp,
+  mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   symlink,
@@ -371,7 +373,7 @@ describe("catalog generation receipt fast path", () => {
     }
   }, 60_000);
 
-  it("does not reconstruct a missing selected payload from changed inputs", async () => {
+  it("reconstructs a completely missing selected payload after changed inputs", async () => {
     const { container, root } = await conventionApp();
     try {
       await ensureMiraiIntlCatalog({ root });
@@ -396,9 +398,40 @@ describe("catalog generation receipt fast path", () => {
         "utf8"
       );
 
-      await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(/./u);
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: true,
+      });
+      const nextPointer = JSON.parse(
+        await readFile(join(generated, "current.json"), "utf8")
+      ) as { directory: string };
+      expect(nextPointer.directory).not.toBe(pointer.directory);
+      await expect(
+        readFile(
+          join(generated, nextPointer.directory, "catalog.contract.gen.json"),
+          "utf8"
+        )
+      ).resolves.toMatch(/"schemaVersion"/u);
       await expect(readFile(payload, "utf8")).rejects.toMatchObject({
         code: expect.stringMatching(/EISDIR|ENOENT/u),
+      });
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("recovers an empty publication staging area left before journal creation", async () => {
+    const { container, root } = await conventionApp();
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      const generated = join(root, "src/i18n/generated");
+      const publication = join(generated, ".catalog-publication");
+      await mkdir(publication);
+
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: false,
+      });
+      await expect(readdir(publication)).rejects.toMatchObject({
+        code: "ENOENT",
       });
     } finally {
       await rm(container, { force: true, recursive: true });

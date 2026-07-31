@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/openmirai/mirai-intl/compare/v0.3.3...v0.3.4) (2026-08-01)
+
+### Bug Fixes
+
+- **compiler:** recreate completely absent content-addressed payloads after dependency or locale changes
+- **compiler:** recover an empty pre-journal publication staging directory without weakening partial-state checks
+
 ## [0.3.3](https://github.com/openmirai/mirai-intl/compare/v0.3.2...v0.3.3) (2026-08-01)
 
 ### Features

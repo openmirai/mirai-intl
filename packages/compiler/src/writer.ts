@@ -1502,8 +1502,9 @@ async function assertCommittedPlan(
 async function assertPreviousCommittedState(
   root: string,
   outputRoot: string,
-  current: CurrentPointer
-): Promise<void> {
+  current: CurrentPointer,
+  allowCompletelyMissingPayload = false
+): Promise<boolean> {
   const selector = await readSelector(root, outputRoot);
   const currentBase: CatalogCurrentPointerBaseV2 = {
     contentHash: current.contentHash,
@@ -1553,6 +1554,19 @@ async function assertPreviousCommittedState(
     throw new Error("Selected catalog receipt identities disagree");
   }
   const destination = join(root, current.directory);
+  const payloadExists = await assertConfinedDirectory(
+    outputRoot,
+    destination,
+    "Selected generated artifact directory",
+    true
+  );
+  if (!payloadExists) {
+    await assertKnownBuilds(root, []);
+    if (allowCompletelyMissingPayload) {
+      return false;
+    }
+    throw new Error("Selected generated artifact directory is missing");
+  }
   await assertPayloadManifest(
     outputRoot,
     destination,
@@ -1560,6 +1574,7 @@ async function assertPreviousCommittedState(
     "Selected generated artifact directory"
   );
   await assertKnownBuilds(root, [basename(current.directory)]);
+  return true;
 }
 
 async function inspectInitialState(
@@ -1593,8 +1608,9 @@ async function inspectInitialState(
 
   const expected = JSON.parse(plan.pointerContent) as CurrentPointer;
   if (canonicalJson(current) !== canonicalJson(expected)) {
-    await assertPreviousCommittedState(root, outputRoot, current);
-    return current;
+    return (await assertPreviousCommittedState(root, outputRoot, current, true))
+      ? current
+      : undefined;
   }
 
   await assertExactSelectors(root, outputRoot, plan);

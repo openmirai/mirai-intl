@@ -184,12 +184,24 @@ async function hasRecoverablePublicationJournal(
       "Generated publication staging area is not a regular directory"
     );
   }
+  const entries = await readdir(publicationRoot, { withFileTypes: true });
+  const journalKind = await pathKind(join(publicationRoot, "journal.v1.json"));
+  if (journalKind === "missing") {
+    if (entries.length === 0) {
+      return true;
+    }
+    throw new Error(
+      "Generated publication staging area contains state without a journal"
+    );
+  }
+  if (journalKind !== "file") {
+    throw new Error("Generated publication journal is not a regular file");
+  }
   const journalSource = readRegularText(
     join(publicationRoot, "journal.v1.json"),
     "Generated publication journal"
   );
   const journal = parseCanonicalCatalogPublicationJournal(journalSource);
-  const entries = await readdir(publicationRoot, { withFileTypes: true });
   const allowed = new Set(["journal.v1.json", journal.stageDirectory]);
   for (const entry of entries) {
     if (
