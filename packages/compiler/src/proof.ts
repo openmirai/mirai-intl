@@ -11,7 +11,15 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { RUNTIME_ABI } from "@openmirai/intl-abi";
@@ -1147,34 +1155,38 @@ async function captureTransactionPathLedger(
       directories.map((path) => resolve(path)).filter((path) => path !== root)
     ),
   ].toSorted(compareCanonicalStrings);
-  return {
-    directories: await Promise.all(
-      uniqueDirectories.map(async (path) => {
-        const entry = await lstat(path).catch((error: unknown) => {
-          if (
-            error instanceof Error &&
-            "code" in error &&
-            error.code === "ENOENT"
-          ) {
-            return undefined;
-          }
-          throw error;
-        });
-        if (!entry) {
-          return {
+  const capturedDirectories = await Promise.all(
+    uniqueDirectories.map(async (path) => {
+      const entry = await lstat(path).catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          return undefined;
+        }
+        throw error;
+      });
+      if (!entry) {
+        return {
+          ledger: {
             entries: [],
             path: transactionWorkspacePath(root, path),
             present: false,
             target: null,
-          };
-        }
-        if (entry.isSymbolicLink() || !entry.isDirectory()) {
-          throw new Error(
-            `Mirai Intl transaction directory is not a regular directory: ${path}`
-          );
-        }
-        const target = await realpath(path);
-        return {
+          },
+          path,
+          target: undefined,
+        };
+      }
+      if (entry.isSymbolicLink() || !entry.isDirectory()) {
+        throw new Error(
+          `Mirai Intl transaction directory is not a regular directory: ${path}`
+        );
+      }
+      const target = await realpath(path);
+      return {
+        ledger: {
           entries: (await readdir(path, { withFileTypes: true }))
             // `.mirai-intl` is the transaction's own package-local output.
             // Keep watching every sibling entry so a concurrent source or
@@ -1201,9 +1213,19 @@ async function captureTransactionPathLedger(
           path: transactionWorkspacePath(root, path),
           present: true,
           target: transactionWorkspacePath(root, target),
-        };
-      })
-    ),
+        },
+        path,
+        target,
+      };
+    })
+  );
+  const directoryTargets = new Map(
+    capturedDirectories.flatMap(({ path, target }) =>
+      target === undefined ? [] : ([[path, target]] as const)
+    )
+  );
+  return {
+    directories: capturedDirectories.map(({ ledger }) => ledger),
     files: await Promise.all(
       uniqueFiles.map(async (path) => {
         const entry = await lstat(path).catch((error: unknown) => {
@@ -1228,10 +1250,21 @@ async function captureTransactionPathLedger(
             `Mirai Intl transaction input is not a regular file: ${path}`
           );
         }
+        const directoryTarget = directoryTargets.get(dirname(path));
         return {
           path: transactionWorkspacePath(root, path),
           present: true,
-          target: transactionWorkspacePath(root, await realpath(path)),
+          // Every transaction file contributes its dirname to the directory
+          // ledger. Once that directory's exact realpath is sealed, a regular
+          // non-symlink child's target is that canonical parent plus basename.
+          // This preserves ancestor-symlink identity while avoiding thousands
+          // of redundant realpath syscalls on large source universes.
+          target: transactionWorkspacePath(
+            root,
+            directoryTarget === undefined
+              ? await realpath(path)
+              : join(directoryTarget, basename(path))
+          ),
         };
       })
     ),

@@ -555,7 +555,7 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
 function workspaceAuthorizationWorkerCount(): number {
   const raw = process.env.MIRAI_INTL_WORKSPACE_WORKERS;
   if (raw === undefined) {
-    return 4;
+    return 5;
   }
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1 || value > 8) {
@@ -617,7 +617,15 @@ async function authorizeWorkspaceCatalogChild(
     ],
     {
       cwd: root,
-      env: { ...process.env, MIRAI_INTL_WORKSPACE_CHILD: "1" },
+      env: {
+        ...process.env,
+        MIRAI_INTL_WORKSPACE_CHILD: "1",
+        // Workspace authorization already owns process-level parallelism.
+        // One libuv worker per child prevents five catalogs from multiplying
+        // filesystem thread-pool contention while preserving the exact same
+        // fail-closed reads, hashes, and publication barriers.
+        UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? "1",
+      },
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     }

@@ -49,7 +49,7 @@ describe("classifier V3 candidate-index shadow", () => {
       sourceObserver: (mode) => preparedObservations.push(mode),
       workspaceRoot: root,
     });
-    expect(preparedObservations).toEqual(["prepared", "prepared"]);
+    expect(preparedObservations).toEqual(["prepared"]);
 
     const fallbackObservations: Array<string> = [];
     const fallback = await buildMiraiIntlCandidateCheckpointShadow({
@@ -61,7 +61,7 @@ describe("classifier V3 candidate-index shadow", () => {
       sourceObserver: (mode) => fallbackObservations.push(mode),
       workspaceRoot: root,
     });
-    expect(fallbackObservations).toEqual(["parsed", "parsed"]);
+    expect(fallbackObservations).toEqual(["parsed"]);
     expect(prepared.sources).toEqual(fallback.sources);
     expect(prepared.index).toEqual(fallback.index);
     expect(prepared.referenceRequiresProgramVector).toEqual(

@@ -130,14 +130,7 @@ describe("classifier production authority V3", () => {
       })),
     });
 
-    expect(observations).toEqual([
-      "prepared",
-      "prepared",
-      "prepared",
-      "prepared",
-      "prepared",
-      "prepared",
-    ]);
+    expect(observations).toEqual(["prepared", "prepared", "prepared"]);
     await expect(transaction.finalize()).resolves.toEqual(
       expect.objectContaining({ authorities: [expect.any(Object)] })
     );

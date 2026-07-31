@@ -884,7 +884,8 @@ async function classifyCandidateReferenceTransaction(
     sourceObserver?: ((mode: "parsed" | "prepared") => void) | undefined;
     workspaceRoot: string;
   }>,
-  selectedBoundaryRefs?: ReadonlySet<number>
+  selectedBoundaryRefs?: ReadonlySet<number>,
+  scannedSources?: ReadonlyArray<ScannedCandidateSource>
 ): Promise<
   Readonly<{
     counters: Readonly<{
@@ -990,11 +991,9 @@ async function classifyCandidateReferenceTransaction(
   >();
   let cacheHits = 0;
   let resolverCalls = 0;
-  const parsed = scanCandidateSources(
-    input.sources,
-    input.options,
-    input.sourceObserver
-  );
+  const parsed =
+    scannedSources ??
+    scanCandidateSources(input.sources, input.options, input.sourceObserver);
   const results: Array<
     MiraiIntlClassifierShadowResult &
       Readonly<{ sourceHash: `sha256:${string}` }>
@@ -1155,12 +1154,12 @@ function classifyCandidateLexicalTransaction(
     sources: ReadonlyArray<MiraiIntlCandidateShadowSource>;
     sourceObserver?: ((mode: "parsed" | "prepared") => void) | undefined;
     workspaceRoot: string;
-  }>
+  }>,
+  scannedSources?: ReadonlyArray<ScannedCandidateSource>
 ): Awaited<ReturnType<typeof classifyCandidateReferenceTransaction>> {
-  const results = scanCandidateSources(
-    input.sources,
-    input.options,
-    input.sourceObserver
+  const results = (
+    scannedSources ??
+    scanCandidateSources(input.sources, input.options, input.sourceObserver)
   ).map((entry) => {
     const ledger: Array<MiraiIntlClassifierShadowLedgerEntry> = [
       ...entry.boundaries.map(
@@ -1401,14 +1400,25 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
   const canonicalSources = input.sources.toSorted((left, right) =>
     compareCanonicalStrings(resolve(left.id), resolve(right.id))
   );
+  const scannedProductionSources =
+    input.executionMode === "production-proof"
+      ? scanCandidateSources(
+          canonicalSources,
+          input.options,
+          input.sourceObserver
+        )
+      : undefined;
   let referenceTransaction;
   if (input.executionMode === "production-proof") {
-    referenceTransaction = classifyCandidateLexicalTransaction({
-      options: input.options,
-      sources: canonicalSources,
-      sourceObserver: input.sourceObserver,
-      workspaceRoot: input.workspaceRoot,
-    });
+    referenceTransaction = classifyCandidateLexicalTransaction(
+      {
+        options: input.options,
+        sources: canonicalSources,
+        sourceObserver: input.sourceObserver,
+        workspaceRoot: input.workspaceRoot,
+      },
+      scannedProductionSources
+    );
   } else if (input.executionMode === "qualification-uncached-reference") {
     const results = await Promise.all(
       canonicalSources.map(
@@ -1781,7 +1791,8 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
           sourceObserver: input.sourceObserver,
           workspaceRoot: input.workspaceRoot,
         },
-        new Set(candidateSet)
+        new Set(candidateSet),
+        scannedProductionSources
       );
     let productionTransaction = await resolveSelection();
     if (

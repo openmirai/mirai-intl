@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/openmirai/mirai-intl/compare/v0.3.5...v0.3.6) (2026-08-01)
+
+### Performance Improvements
+
+- **compiler:** reuse sealed classifier scans, parent path identities, and normalized V3 references across one fail-closed authorization transaction
+- **compiler:** bound workspace child filesystem pools while authorizing all five catalogs concurrently
+
 ## [0.3.5](https://github.com/openmirai/mirai-intl/compare/v0.3.4...v0.3.5) (2026-08-01)
 
 ### Bug Fixes

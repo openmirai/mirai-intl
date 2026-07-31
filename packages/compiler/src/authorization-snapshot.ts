@@ -5747,7 +5747,10 @@ function projectionCanonicalValues<T>(values: Iterable<T>): ReadonlyArray<T> {
 
 const projectionReferenceIndexes = new WeakMap<
   ReadonlyArray<unknown>,
-  ReadonlyMap<string, Ref>
+  Readonly<{
+    byIdentity: ReadonlyMap<string, Ref>;
+    byObject: WeakMap<object, Ref>;
+  }>
 >();
 
 function projectionReference<T>(
@@ -5755,15 +5758,25 @@ function projectionReference<T>(
   value: T,
   context: string
 ): Ref {
-  const identity = canonicalJson(value);
   let references = projectionReferenceIndexes.get(table);
   if (!references) {
-    references = new Map(
-      table.map((candidate, reference) => [canonicalJson(candidate), reference])
-    );
+    const byIdentity = new Map<string, Ref>();
+    const byObject = new WeakMap<object, Ref>();
+    table.forEach((candidate, reference) => {
+      byIdentity.set(canonicalJson(candidate), reference);
+      if (candidate !== null && typeof candidate === "object") {
+        byObject.set(candidate, reference);
+      }
+    });
+    references = { byIdentity, byObject };
     projectionReferenceIndexes.set(table, references);
   }
-  const reference = references.get(identity);
+  const directReference =
+    value !== null && typeof value === "object"
+      ? references.byObject.get(value)
+      : undefined;
+  const reference =
+    directReference ?? references.byIdentity.get(canonicalJson(value));
   return reference === undefined
     ? fail(context, "is missing from its normalized V3 table")
     : reference;
@@ -6704,7 +6717,7 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
     );
     if (
       project === undefined ||
-      resolution.optionsHash !== canonicalHash(project.normalizedOptions)
+      resolution.optionsHash !== project.normalizedOptionsHash
     ) {
       return fail(context, "does not bind its owner classifier options");
     }
