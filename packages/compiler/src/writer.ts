@@ -39,6 +39,7 @@ import type {
   CatalogCurrentPointerBaseV2,
   CatalogCurrentPointerV2,
   CatalogGenerationInputIdentityV1,
+  CatalogGenerationReceiptV1,
   CatalogGenerationSnapshot,
   CatalogPayloadManifestEntryV1,
   CatalogPublicationJournalV1,
@@ -51,6 +52,13 @@ export type WriteResult = Readonly<{
   changed: boolean;
   contentHash: `sha256:${string}`;
   directory: string;
+}>;
+
+export type CommittedArtifactSnapshot = Readonly<{
+  contentHash: Sha256;
+  directory: string;
+  generationInputHash: Sha256;
+  generationReceiptHash: Sha256;
 }>;
 
 export type StableFacadeExport = Readonly<{
@@ -2526,6 +2534,51 @@ export async function verifyArtifactSet(
     changed: false,
     contentHash: plan.contentHash,
     directory: plan.destination,
+  };
+}
+
+/**
+ * Verify the selected content-addressed payload from its committed receipt,
+ * without rebuilding the expected artifacts. Callers must independently bind
+ * `generationInputHash` to a fresh input identity before trusting the result.
+ */
+export async function verifyCommittedArtifactSnapshot(
+  root: string,
+  expected: WriteResult,
+  expectedGenerationReceiptHash: Sha256
+): Promise<CommittedArtifactSnapshot> {
+  const expectedRoot = resolve(root);
+  const outputRoot = await canonicalOutputRoot(root, expectedRoot);
+  const publicationRoot = join(outputRoot, publicationDirectoryName);
+  const journal = await readJournal(outputRoot, publicationRoot);
+  if (journal) {
+    throw new Error("Generated catalog publication is interrupted");
+  }
+  await assertPublicationArea(outputRoot, publicationRoot, undefined);
+  const current = await readCurrent(root, outputRoot);
+  if (
+    !current ||
+    current.contentHash !== expected.contentHash ||
+    join(root, current.directory) !== expected.directory ||
+    current.generationReceiptHash !== expectedGenerationReceiptHash
+  ) {
+    throw new Error("Generated current pointer is stale or tampered");
+  }
+  await assertPreviousCommittedState(root, outputRoot, current);
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
+  );
+  if (receiptSource === undefined) {
+    throw new Error("Catalog generation receipt is missing");
+  }
+  const receipt: CatalogGenerationReceiptV1 = receiptFromSource(receiptSource);
+  return {
+    contentHash: current.contentHash,
+    directory: current.directory,
+    generationInputHash: receipt.generationInputHash,
+    generationReceiptHash: current.generationReceiptHash,
   };
 }
 

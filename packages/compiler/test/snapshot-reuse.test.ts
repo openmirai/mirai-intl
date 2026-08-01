@@ -297,9 +297,10 @@ describe("compiler-owned catalog snapshots", () => {
         collectEnvironment: false,
       });
 
-      // Authorization reuses the ensured and resolved source snapshots while
-      // retaining an independent post-analysis catalog verification.
-      expect(instrumentation.compileCalls).toBe(2);
+      // Authorization reuses the ensured compilation. Its final uncached
+      // generation-input identity and committed payload-manifest audit do not
+      // need to compile the same catalog a second time.
+      expect(instrumentation.compileCalls).toBe(1);
       expect(instrumentation.analysisCalls).toBe(1);
       await expect(
         readFile(conventionCheckReceiptSelectorPath(root), "utf8")
@@ -343,10 +344,10 @@ describe("compiler-owned catalog snapshots", () => {
       await authorizeConventionCatalog(root, { collectEnvironment: false });
 
       // Source text is parsed once. Six byte reads cover initial sealing,
-      // classifier entry/exit/finalization, the post-analysis barrier, and
-      // the two independent commit-last publication checks.
+      // classifier entry/exit/finalization, and the single receipt-bound
+      // workspace pass plus classifier revalidation at selector commit.
       expect([...instrumentation.sourceReads.values()].toSorted()).toEqual([
-        7, 7,
+        6, 6,
       ]);
       expect([...instrumentation.sourceParses.values()].toSorted()).toEqual([
         1, 1,
@@ -399,7 +400,9 @@ describe("compiler-owned catalog snapshots", () => {
     try {
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow("provider resolution frontier is stale");
+      ).rejects.toThrow(
+        /provider resolution frontier is stale|classifier proof frontier mutated/u
+      );
       await expectReceiptRemoved(root);
     } finally {
       instrumentation.frontierMutation = undefined;
@@ -420,11 +423,11 @@ describe("compiler-owned catalog snapshots", () => {
 
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow(
-        "Mirai Intl source inputs changed while source analysis ran"
-      );
+      ).rejects.toThrow("Mirai Intl classifier source mutated");
       await expectReceiptRemoved(root);
-      expect(instrumentation.compileCalls).toBe(2);
+      // Classifier finalization rejects the mutation before the final catalog
+      // verification needs to compile the generated catalog a second time.
+      expect(instrumentation.compileCalls).toBe(1);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -447,7 +450,9 @@ describe("compiler-owned catalog snapshots", () => {
 
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow("provider resolution frontier is stale (control)");
+      ).rejects.toThrow(
+        /provider resolution frontier is stale \(control\)|classifier proof frontier mutated/u
+      );
       await expectReceiptRemoved(root);
     } finally {
       instrumentation.mutateAfterAnalysis = undefined;
@@ -569,7 +574,9 @@ describe("compiler-owned catalog snapshots", () => {
 
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow("Generated current pointer is stale or tampered");
+      ).rejects.toThrow(
+        "Mirai Intl generated catalog changed while source analysis ran"
+      );
       await expectReceiptRemoved(root);
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -598,7 +605,7 @@ describe("compiler-owned catalog snapshots", () => {
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
       ).rejects.toThrow(
-        "Generated artifact directory does not match its destination files: catalog.contract.gen.json is corrupt"
+        "Selected generated artifact directory does not match its destination files: catalog.contract.gen.json is corrupt"
       );
       await expectReceiptRemoved(root);
     } finally {

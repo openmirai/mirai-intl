@@ -43,6 +43,7 @@ import {
 } from "./canonical";
 import type * as AnalyzeSourcesModule from "./analyze-sources";
 import {
+  loadFreshConventionCatalogGenerationInput,
   loadConventionCatalog,
   validateConventionEnvironment,
   verifyLoadedConventionCatalog,
@@ -85,6 +86,7 @@ import {
 import type { ProviderResolutionFrontierInput } from "./provider-resolution-identity";
 import { collectConventionSourceFiles } from "./source-discovery";
 import type * as OwnershipModule from "./ownership";
+import { verifyCommittedArtifactSnapshot } from "./writer";
 
 type AuthorizationOptions = ConventionOptions &
   Readonly<{
@@ -993,34 +995,6 @@ export async function publishDormantConventionAuthorityV3(
   );
 }
 
-async function verifyRawWorkspaceFiles(
-  workspaceRoot: string,
-  entries: ReadonlyArray<Readonly<{ hash: `sha256:${string}`; path: string }>>
-): Promise<void> {
-  const root = resolve(workspaceRoot);
-  await Promise.all(
-    [
-      ...new Map(
-        entries
-          .filter((entry) => !entry.path.startsWith("@typescript/lib/"))
-          .map((entry) => [entry.path, entry])
-      ).values(),
-    ].map(async (entry) => {
-      const path = resolve(root, entry.path);
-      const bytes = await readFile(path);
-      decodeUtf8Fatal(bytes, `Mirai Intl publication input ${entry.path}`);
-      if (
-        transactionWorkspacePath(root, path) !== entry.path ||
-        sha256(bytes) !== entry.hash
-      ) {
-        throw new Error(
-          `Mirai Intl publication input changed before receipt publication: ${entry.path}`
-        );
-      }
-    })
-  );
-}
-
 function packageIdentity(
   identity: ResolvedPackageIdentity
 ): IntlCheckPackageIdentityV2 {
@@ -1815,141 +1789,9 @@ async function createConventionCheckReceipt(
   const receiptV2 = finalVerificationOptions.dormantV3
     ? buildIntlCheckReceiptV2(buildSourceAuthorizationSnapshot(snapshotInput))
     : undefined;
-  // Assemble only from the sealed transaction. The sole live filesystem pass
-  // happens after assembly and immediately before atomic publication.
-  const afterLoaded = await loadConventionCatalog(packageRoot);
-  let verificationOptions: ConventionOptions = {};
-  if (finalVerificationOptions.validateEnvironment) {
-    verificationOptions = { collectEnvironment: false };
-  } else if (finalVerificationOptions.collectEnvironment !== undefined) {
-    verificationOptions = {
-      collectEnvironment: finalVerificationOptions.collectEnvironment,
-    };
-  }
-  const [verification, afterDiscoveredFiles] = await Promise.all([
-    Promise.all([
-      finalVerificationOptions.validateEnvironment
-        ? validateConventionEnvironment(afterLoaded)
-        : Promise.resolve(),
-      verifyLoadedConventionCatalog(afterLoaded, verificationOptions),
-    ]).then(([, result]) => result),
-    collectConventionSourceFiles(root, afterLoaded.discovery.output),
-  ]);
-  const afterUniverse = await resolveConventionSourceUniverse(
-    root,
-    afterLoaded.checkProjects,
-    afterLoaded.discovery.output,
-    afterDiscoveredFiles
-  );
-  const projectManifestAfter = afterUniverse.projects.flatMap((project) =>
-    project.configManifest.map(({ hash, path }) => ({ hash, path }))
-  );
-  const [
-    afterSources,
-    finalProviderInputHashes,
-    generationReceiptHash,
-    application,
-    immutable,
-    transactionLedgerAfter,
-    providerLedgerAfter,
-  ] = await Promise.all([
-    Promise.all(
-      afterUniverse.files.map(async ({ absolute }) => {
-        const bytes = await readFile(absolute);
-        decodeUtf8Fatal(bytes, `Mirai Intl source ${absolute}`);
-        return [absolute, sha256(bytes)] as const;
-      })
-    ),
-    Promise.all(
-      providerInputs.map(async (entry) => ({
-        actual: sha256(
-          await readFile(resolve(universe.workspaceRoot, entry.path))
-        ),
-        expected: entry.hash,
-      }))
-    ),
-    readFile(
-      join(
-        root,
-        afterLoaded.discovery.output,
-        "catalog-generation-receipt.v1.json"
-      )
-    ).then(sha256),
-    computeApplicationPackageIdentity(root),
-    computeImmutableIntegrityIdentity(),
-    captureTransactionPathLedger(
-      universe.workspaceRoot,
-      transactionInputFiles,
-      transactionInputDirectories
-    ),
-    captureTransactionPathLedger(
-      universe.workspaceRoot,
-      providerInputFiles,
-      providerInputFiles.map(dirname)
-    ),
-    providerFrontiers.recheck(),
-  ]);
-  if (
-    canonicalJson(universeIdentity(universe)) !==
-    canonicalJson(universeIdentity(afterUniverse))
-  ) {
-    throw new Error(
-      "Mirai Intl source universe changed while source analysis ran"
-    );
-  }
-  if (canonicalJson(sourceSnapshotHashes) !== canonicalJson(afterSources)) {
-    throw new Error(
-      "Mirai Intl source inputs changed while source analysis ran"
-    );
-  }
-  if (
-    canonicalJson(projectManifestAfter) !== canonicalJson(projectManifestBefore)
-  ) {
-    throw new Error(
-      "Mirai Intl TypeScript project configuration changed while source analysis ran"
-    );
-  }
-  for (const { actual, expected } of finalProviderInputHashes) {
-    if (actual !== expected) {
-      throw new Error(
-        "Mirai Intl semantic provider inputs changed while source analysis ran"
-      );
-    }
-  }
-  if (
-    generationReceiptHash !== generationReceiptBefore ||
-    verification.write.contentHash !== verificationBefore.write.contentHash
-  ) {
-    throw new Error(
-      "Mirai Intl generated catalog changed while source analysis ran"
-    );
-  }
-  if (canonicalJson(application) !== canonicalJson(applicationBefore)) {
-    throw new Error(
-      "Mirai Intl application package inputs changed while source analysis ran"
-    );
-  }
-  if (canonicalJson(immutable) !== canonicalJson(immutableBefore)) {
-    throw new Error(
-      "Mirai Intl compiler dependency inputs changed while source analysis ran"
-    );
-  }
-  const transactionLedgerMutation = transactionLedgerDifference(
-    transactionLedgerBefore,
-    transactionLedgerAfter
-  );
-  const providerLedgerMutation = transactionLedgerDifference(
-    providerLedgerBefore,
-    providerLedgerAfter
-  );
-  if (transactionLedgerMutation || providerLedgerMutation) {
-    throw new Error(
-      `Mirai Intl filesystem transaction ledger changed while source analysis ran: ${
-        transactionLedgerMutation ?? providerLedgerMutation
-      }`
-    );
-  }
-  markProfilePhase("post-analysis-live-verification");
+  let finalVerification:
+    | Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>
+    | undefined;
   const classifierFinalized = await classifierTransaction.finalize();
   const v3Binding = receiptV2
     ? buildIntlCheckReceiptV3FromClassifierProjections(
@@ -1979,31 +1821,129 @@ async function createConventionCheckReceipt(
   markProfilePhase("v3-receipt-and-authority-binding");
   const receipt: IntlCheckReceipt = receiptV2 ?? v3Binding.receipt;
   await finalVerificationOptions.beforePublicationBarrier?.();
-  // The earlier final pass includes slow structural checks. Rehash the complete
-  // receipt-bound workspace byte set and recapture its path identity only
-  // after those checks finish, immediately before the atomic receipt rename.
-  // This catches a mutation that lands after one of the earlier concurrent
-  // hashes. Non-cooperative writers can still race the final read-to-rename
-  // interval; build-time receipt verification remains the consumer authority.
-  const publicationEntries = [
-    ...snapshotInput.projects.flatMap((project) => project.configManifest),
-    ...snapshotInput.sources.map(({ file, hash }) => ({ hash, path: file })),
-    ...snapshotInput.providerClosures.flatMap((closure) => [
-      ...closure.declarations,
-      ...closure.libs,
-      ...closure.providers.flatMap((provider) =>
-        provider.resolutions.flatMap((resolution) => resolution.controlFiles)
-      ),
-    ]),
-  ];
+  // Perform one uncached receipt-bound workspace pass immediately before the
+  // selector commit. Each byte family has one owner: source snapshots below,
+  // project manifests in source-universe resolution, declaration/lib inputs in
+  // providerInputs, and resolution controls/probes/realpaths in the provider
+  // frontier transaction. Reading those families again would add I/O without
+  // strengthening the commit barrier.
   const verifyPublicationFingerprint = async (): Promise<void> => {
+    const useCommittedSnapshotVerification =
+      finalVerificationOptions.validateEnvironment === true ||
+      finalVerificationOptions.collectEnvironment === false;
+    const freshGeneration = useCommittedSnapshotVerification
+      ? await loadFreshConventionCatalogGenerationInput(packageRoot)
+      : undefined;
+    const afterLoaded =
+      freshGeneration?.loaded ?? (await loadConventionCatalog(packageRoot));
+    let verificationOptions: ConventionOptions = {};
+    if (finalVerificationOptions.validateEnvironment) {
+      verificationOptions = { collectEnvironment: false };
+    } else if (finalVerificationOptions.collectEnvironment !== undefined) {
+      verificationOptions = {
+        collectEnvironment: finalVerificationOptions.collectEnvironment,
+      };
+    }
+    const [verification, afterDiscoveredFiles, committedSnapshot] =
+      await Promise.all([
+        Promise.all([
+          finalVerificationOptions.validateEnvironment
+            ? validateConventionEnvironment(afterLoaded)
+            : Promise.resolve(),
+          useCommittedSnapshotVerification
+            ? Promise.resolve(verificationBefore)
+            : verifyLoadedConventionCatalog(afterLoaded, verificationOptions),
+        ]).then(([, result]) => result),
+        collectConventionSourceFiles(root, afterLoaded.discovery.output),
+        useCommittedSnapshotVerification
+          ? verifyCommittedArtifactSnapshot(
+              afterLoaded.outputRoot,
+              verificationBefore.write,
+              generationReceiptBefore
+            )
+          : Promise.resolve(undefined),
+      ]);
+    if (
+      freshGeneration &&
+      committedSnapshot &&
+      canonicalJson(freshGeneration.integrity.application) !==
+        canonicalJson(applicationBefore)
+    ) {
+      throw new Error(
+        "Mirai Intl application package inputs changed while source analysis ran"
+      );
+    }
+    if (
+      freshGeneration &&
+      canonicalJson(freshGeneration.integrity.immutable) !==
+        canonicalJson(immutableBefore)
+    ) {
+      throw new Error(
+        "Mirai Intl compiler dependency inputs changed while source analysis ran"
+      );
+    }
+    if (
+      freshGeneration &&
+      committedSnapshot &&
+      canonicalHash(freshGeneration.generationInput) !==
+        committedSnapshot.generationInputHash
+    ) {
+      throw new Error(
+        "Mirai Intl generated catalog changed while source analysis ran"
+      );
+    }
+    const afterUniverse = await resolveConventionSourceUniverse(
+      root,
+      afterLoaded.checkProjects,
+      afterLoaded.discovery.output,
+      afterDiscoveredFiles
+    );
+    if (
+      canonicalJson(universeIdentity(universe)) !==
+      canonicalJson(universeIdentity(afterUniverse))
+    ) {
+      throw new Error(
+        "Mirai Intl source universe changed while source analysis ran"
+      );
+    }
+    const projectManifestAfter = afterUniverse.projects.flatMap((project) =>
+      project.configManifest.map(({ hash, path }) => ({ hash, path }))
+    );
     const [
+      afterSources,
+      finalProviderInputHashes,
       publicationLedger,
       publicationProviderLedger,
       publicationGenerationReceiptHash,
       publicationApplication,
       publicationImmutable,
     ] = await Promise.all([
+      Promise.all(
+        afterUniverse.files.map(async ({ absolute }) => {
+          const bytes = await readFile(absolute).catch((error: unknown) => {
+            if (
+              error instanceof Error &&
+              "code" in error &&
+              error.code === "ENOENT"
+            ) {
+              throw new Error(
+                "Mirai Intl source universe changed while source analysis ran"
+              );
+            }
+            throw error;
+          });
+          decodeUtf8Fatal(bytes, `Mirai Intl source ${absolute}`);
+          return [absolute, sha256(bytes)] as const;
+        })
+      ),
+      Promise.all(
+        providerInputs.map(async (entry) => ({
+          actual: sha256(
+            await readFile(resolve(universe.workspaceRoot, entry.path))
+          ),
+          expected: entry.hash,
+        }))
+      ),
       captureTransactionPathLedger(
         universe.workspaceRoot,
         transactionInputFiles,
@@ -2014,12 +1954,44 @@ async function createConventionCheckReceipt(
         providerInputFiles,
         providerInputFiles.map(dirname)
       ),
-      readFile(generationReceiptPath).then(sha256),
-      computeApplicationPackageIdentity(root),
-      computeImmutableIntegrityIdentity(),
-      verifyRawWorkspaceFiles(universe.workspaceRoot, publicationEntries),
+      useCommittedSnapshotVerification
+        ? Promise.resolve(generationReceiptBefore)
+        : readFile(generationReceiptPath).then(sha256),
+      useCommittedSnapshotVerification
+        ? Promise.resolve(applicationBefore)
+        : computeApplicationPackageIdentity(root),
+      useCommittedSnapshotVerification
+        ? Promise.resolve(immutableBefore)
+        : computeImmutableIntegrityIdentity(),
       providerFrontiers.recheck(),
     ]);
+    if (canonicalJson(sourceSnapshotHashes) !== canonicalJson(afterSources)) {
+      throw new Error(
+        "Mirai Intl source inputs changed while source analysis ran"
+      );
+    }
+    if (
+      canonicalJson(projectManifestAfter) !==
+      canonicalJson(projectManifestBefore)
+    ) {
+      throw new Error(
+        "Mirai Intl TypeScript project configuration changed while source analysis ran"
+      );
+    }
+    for (const { actual, expected } of finalProviderInputHashes) {
+      if (actual !== expected) {
+        throw new Error(
+          "Mirai Intl semantic provider inputs changed while source analysis ran"
+        );
+      }
+    }
+    if (
+      verification.write.contentHash !== verificationBefore.write.contentHash
+    ) {
+      throw new Error(
+        "Mirai Intl generated catalog changed while source analysis ran"
+      );
+    }
     const publicationLedgerMutation = transactionLedgerDifference(
       transactionLedgerBefore,
       publicationLedger
@@ -2028,31 +2000,34 @@ async function createConventionCheckReceipt(
       providerLedgerBefore,
       publicationProviderLedger
     );
-    let publicationMutation =
+    const publicationLedgerDifference =
       publicationLedgerMutation ?? publicationProviderLedgerMutation;
-    if (
-      !publicationMutation &&
-      publicationGenerationReceiptHash !== generationReceiptBefore
-    ) {
-      publicationMutation = generationReceiptPath;
-    }
-    if (
-      !publicationMutation &&
-      canonicalJson(publicationApplication) !== canonicalJson(applicationBefore)
-    ) {
-      publicationMutation = "application package identity";
-    }
-    if (
-      !publicationMutation &&
-      canonicalJson(publicationImmutable) !== canonicalJson(immutableBefore)
-    ) {
-      publicationMutation = "compiler dependency identity";
-    }
-    if (publicationMutation) {
+    if (publicationLedgerDifference) {
       throw new Error(
-        `Mirai Intl publication fingerprint changed before receipt publication: ${publicationMutation}`
+        `Mirai Intl filesystem transaction ledger changed while source analysis ran: ${publicationLedgerDifference}`
       );
     }
+    if (publicationGenerationReceiptHash !== generationReceiptBefore) {
+      throw new Error(
+        "Mirai Intl generated catalog changed while source analysis ran"
+      );
+    }
+    if (
+      canonicalJson(publicationApplication) !== canonicalJson(applicationBefore)
+    ) {
+      throw new Error(
+        "Mirai Intl application package inputs changed while source analysis ran"
+      );
+    }
+    if (
+      canonicalJson(publicationImmutable) !== canonicalJson(immutableBefore)
+    ) {
+      throw new Error(
+        "Mirai Intl compiler dependency inputs changed while source analysis ran"
+      );
+    }
+    finalVerification = verification;
+    markProfilePhase("publication-precommit-verification");
   };
   await publishDormantConventionAuthorityV3(
     resolve(packageRoot),
@@ -2078,7 +2053,7 @@ async function createConventionCheckReceipt(
         (() => performance.now()),
     }
   );
-  markProfilePhase("atomic-publication");
+  markProfilePhase("selector-commit");
   if (process.env.MIRAI_INTL_INTERNAL_AUTHORIZATION_PROFILE === "1") {
     process.stderr.write(
       `MIRAI_INTL_AUTHORIZATION_PROFILE=${JSON.stringify({
@@ -2087,9 +2062,14 @@ async function createConventionCheckReceipt(
       })}\n`
     );
   }
+  if (!finalVerification) {
+    throw new Error(
+      "Mirai Intl publication completed without final live verification"
+    );
+  }
   return {
     receipt,
-    verification,
+    verification: finalVerification,
   };
 }
 

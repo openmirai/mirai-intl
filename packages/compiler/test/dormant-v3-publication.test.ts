@@ -220,7 +220,7 @@ describe("dormant V3 authority publication", () => {
             }
           },
         })
-      ).rejects.toThrow(/classifier|facade|mutated/u);
+      ).rejects.toThrow(/classifier|facade|mutated|receipt identities/u);
       expect(mutatedFacade).toBe(true);
       expect(await readFile(selectorPath, "utf8")).toBe(selectorBytes);
       await writeFile(facadePath, facadeBytes, "utf8");

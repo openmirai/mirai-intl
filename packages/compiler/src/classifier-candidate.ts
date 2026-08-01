@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 
 import type ts from "typescript";
 
-import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
+import {
+  canonicalJson,
+  compareCanonicalStrings,
+  decodeUtf8Fatal,
+  sha256,
+} from "./canonical";
 import {
   buildMiraiIntlClassifierAuthorityV3,
   deepFreezeMiraiIntlClassifierValue,
@@ -101,10 +106,25 @@ async function authorityInputIdentity(
       input.sources.map(async ({ id, source }) => {
         const path = classifierSourceIdentityPath(id);
         const hash = sha256(source);
-        if (path === resolve(id) && sha256(await readFile(path)) !== hash) {
-          throw new Error(
-            `Mirai Intl classifier source mutated: ${JSON.stringify(path)}`
-          );
+        if (path === resolve(id)) {
+          const bytes = await readFile(path).catch((error: unknown) => {
+            if (
+              error instanceof Error &&
+              "code" in error &&
+              error.code === "ENOENT"
+            ) {
+              throw new Error(
+                "Mirai Intl source universe changed while source analysis ran"
+              );
+            }
+            throw error;
+          });
+          decodeUtf8Fatal(bytes, `Mirai Intl source ${path}`);
+          if (sha256(bytes) !== hash) {
+            throw new Error(
+              `Mirai Intl classifier source mutated: ${JSON.stringify(path)}`
+            );
+          }
         }
         return { hash, path };
       })

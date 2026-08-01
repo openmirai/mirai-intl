@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.7](https://github.com/openmirai/mirai-intl/compare/v0.3.6...v0.3.7) (2026-08-01)
+
+### Performance Improvements
+
+- **compiler:** replace duplicate final catalog compilation and workspace reads with one uncached generation-input identity and committed payload-manifest audit
+
+### Bug Fixes
+
+- **compiler:** preserve missing-source and invalid UTF-8 diagnostics at classifier finalization
+
 ## [0.3.6](https://github.com/openmirai/mirai-intl/compare/v0.3.5...v0.3.6) (2026-08-01)
 
 ### Performance Improvements

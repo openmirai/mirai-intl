@@ -43,6 +43,7 @@ import type {
 } from "./generation-snapshot";
 import {
   computeApplicationPackageIdentity,
+  computeImmutableIntegrityIdentity,
   createIntegrityManifest,
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
@@ -3544,6 +3545,39 @@ export async function loadConventionCatalogGenerationInput(
     loaded,
   });
   return { generationInput, loaded };
+}
+
+/** @internal Load and hash every generation input without using the cache. */
+export async function loadFreshConventionCatalogGenerationInput(
+  packageRoot: string
+): Promise<
+  Readonly<{
+    generationInput: CatalogGenerationInputIdentityV1;
+    integrity: Readonly<{
+      application: Awaited<
+        ReturnType<typeof computeApplicationPackageIdentity>
+      >;
+      immutable: Awaited<ReturnType<typeof computeImmutableIntegrityIdentity>>;
+    }>;
+    loaded: LoadedConventionCatalog;
+  }>
+> {
+  const root = realpathSync(resolve(packageRoot));
+  const [integrity, loaded] = await Promise.all([
+    Promise.all([
+      computeImmutableIntegrityIdentity(),
+      computeApplicationPackageIdentity(root),
+    ]).then(([immutable, application]) => ({ application, immutable })),
+    loadConventionCatalogSnapshot(root, false),
+  ]);
+  return {
+    generationInput: await generationInputIdentity(
+      loaded,
+      Promise.resolve(integrity)
+    ),
+    integrity,
+    loaded,
+  };
 }
 
 /** @internal Generate and retain the compiler-owned loaded snapshot. */

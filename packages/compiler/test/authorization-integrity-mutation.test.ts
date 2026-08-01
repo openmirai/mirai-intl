@@ -222,7 +222,7 @@ describe("complete authorization integrity mutation barrier", () => {
         ).rejects.toThrow(
           label === "application manifest"
             ? "Mirai Intl package authority manifest is stale"
-            : "publication fingerprint changed before receipt publication: application package identity"
+            : "Mirai Intl application package inputs changed while source analysis ran"
         );
         await expect(
           readFile(conventionCheckReceiptPath(root), "utf8")
@@ -247,7 +247,7 @@ describe("complete authorization integrity mutation barrier", () => {
           collectEnvironment: false,
         })
       ).rejects.toThrow(
-        "publication fingerprint changed before receipt publication: compiler dependency identity"
+        "Mirai Intl compiler dependency inputs changed while source analysis ran"
       );
       expect(mutation.matchedReads).toBeGreaterThan(0);
       await expect(
