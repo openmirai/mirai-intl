@@ -231,9 +231,11 @@ function exact(
   context: string
 ): Record<string, unknown> {
   const object = record(value, context);
-  const actual = Object.keys(object).toSorted(compareCanonicalStrings);
-  const expected = [...keys].toSorted(compareCanonicalStrings);
-  if (canonicalJson(actual) !== canonicalJson(expected)) {
+  const actual = Object.keys(object);
+  if (
+    actual.length !== keys.length ||
+    keys.some((key) => !Object.hasOwn(object, key))
+  ) {
     fail(context, "has unexpected or missing fields");
   }
   return object;
@@ -379,15 +381,24 @@ function canonicalFiles(
   return files;
 }
 
+const trustedDeepFrozenValues = new WeakSet<object>();
+
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (value === null || typeof value !== "object" || seen.has(value)) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    seen.has(value) ||
+    trustedDeepFrozenValues.has(value)
+  ) {
     return value;
   }
   seen.add(value);
   for (const entry of Object.values(value)) {
     deepFreeze(entry, seen);
   }
-  return Object.freeze(value);
+  const frozen = Object.freeze(value);
+  trustedDeepFrozenValues.add(value);
+  return frozen;
 }
 
 function sortedUnique<T>(
@@ -6902,12 +6913,21 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
     ...semanticRequests.map((request) => request.frontier),
   ]);
   const projectedFrontierCache = new Map<string, IntlCheckPhysicalFrontierV3>();
+  const projectedFrontierObjectCache = new WeakMap<
+    ExpandedFrontierV3,
+    IntlCheckPhysicalFrontierV3
+  >();
   const projectFrontier = (
     frontier: ExpandedFrontierV3
   ): IntlCheckPhysicalFrontierV3 => {
+    const objectCached = projectedFrontierObjectCache.get(frontier);
+    if (objectCached) {
+      return objectCached;
+    }
     const identity = canonicalJson(frontier);
     const cached = projectedFrontierCache.get(identity);
     if (cached) {
+      projectedFrontierObjectCache.set(frontier, cached);
       return cached;
     }
     const binding = {
@@ -6956,6 +6976,7 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
       ),
     };
     projectedFrontierCache.set(identity, result);
+    projectedFrontierObjectCache.set(frontier, result);
     return result;
   };
   const frontiers: ReadonlyArray<IntlCheckPhysicalFrontierV3> =

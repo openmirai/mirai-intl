@@ -38,9 +38,6 @@ const instrumentation = vi.hoisted(() => ({
     | Readonly<{ kind: "directory" | "file"; path: string }>,
   uniqueFrontierInputs: 0,
   mutateAfterAnalysis: undefined as undefined | (() => Promise<void>),
-  mutateAfterFinalSourceRead: undefined as
-    | undefined
-    | ((path: string) => Promise<void>),
   programs: 0,
   projectConfigReadsDuringAnalysis: 0,
   projectConfigReads: 0,
@@ -62,21 +59,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
       ) {
         const reads = (instrumentation.sourceReads.get(path) ?? 0) + 1;
         instrumentation.sourceReads.set(path, reads);
-        if (
-          reads === 2 &&
-          path.endsWith("/src/page.ts") &&
-          instrumentation.mutateAfterFinalSourceRead
-        ) {
-          const mutate = instrumentation.mutateAfterFinalSourceRead;
-          instrumentation.mutateAfterFinalSourceRead = undefined;
-          const result = await Reflect.apply(
-            actual.readFile,
-            actual,
-            arguments_
-          );
-          await mutate(path);
-          return result;
-        }
       }
       if (
         instrumentation.trackSourceIo &&
@@ -280,7 +262,6 @@ describe("compiler-owned catalog snapshots", () => {
     instrumentation.frontierMutationProbe = undefined;
     instrumentation.uniqueFrontierInputs = 0;
     instrumentation.mutateAfterAnalysis = undefined;
-    instrumentation.mutateAfterFinalSourceRead = undefined;
     instrumentation.programs = 0;
     instrumentation.projectConfigReadsDuringAnalysis = 0;
     instrumentation.projectConfigReads = 0;
@@ -343,20 +324,20 @@ describe("compiler-owned catalog snapshots", () => {
     try {
       await authorizeConventionCatalog(root, { collectEnvironment: false });
 
-      // Source text is parsed once. Five byte reads cover initial sealing,
-      // classifier entry/exit/finalization, and the single receipt-bound
-      // workspace pass. The classifier-only selector revalidation does not
-      // reread caller-owned source bytes after that complete fingerprint.
+      // Source text is parsed once. Two byte reads cover initial sealing and
+      // the single complete receipt-bound publication pass. The classifier
+      // hashes the sealed bytes and delegates its repeated live-source reads
+      // to that commit-last publication barrier.
       expect([...instrumentation.sourceReads.values()].toSorted()).toEqual([
-        5, 5,
+        2, 2,
       ]);
       expect([...instrumentation.sourceParses.values()].toSorted()).toEqual([
         1, 1,
       ]);
       expect(instrumentation.projectConfigReads).toBeGreaterThan(0);
-      // The classifier authority validates its config control frontier at
-      // entry and transaction boundaries without reparsing sources.
-      expect(instrumentation.projectConfigReadsDuringAnalysis).toBe(4);
+      // Project config bytes follow the same initial-seal plus commit-last
+      // publication-barrier ownership as source bytes.
+      expect(instrumentation.projectConfigReadsDuringAnalysis).toBe(2);
     } finally {
       instrumentation.trackSourceIo = false;
       instrumentation.trackedRoot = undefined;
@@ -424,10 +405,12 @@ describe("compiler-owned catalog snapshots", () => {
 
       await expect(
         authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow("Mirai Intl classifier source mutated");
+      ).rejects.toThrow(
+        "Mirai Intl source inputs changed while source analysis ran"
+      );
       await expectReceiptRemoved(root);
-      // Classifier finalization rejects the mutation before the final catalog
-      // verification needs to compile the generated catalog a second time.
+      // The complete publication barrier rejects the mutation without
+      // compiling the generated catalog a second time.
       expect(instrumentation.compileCalls).toBe(1);
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -463,20 +446,22 @@ describe("compiler-owned catalog snapshots", () => {
 
   it("rejects a source mutation after its earlier final hash but before publication", async () => {
     const root = await createConventionApp();
-    instrumentation.trackSourceIo = true;
-    instrumentation.trackedRoot = await realpath(root);
-    instrumentation.mutateAfterFinalSourceRead = async (path) => {
-      await writeFile(path, "export const page = 3;\n", "utf8");
-    };
     try {
       await expect(
-        authorizeConventionCatalog(root, { collectEnvironment: false })
-      ).rejects.toThrow("Mirai Intl classifier source mutated");
+        authorizeConventionCatalog(root, {
+          beforePublicationBarrier: () =>
+            writeFile(
+              join(root, "src/page.ts"),
+              "export const page = 3;\n",
+              "utf8"
+            ),
+          collectEnvironment: false,
+        })
+      ).rejects.toThrow(
+        "Mirai Intl source inputs changed while source analysis ran"
+      );
       await expectReceiptRemoved(root);
     } finally {
-      instrumentation.trackSourceIo = false;
-      instrumentation.trackedRoot = undefined;
-      instrumentation.mutateAfterFinalSourceRead = undefined;
       await rm(root, { force: true, recursive: true });
     }
   }, 60_000);

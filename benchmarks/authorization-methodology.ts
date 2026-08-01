@@ -72,16 +72,16 @@ const PRODUCTION_PACKAGES = [
 
 export const FROZEN_PRODUCTION_CANDIDATE = {
   compilerCliHash:
-    "sha256:4006f442b3e7430f2ecd0d2c680b429261a18d4621ea7729a14d2e58280fc607",
+    "sha256:40de9bcf1e9d23b85c07a509d353af866bff6df397f2b8d646171b95ebe4aee1",
   dist: {
     fileCount: 122,
-    hash: "sha256:f32c9cfd28243077f1483aa7a6864222ffe1b9369265eee734823a83a84492e1",
+    hash: "sha256:abb0897cbc5d3232f846bbd35b388692a24b87f3bbf5f6cb6a65ebdd4508157c",
   },
   lockfileHash:
     "sha256:b3b8c41512bbabdf6dda03ee6cfc4de6b62617f2fa0e87577859b588a5c38de8",
   source: {
     fileCount: 93,
-    hash: "sha256:c37b2e5203c1c36fb20a48e28f7ffa77e346fdea04f8b2b37d04ef5f334ed059",
+    hash: "sha256:1354ca618ac61bac07e8a45bb8a11597f077e94ed8ca49f5f1b4dba5a8e6e868",
   },
 } as const;
 
