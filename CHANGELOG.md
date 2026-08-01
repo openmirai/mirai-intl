@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.9](https://github.com/openmirai/mirai-intl/compare/v0.3.8...v0.3.9) (2026-08-01)
+
+### Performance Improvements
+
+- **compiler:** defer redundant classifier byte rereads to the complete commit-last publication fingerprint
+- **compiler:** scale the outer catalog pool to CPU and memory while avoiding closure-duplicating inner workers on saturated devices
+- **compiler:** skip workspace source-weight scans when every catalog already has a device-qualified worker
+
 ## [0.3.8](https://github.com/openmirai/mirai-intl/compare/v0.3.7...v0.3.8) (2026-08-01)
 
 ### Performance Improvements

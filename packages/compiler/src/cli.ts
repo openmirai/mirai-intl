@@ -43,6 +43,7 @@ import type {
 import {
   allocateWorkspaceCatalogResources,
   defaultWorkspaceAuthorizationWorkers,
+  workspaceCatalogWeightsRequired,
 } from "./workspace-resources";
 
 type Command =
@@ -451,6 +452,18 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
     root: string;
   }> = [];
   const messageCount: number | undefined = undefined;
+  const availableCpu = availableParallelism();
+  const memoryBytes = totalmem();
+  const workerCount = Math.min(
+    roots.length,
+    workspaceAuthorizationWorkerCount(roots.length, availableCpu, memoryBytes)
+  );
+  const measureWeights = workspaceCatalogWeightsRequired(
+    roots.length,
+    workerCount,
+    availableCpu,
+    memoryBytes
+  );
   const weightedRoots = await Promise.all(
     roots.map(async (root, index) => {
       const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
@@ -458,7 +471,9 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
         index,
         packagePriority: workspacePath.startsWith("packages/"),
         root,
-        sourceWeight: await workspaceCatalogSourceWeight(root),
+        sourceWeight: measureWeights
+          ? await workspaceCatalogSourceWeight(root)
+          : 0,
       };
     })
   );
@@ -467,12 +482,6 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
       Number(right.packagePriority) - Number(left.packagePriority) ||
       right.sourceWeight - left.sourceWeight ||
       left.index - right.index
-  );
-  const availableCpu = availableParallelism();
-  const memoryBytes = totalmem();
-  const workerCount = Math.min(
-    ordered.length,
-    workspaceAuthorizationWorkerCount(ordered.length, availableCpu, memoryBytes)
   );
   const authorized = Array.from({ length: roots.length }) as Array<
     Awaited<ReturnType<typeof authorizeWorkspaceCatalogChild>>

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateWorkspaceCatalogResources,
   defaultWorkspaceAuthorizationWorkers,
+  workspaceCatalogWeightsRequired,
 } from "../src/workspace-resources";
 
 const GIB = 1024 * 1024 * 1024;
@@ -16,15 +17,9 @@ describe("workspace catalog resource allocation", () => {
     { index: 1, packagePriority: false, sourceWeight: 112 },
   ] as const;
 
-  it("uses the spare lanes on an 8-vCPU 16-GiB runner", () => {
+  it("keeps the faster outer-only schedule on an 8-vCPU 16-GiB runner", () => {
     expect(allocateWorkspaceCatalogResources(catalogs, 5, 8, 16 * GIB)).toEqual(
-      [
-        { index: 4, lanes: 3 },
-        { index: 0, lanes: 2 },
-        { index: 3, lanes: 1 },
-        { index: 2, lanes: 1 },
-        { index: 1, lanes: 1 },
-      ]
+      catalogs.map(({ index }) => ({ index, lanes: 1 }))
     );
   });
 
@@ -62,5 +57,11 @@ describe("workspace catalog resource allocation", () => {
       { index: 2, lanes: 1 },
       { index: 1, lanes: 1 },
     ]);
+  });
+
+  it("skips source-weight scans when every catalog runs and no inner pool fits", () => {
+    expect(workspaceCatalogWeightsRequired(5, 5, 8, 16 * GIB)).toBe(false);
+    expect(workspaceCatalogWeightsRequired(5, 5, 16, 32 * GIB)).toBe(true);
+    expect(workspaceCatalogWeightsRequired(5, 2, 8, 16 * GIB)).toBe(true);
   });
 });

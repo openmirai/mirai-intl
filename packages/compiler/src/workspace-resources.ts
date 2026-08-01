@@ -42,6 +42,23 @@ export function defaultWorkspaceAuthorizationWorkers(
   return Math.max(1, Math.min(catalogCount, 5, cpuCapacity, memoryCapacity));
 }
 
+export function workspaceCatalogWeightsRequired(
+  catalogCount: number,
+  workerCount: number,
+  availableCpu: number,
+  totalMemoryBytes: number
+): boolean {
+  if (workerCount < catalogCount) {
+    return true;
+  }
+  const cpuCapacity = Math.max(1, Math.floor(availableCpu));
+  const memoryCapacity = Math.max(
+    1,
+    Math.floor(totalMemoryBytes / BYTES_PER_SEMANTIC_LANE)
+  );
+  return Math.min(cpuCapacity, memoryCapacity) >= workerCount * 2;
+}
+
 /**
  * Assigns spare machine capacity to the long-running catalog tails without
  * oversubscribing either CPUs or the measured semantic-worker memory budget.
@@ -69,7 +86,13 @@ export function allocateWorkspaceCatalogResources(
     Math.min(cpuCapacity, memoryCapacity)
   );
   const lanes = new Map(active.map(({ index }) => [index, 1]));
-  let remaining = laneCapacity - active.length;
+  // Splitting one catalog duplicates its TypeScript closure preparation.
+  // Only consider inner workers when the device has at least one genuinely
+  // spare CPU and memory lane per active catalog. On the 8-vCPU/16-GiB CI
+  // runner all five catalogs therefore remain single-lane; the outer pool is
+  // the faster level of parallelism.
+  let remaining =
+    laneCapacity >= active.length * 2 ? laneCapacity - active.length : 0;
   const limits = new Map(
     active.map((entry) => [entry.index, catalogLaneLimit(entry)])
   );

@@ -87,7 +87,8 @@ function sealAuthorityInput(
 }
 
 async function authorityInputIdentity(
-  input: MiraiIntlClassifierAuthorityInputV3
+  input: MiraiIntlClassifierAuthorityInputV3,
+  publicationBarrierGeneratedFacadeHash?: Sha256
 ): Promise<
   Readonly<{
     generatedFacadeHash: Sha256;
@@ -109,7 +110,10 @@ async function authorityInputIdentity(
       input.sources.map(async ({ id, source }) => {
         const path = classifierSourceIdentityPath(id);
         const hash = sha256(source);
-        if (path === resolve(id)) {
+        if (
+          publicationBarrierGeneratedFacadeHash === undefined &&
+          path === resolve(id)
+        ) {
           const bytes = await readFile(path).catch((error: unknown) => {
             if (
               error instanceof Error &&
@@ -137,7 +141,10 @@ async function authorityInputIdentity(
     await Promise.all(
       (input.projectControls ?? []).map(async ({ hash, path: inputPath }) => {
         const path = resolve(inputPath);
-        if (sha256(await readFile(path)) !== hash) {
+        if (
+          publicationBarrierGeneratedFacadeHash === undefined &&
+          sha256(await readFile(path)) !== hash
+        ) {
           throw new Error(
             `Mirai Intl classifier project control mutated: ${JSON.stringify(path)}`
           );
@@ -159,7 +166,9 @@ async function authorityInputIdentity(
     projectControls,
     workspaceRoot,
   };
-  const generatedFacadeHash = sha256(await readFile(generatedFacadePath));
+  const generatedFacadeHash =
+    publicationBarrierGeneratedFacadeHash ??
+    sha256(await readFile(generatedFacadePath));
   return {
     generatedFacadeHash,
     inputHash: sha256(
@@ -321,6 +330,7 @@ interface TransactionState {
   finalizePromise?: Promise<MiraiIntlClassifierFinalizedTransactionV3>;
   finalized?: MiraiIntlClassifierFinalizedTransactionV3;
   phase: "finalized" | "finalizing" | "open" | "poisoned";
+  publicationBarrierGeneratedFacadeHash?: Sha256;
   revalidationPromise?: Promise<void>;
   waiters: Array<() => void>;
 }
@@ -679,7 +689,18 @@ export async function assertMiraiIntlClassifierTransactionAuthorityV3(
 
 /** In-memory transaction only. Exact scope mutation is rejected, never refreshed. */
 export async function createMiraiIntlClassifierWorkspaceTransactionV3(
-  workspaceRoot: string
+  workspaceRoot: string,
+  options: Readonly<{
+    /**
+     * Defers source, project-control, and generated-facade byte rereads to the
+     * caller's complete commit-last publication fingerprint. The transaction
+     * still hashes the caller-owned sealed bytes and revalidates its classifier
+     * filesystem frontier immediately before selector publication.
+     *
+     * @internal Production authorization optimization.
+     */
+    publicationBarrierGeneratedFacadeHash?: Sha256;
+  }> = {}
 ): Promise<MiraiIntlClassifierWorkspaceTransactionV3> {
   const canonicalWorkspaceRoot = await realpath(resolve(workspaceRoot));
   const byInput = new Map<Sha256, Promise<BuiltAuthority>>();
@@ -691,6 +712,12 @@ export async function createMiraiIntlClassifierWorkspaceTransactionV3(
     completed,
     completedByAuthority: new WeakMap(),
     phase: "open",
+    ...(options.publicationBarrierGeneratedFacadeHash
+      ? {
+          publicationBarrierGeneratedFacadeHash:
+            options.publicationBarrierGeneratedFacadeHash,
+        }
+      : {}),
     waiters: [],
   };
   const waitForAuthorizations = async (): Promise<void> => {
@@ -719,7 +746,10 @@ export async function createMiraiIntlClassifierWorkspaceTransactionV3(
         if (requestedWorkspaceRoot !== canonicalWorkspaceRoot) {
           throw new Error("Mirai Intl classifier authority workspace mismatch");
         }
-        const identity = await authorityInputIdentity(sealedInput);
+        const identity = await authorityInputIdentity(
+          sealedInput,
+          state.publicationBarrierGeneratedFacadeHash
+        );
         const priorInput = inputByScope.get(identity.scopeHash);
         if (priorInput && priorInput !== identity.inputHash) {
           throw new Error(
@@ -740,7 +770,9 @@ export async function createMiraiIntlClassifierWorkspaceTransactionV3(
           byInput.set(identity.inputHash, pending);
         }
         const result = await pending;
-        const verifiedIdentity = await authorityInputIdentity(input);
+        const verifiedIdentity = state.publicationBarrierGeneratedFacadeHash
+          ? identity
+          : await authorityInputIdentity(input);
         if (verifiedIdentity.inputHash !== identity.inputHash) {
           throw new Error(
             "Mirai Intl classifier authority input mutated while building"
@@ -788,7 +820,13 @@ export async function createMiraiIntlClassifierWorkspaceTransactionV3(
           if (state.failure) {
             throw state.failure;
           }
-          const values = await validateFinalizedTransactionState(state);
+          const values = await validateFinalizedTransactionState(
+            state,
+            undefined,
+            state.publicationBarrierGeneratedFacadeHash === undefined
+              ? "all"
+              : "none"
+          );
           const finalized = deepFreezeMiraiIntlClassifierValue({
             authorities: values.map(({ authority }) => authority),
             receiptProjections: values.map(({ projection }) => projection),

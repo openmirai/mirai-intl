@@ -1445,11 +1445,13 @@ async function createConventionCheckReceipt(
   const [
     sourceSnapshots,
     generationReceiptBefore,
+    generatedFacadeHashBefore,
     applicationBefore,
     immutableBefore,
   ] = await Promise.all([
     analyze.loadConventionSourceSnapshots(universe.files),
     readFile(generationReceiptPath).then(sha256),
+    readFile(join(root, loaded.discovery.output, "index.ts")).then(sha256),
     computeApplicationPackageIdentity(root),
     computeImmutableIntegrityIdentity(),
   ]);
@@ -1482,7 +1484,10 @@ async function createConventionCheckReceipt(
   markProfilePhase("snapshot-and-input-ledger");
   const classifierTransaction =
     await createMiraiIntlClassifierWorkspaceTransactionV3(
-      universe.workspaceRoot
+      universe.workspaceRoot,
+      {
+        publicationBarrierGeneratedFacadeHash: generatedFacadeHashBefore,
+      }
     );
   const classifierProjectControls = new Map(
     universe.projects
