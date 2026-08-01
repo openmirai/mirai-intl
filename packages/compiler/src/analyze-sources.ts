@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
+import { Worker } from "node:worker_threads";
 
 import { analyzeHardcodedLiterals } from "./analyze-hardcoded-literals";
 import { compareCanonicalStrings, decodeUtf8Fatal, sha256 } from "./canonical";
@@ -18,7 +19,10 @@ import type { SemanticProviderResolution } from "./semantic-providers";
 import { transformMiraiIntlOwnerBatch } from "./transform";
 import type {
   MiraiIntlSemanticBatchObservation,
+  MiraiIntlSemanticBatchResult,
   MiraiIntlSemanticEvidence,
+  MiraiIntlSemanticWorkerBatchInput,
+  MiraiIntlSemanticWorkerBatchOutput,
   MiraiIntlTransformOptions,
 } from "./transform";
 import ts from "typescript";
@@ -72,6 +76,262 @@ export type ConventionSourceSnapshot = Readonly<{
 }>;
 
 const internalSemanticEngineEnvironment = "MIRAI_INTL_INTERNAL_SEMANTIC_ENGINE";
+const minimumSemanticSourcesPerWorker = 24;
+
+type SemanticOwnerAnalysis = Readonly<{
+  evidenceByFile: ReadonlyMap<string, MiraiIntlSemanticEvidence>;
+  observation: MiraiIntlSemanticBatchObservation;
+  results: ReadonlyArray<MiraiIntlSemanticBatchResult>;
+}>;
+
+function catalogSemanticLanes(sourceCount: number): number {
+  if (process.env.MIRAI_INTL_WORKSPACE_CHILD !== "1") {
+    return 1;
+  }
+  const raw = process.env.MIRAI_INTL_CATALOG_CPU_LANES ?? "1";
+  const requested = Number(raw);
+  if (!Number.isSafeInteger(requested) || requested < 1 || requested > 32) {
+    throw new Error(
+      "MIRAI_INTL_CATALOG_CPU_LANES must be an integer from 1 through 32"
+    );
+  }
+  return Math.max(
+    1,
+    Math.min(
+      requested,
+      Math.floor(sourceCount / minimumSemanticSourcesPerWorker)
+    )
+  );
+}
+
+function semanticWorkerModuleUrl(): string {
+  return new URL(
+    import.meta.url.endsWith(".ts") ? "./transform.ts" : "./transform.js",
+    import.meta.url
+  ).href;
+}
+
+function deserializeSemanticWorkerError(
+  value: Readonly<{ message: string; name: string; stack?: string }>
+): Error {
+  const error = new Error(value.message);
+  error.name = value.name;
+  if (value.stack) {
+    error.stack = value.stack;
+  }
+  return error;
+}
+
+function runSemanticWorker(input: MiraiIntlSemanticWorkerBatchInput): Readonly<{
+  result: Promise<MiraiIntlSemanticWorkerBatchOutput>;
+  worker: Worker;
+}> {
+  const worker = new Worker(
+    [
+      'const { parentPort, workerData } = require("node:worker_threads");',
+      "void (async () => {",
+      "  try {",
+      "    const module = await import(workerData.moduleUrl);",
+      "    const value = await module.runMiraiIntlSemanticWorkerBatch(workerData.input);",
+      "    parentPort.postMessage({ ok: true, value });",
+      "  } catch (error) {",
+      "    parentPort.postMessage({",
+      "      error: {",
+      "        message: error instanceof Error ? error.message : String(error),",
+      '        name: error instanceof Error ? error.name : "Error",',
+      "        stack: error instanceof Error ? error.stack : undefined,",
+      "      },",
+      "      ok: false,",
+      "    });",
+      "  } finally {",
+      "    parentPort.close();",
+      "  }",
+      "})();",
+    ].join("\n"),
+    {
+      eval: true,
+      workerData: { input, moduleUrl: semanticWorkerModuleUrl() },
+    }
+  );
+  const result = new Promise<MiraiIntlSemanticWorkerBatchOutput>(
+    (resolveResult, reject) => {
+      let settled = false;
+      worker.once("error", (error) => {
+        settled = true;
+        reject(error);
+      });
+      worker.once(
+        "message",
+        (
+          message:
+            | Readonly<{
+                error: Readonly<{
+                  message: string;
+                  name: string;
+                  stack?: string;
+                }>;
+                ok: false;
+              }>
+            | Readonly<{
+                ok: true;
+                value: MiraiIntlSemanticWorkerBatchOutput;
+              }>
+        ) => {
+          settled = true;
+          if (message.ok) {
+            resolveResult(message.value);
+          } else {
+            reject(deserializeSemanticWorkerError(message.error));
+          }
+        }
+      );
+      worker.once("exit", (code) => {
+        if (!settled) {
+          reject(
+            new Error(
+              code === 0
+                ? "Mirai Intl semantic worker exited before reporting a result"
+                : `Mirai Intl semantic worker exited with ${code}`
+            )
+          );
+        }
+      });
+    }
+  );
+  return { result, worker };
+}
+
+async function analyzeSemanticOwner(
+  sources: ReadonlyArray<
+    Readonly<{
+      absolute: string;
+      classifierFacadeResolutions?: ReadonlyMap<
+        string,
+        SemanticProviderResolution
+      >;
+      source: string;
+      sourceFile: ts.SourceFile;
+    }>
+  >,
+  workspaceRoot: string,
+  transformOptions: Omit<MiraiIntlTransformOptions, "authorizationEvidence">,
+  forceFiniteClosure: boolean,
+  owner: Readonly<{ compilerOptions: ts.CompilerOptions }>
+): Promise<SemanticOwnerAnalysis> {
+  const lanes = forceFiniteClosure ? 1 : catalogSemanticLanes(sources.length);
+  if (lanes === 1) {
+    const evidenceByFile = new Map<string, MiraiIntlSemanticEvidence>();
+    let observation: MiraiIntlSemanticBatchObservation = {
+      fallbackFiles: 0,
+      fallbackPrograms: 0,
+      sharedFiles: 0,
+      sharedPrograms: 0,
+    };
+    const results = await transformMiraiIntlOwnerBatch(
+      sources.map((source) => ({
+        authorizationEvidence: {
+          record(value) {
+            evidenceByFile.set(source.absolute, value);
+          },
+          workspaceRoot,
+        },
+        ...(source.classifierFacadeResolutions
+          ? {
+              classifierFacadeResolutions: source.classifierFacadeResolutions,
+            }
+          : {}),
+        id: source.absolute,
+        source: source.source,
+        sourceFile: source.sourceFile,
+      })),
+      transformOptions,
+      (value) => {
+        observation = value;
+      },
+      forceFiniteClosure,
+      owner,
+      true
+    );
+    return { evidenceByFile, observation, results };
+  }
+
+  const partitions = Array.from({ length: lanes }, () => ({
+    sources: [] as Array<(typeof sources)[number]>,
+    weight: 0,
+  }));
+  for (const source of [...sources].toSorted(
+    (left, right) =>
+      right.source.length - left.source.length ||
+      compareCanonicalStrings(left.absolute, right.absolute)
+  )) {
+    const partition = partitions.toSorted(
+      (left, right) => left.weight - right.weight
+    )[0];
+    if (!partition) {
+      throw new Error("Mirai Intl semantic worker partition is unavailable");
+    }
+    partition.sources.push(source);
+    partition.weight += source.source.length;
+  }
+  const executions = partitions.map((partition) =>
+    runSemanticWorker({
+      analysisOnly: true,
+      forceFiniteClosure: false,
+      options: transformOptions,
+      owner,
+      sources: partition.sources.map((source) => ({
+        ...(source.classifierFacadeResolutions
+          ? {
+              classifierFacadeResolutions: source.classifierFacadeResolutions,
+            }
+          : {}),
+        id: source.absolute,
+        source: source.source,
+      })),
+      workspaceRoot,
+    })
+  );
+  try {
+    const outputs = await Promise.all(executions.map(({ result }) => result));
+    const evidenceByFile = new Map(
+      outputs.flatMap(({ evidence }) =>
+        evidence.map((entry) => [resolve(workspaceRoot, entry.source), entry])
+      )
+    );
+    return {
+      evidenceByFile,
+      observation: outputs.reduce<MiraiIntlSemanticBatchObservation>(
+        (total, output) => ({
+          fallbackFiles: total.fallbackFiles + output.observation.fallbackFiles,
+          fallbackPrograms:
+            total.fallbackPrograms + output.observation.fallbackPrograms,
+          sharedFiles: total.sharedFiles + output.observation.sharedFiles,
+          sharedPrograms:
+            total.sharedPrograms + output.observation.sharedPrograms,
+        }),
+        {
+          fallbackFiles: 0,
+          fallbackPrograms: 0,
+          sharedFiles: 0,
+          sharedPrograms: 0,
+        }
+      ),
+      results: outputs.flatMap(({ results }) =>
+        results.map((result) => ({
+          ...(result.error
+            ? { error: deserializeSemanticWorkerError(result.error) }
+            : {}),
+          id: result.id,
+          ...(Object.hasOwn(result, "result") ? { result: result.result } : {}),
+        }))
+      ),
+    };
+  } finally {
+    await Promise.all(
+      executions.map(({ worker }) => worker.terminate().catch(() => 0))
+    );
+  }
+}
 
 function classifierFacadeResolutionMaps(
   authority: MiraiIntlClassifierAuthorityV3,
@@ -483,43 +743,36 @@ export async function analyzeLoadedConventionSourceFiles(
     classifierProgramFiles.push(
       ...semanticSources.map(({ absolute }) => absolute)
     );
-    const evidenceByFile = new Map<string, MiraiIntlSemanticEvidence>();
-    const results = await transformMiraiIntlOwnerBatch(
+    const semantic = await analyzeSemanticOwner(
       semanticSources.map(({ absolute, source, sourceFile }) => {
         const classifierFacadeResolution = classifierFacadeResolutions.get(
           resolve(absolute)
         );
         return {
-          authorizationEvidence: {
-            record(value) {
-              evidenceByFile.set(absolute, value);
-            },
-            workspaceRoot,
-          },
+          absolute,
           ...(classifierFacadeResolution
             ? {
                 classifierFacadeResolutions: classifierFacadeResolution,
               }
             : {}),
-          id: absolute,
           source,
           sourceFile,
         };
       }),
+      workspaceRoot,
       {
         ...transformOptions,
         generatedDirectory,
         root,
       },
-      (observation) => observe?.(owner, observation),
       semanticEngine === "reference",
       {
         compilerOptions: ownerCompilerOptions,
-      },
-      true
+      }
     );
+    observe?.(owner, semantic.observation);
     markProfilePhase(`semantic:${owner}`);
-    for (const result of results) {
+    for (const result of semantic.results) {
       const sourceSnapshot = ownedSources.find(
         ({ absolute }) => absolute === result.id
       );
@@ -534,7 +787,7 @@ export async function analyzeLoadedConventionSourceFiles(
           )
         );
       }
-      const semanticEvidence = evidenceByFile.get(result.id);
+      const semanticEvidence = semantic.evidenceByFile.get(result.id);
       if (!semanticEvidence) {
         if ("error" in result) {
           continue;

@@ -62,7 +62,7 @@ import type { IntlCheckReceiptV3ClassifierAuthorityBinding } from "./authorizati
 import { parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3 } from "./classifier-authority";
 import {
   createMiraiIntlClassifierWorkspaceTransactionV3,
-  revalidateMiraiIntlClassifierFinalizedTransactionForCommitV3,
+  revalidateMiraiIntlClassifierFinalizedTransactionAfterInputVerificationV3,
 } from "./classifier-candidate";
 import type { MiraiIntlClassifierFinalizedTransactionV3 } from "./classifier-candidate";
 import {
@@ -718,7 +718,7 @@ async function writePackageAuthoritySelector(
       );
     }
     await options.dormantV3PublicationFingerprintVerification();
-    await revalidateMiraiIntlClassifierFinalizedTransactionForCommitV3(
+    await revalidateMiraiIntlClassifierFinalizedTransactionAfterInputVerificationV3(
       finalized
     );
   };

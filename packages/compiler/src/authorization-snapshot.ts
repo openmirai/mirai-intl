@@ -72,6 +72,7 @@ import type {
   MiraiIntlPersistedClassifierAuthorityV3,
 } from "./classifier-authority";
 import type { MiraiIntlClassifierReceiptProjectionV3 } from "./classifier-candidate";
+import { hashMiraiIntlClassifierReceiptProjectionV3 } from "./classifier-projection";
 
 const SHA256_PATTERN = /^sha256:[\da-f]{64}$/u;
 const WINDOWS_ROOT_PATTERN = /^[A-Za-z]:\//u;
@@ -5748,7 +5749,7 @@ function projectionCanonicalValues<T>(values: Iterable<T>): ReadonlyArray<T> {
 const projectionReferenceIndexes = new WeakMap<
   ReadonlyArray<unknown>,
   Readonly<{
-    byIdentity: ReadonlyMap<string, Ref>;
+    byIdentity: Map<string, Ref>;
     byObject: WeakMap<object, Ref>;
   }>
 >();
@@ -5763,7 +5764,6 @@ function projectionReference<T>(
     const byIdentity = new Map<string, Ref>();
     const byObject = new WeakMap<object, Ref>();
     table.forEach((candidate, reference) => {
-      byIdentity.set(canonicalJson(candidate), reference);
       if (candidate !== null && typeof candidate === "object") {
         byObject.set(candidate, reference);
       }
@@ -5775,8 +5775,15 @@ function projectionReference<T>(
     value !== null && typeof value === "object"
       ? references.byObject.get(value)
       : undefined;
-  const reference =
-    directReference ?? references.byIdentity.get(canonicalJson(value));
+  if (directReference !== undefined) {
+    return directReference;
+  }
+  if (references.byIdentity.size === 0) {
+    table.forEach((candidate, reference) => {
+      references.byIdentity.set(canonicalJson(candidate), reference);
+    });
+  }
+  const reference = references.byIdentity.get(canonicalJson(value));
   return reference === undefined
     ? fail(context, "is missing from its normalized V3 table")
     : reference;
@@ -5797,14 +5804,7 @@ function projectionReferences<T>(
 function projectionHash(
   projection: MiraiIntlClassifierReceiptProjectionV3
 ): Sha256 {
-  return sha256(
-    canonicalJson([
-      "mirai-intl",
-      "classifier-receipt-projection",
-      3,
-      projection,
-    ])
-  );
+  return hashMiraiIntlClassifierReceiptProjectionV3(projection);
 }
 
 function projectionControl(

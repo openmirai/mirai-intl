@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.8](https://github.com/openmirai/mirai-intl/compare/v0.3.7...v0.3.8) (2026-08-01)
+
+### Performance Improvements
+
+- **compiler:** scale strict workspace and semantic authorization across available CPU and memory without changing canonical authority
+- **compiler:** parallelize classifier frontier validation, memoize immutable projections, and remove redundant final source and config reads
+
+### Bug Fixes
+
+- **compiler:** fail closed when a semantic worker exits without returning authority evidence
+
 ## [0.3.7](https://github.com/openmirai/mirai-intl/compare/v0.3.6...v0.3.7) (2026-08-01)
 
 ### Performance Improvements

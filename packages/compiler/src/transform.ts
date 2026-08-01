@@ -82,6 +82,105 @@ export type MiraiIntlSemanticBatchResult = Readonly<{
   result?: MiraiIntlTransformResult | null;
 }>;
 
+export type MiraiIntlSemanticWorkerBatchInput = Readonly<{
+  analysisOnly: boolean;
+  forceFiniteClosure: boolean;
+  options: Omit<MiraiIntlTransformOptions, "authorizationEvidence">;
+  owner: Readonly<{ compilerOptions: ts.CompilerOptions }>;
+  sources: ReadonlyArray<
+    Readonly<{
+      classifierFacadeResolutions?: ReadonlyMap<
+        string,
+        SemanticProviderResolution
+      >;
+      id: string;
+      source: string;
+    }>
+  >;
+  workspaceRoot: string;
+}>;
+
+export type MiraiIntlSemanticWorkerError = Readonly<{
+  message: string;
+  name: string;
+  stack?: string;
+}>;
+
+export type MiraiIntlSemanticWorkerBatchOutput = Readonly<{
+  evidence: ReadonlyArray<MiraiIntlSemanticEvidence>;
+  observation: MiraiIntlSemanticBatchObservation;
+  results: ReadonlyArray<
+    Readonly<{
+      error?: MiraiIntlSemanticWorkerError;
+      id: string;
+      result?: MiraiIntlTransformResult | null;
+    }>
+  >;
+}>;
+
+/** @internal Worker-isolate entry used by bounded workspace authorization. */
+export async function runMiraiIntlSemanticWorkerBatch(
+  input: MiraiIntlSemanticWorkerBatchInput
+): Promise<MiraiIntlSemanticWorkerBatchOutput> {
+  const evidenceByFile = new Map<string, MiraiIntlSemanticEvidence>();
+  let observation: MiraiIntlSemanticBatchObservation = {
+    fallbackFiles: 0,
+    fallbackPrograms: 0,
+    sharedFiles: 0,
+    sharedPrograms: 0,
+  };
+  const results = await transformMiraiIntlOwnerBatch(
+    input.sources.map((source) => ({
+      authorizationEvidence: {
+        record(value) {
+          evidenceByFile.set(source.id, value);
+        },
+        workspaceRoot: input.workspaceRoot,
+      },
+      ...(source.classifierFacadeResolutions
+        ? {
+            classifierFacadeResolutions: source.classifierFacadeResolutions,
+          }
+        : {}),
+      id: source.id,
+      source: source.source,
+    })),
+    input.options,
+    (value) => {
+      observation = value;
+    },
+    input.forceFiniteClosure,
+    input.owner,
+    input.analysisOnly
+  );
+  return {
+    evidence: [...evidenceByFile.values()].toSorted((left, right) =>
+      compareCanonicalStrings(left.source, right.source)
+    ),
+    observation,
+    results: results.map((result) => ({
+      ...(Object.hasOwn(result, "error")
+        ? { error: serializeSemanticWorkerError(result.error) }
+        : {}),
+      id: result.id,
+      ...(Object.hasOwn(result, "result") ? { result: result.result } : {}),
+    })),
+  };
+}
+
+function serializeSemanticWorkerError(
+  error: unknown
+): MiraiIntlSemanticWorkerError {
+  if (!(error instanceof Error)) {
+    return { message: String(error), name: "Error" };
+  }
+  return {
+    message: error.message,
+    name: error.name,
+    ...(error.stack ? { stack: error.stack } : {}),
+  };
+}
+
 export type MiraiIntlClassifierResolutionMode =
   | "default"
   | "import"

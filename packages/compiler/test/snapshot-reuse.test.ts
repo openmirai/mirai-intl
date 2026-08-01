@@ -343,19 +343,20 @@ describe("compiler-owned catalog snapshots", () => {
     try {
       await authorizeConventionCatalog(root, { collectEnvironment: false });
 
-      // Source text is parsed once. Six byte reads cover initial sealing,
+      // Source text is parsed once. Five byte reads cover initial sealing,
       // classifier entry/exit/finalization, and the single receipt-bound
-      // workspace pass plus classifier revalidation at selector commit.
+      // workspace pass. The classifier-only selector revalidation does not
+      // reread caller-owned source bytes after that complete fingerprint.
       expect([...instrumentation.sourceReads.values()].toSorted()).toEqual([
-        6, 6,
+        5, 5,
       ]);
       expect([...instrumentation.sourceParses.values()].toSorted()).toEqual([
         1, 1,
       ]);
       expect(instrumentation.projectConfigReads).toBeGreaterThan(0);
       // The classifier authority validates its config control frontier at
-      // entry, exit, and transaction boundaries without reparsing sources.
-      expect(instrumentation.projectConfigReadsDuringAnalysis).toBe(5);
+      // entry and transaction boundaries without reparsing sources.
+      expect(instrumentation.projectConfigReadsDuringAnalysis).toBe(4);
     } finally {
       instrumentation.trackSourceIo = false;
       instrumentation.trackedRoot = undefined;

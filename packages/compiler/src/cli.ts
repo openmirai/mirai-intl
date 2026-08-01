@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { availableParallelism, totalmem } from "node:os";
 import {
   basename,
   dirname,
@@ -39,6 +40,10 @@ import type {
   IntlBuildProofTargetV1,
   IntlSemanticAuthorizationObservationV2,
 } from "@openmirai/intl-abi";
+import {
+  allocateWorkspaceCatalogResources,
+  defaultWorkspaceAuthorizationWorkers,
+} from "./workspace-resources";
 
 type Command =
   | "catalog-check"
@@ -451,23 +456,35 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
       const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
       return {
         index,
+        packagePriority: workspacePath.startsWith("packages/"),
         root,
-        weight:
-          (workspacePath.startsWith("packages/") ? 1_000_000_000 : 0) +
-          (await workspaceCatalogSourceWeight(root)),
+        sourceWeight: await workspaceCatalogSourceWeight(root),
       };
     })
   );
   const ordered = weightedRoots.toSorted(
-    (left, right) => right.weight - left.weight || left.index - right.index
+    (left, right) =>
+      Number(right.packagePriority) - Number(left.packagePriority) ||
+      right.sourceWeight - left.sourceWeight ||
+      left.index - right.index
   );
+  const availableCpu = availableParallelism();
+  const memoryBytes = totalmem();
   const workerCount = Math.min(
     ordered.length,
-    workspaceAuthorizationWorkerCount()
+    workspaceAuthorizationWorkerCount(ordered.length, availableCpu, memoryBytes)
   );
   const authorized = Array.from({ length: roots.length }) as Array<
     Awaited<ReturnType<typeof authorizeWorkspaceCatalogChild>>
   >;
+  const resourcePlan = new Map(
+    allocateWorkspaceCatalogResources(
+      ordered,
+      workerCount,
+      availableCpu,
+      memoryBytes
+    ).map(({ index, lanes }) => [index, lanes])
+  );
   if (ordered.length === 1) {
     const [entry] = ordered;
     if (entry) {
@@ -488,7 +505,8 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
           }
           authorized[entry.index] = await authorizeWorkspaceCatalogChild(
             entry.root,
-            workspaceRoot
+            workspaceRoot,
+            resourcePlan.get(entry.index) ?? 1
           );
         }
       })
@@ -552,10 +570,18 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
   }
 }
 
-function workspaceAuthorizationWorkerCount(): number {
+function workspaceAuthorizationWorkerCount(
+  catalogCount: number,
+  availableCpu: number,
+  memoryBytes: number
+): number {
   const raw = process.env.MIRAI_INTL_WORKSPACE_WORKERS;
   if (raw === undefined) {
-    return 5;
+    return defaultWorkspaceAuthorizationWorkers(
+      catalogCount,
+      availableCpu,
+      memoryBytes
+    );
   }
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1 || value > 8) {
@@ -593,7 +619,8 @@ async function workspaceCatalogSourceWeight(root: string): Promise<number> {
 
 async function authorizeWorkspaceCatalogChild(
   root: string,
-  workspaceRoot: string
+  workspaceRoot: string,
+  resourceLanes = 1
 ): Promise<{
   authorization?: IntlSemanticAuthorizationObservationV2 &
     Readonly<{ checkerProjects: number; ownerProjects: number }>;
@@ -619,6 +646,7 @@ async function authorizeWorkspaceCatalogChild(
       cwd: root,
       env: {
         ...process.env,
+        MIRAI_INTL_CATALOG_CPU_LANES: String(resourceLanes),
         MIRAI_INTL_WORKSPACE_CHILD: "1",
         // Workspace authorization already owns process-level parallelism.
         // One libuv worker per child prevents five catalogs from multiplying

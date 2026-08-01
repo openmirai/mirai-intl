@@ -22,6 +22,9 @@ import type {
   MiraiIntlGeneratedFacadeCandidateIndexShadow,
   MiraiIntlPortableLstatShadow,
 } from "./classifier-candidate-shadow";
+import { hashMiraiIntlClassifierReceiptProjectionV3 } from "./classifier-projection";
+
+export { hashMiraiIntlClassifierReceiptProjectionV3 } from "./classifier-projection";
 
 export { validateMiraiIntlClassifierAuthorityV3 } from "./classifier-authority";
 export type {
@@ -285,19 +288,6 @@ async function buildAuthority(
   });
 }
 
-export function hashMiraiIntlClassifierReceiptProjectionV3(
-  projection: MiraiIntlClassifierReceiptProjectionV3
-): Sha256 {
-  return sha256(
-    canonicalJson([
-      "mirai-intl",
-      "classifier-receipt-projection",
-      3,
-      projection,
-    ])
-  );
-}
-
 export type MiraiIntlClassifierWorkspaceTransactionV3 = Readonly<{
   authorize(
     input: MiraiIntlClassifierAuthorityInputV3
@@ -386,102 +376,129 @@ async function currentPortableLstat(
 async function assertControlFiles(
   controls: ReadonlyArray<Readonly<{ hash: Sha256; path: string }>>
 ): Promise<void> {
-  for (const control of controls) {
-    if (sha256(await readFile(control.path)) !== control.hash) {
-      throw new Error("Mirai Intl classifier proof frontier mutated");
-    }
-  }
+  await Promise.all(
+    controls.map(async (control) => {
+      if (sha256(await readFile(control.path)) !== control.hash) {
+        throw new Error("Mirai Intl classifier proof frontier mutated");
+      }
+    })
+  );
 }
 
 async function assertProbes(
   probes: MiraiIntlGeneratedFacadeCandidateIndexShadow["probes"]
 ): Promise<void> {
-  for (const probe of probes) {
-    let present = false;
-    try {
-      const value = await stat(probe.path);
-      present =
-        probe.kind === "directory" ? value.isDirectory() : value.isFile();
-    } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !("code" in error) ||
-        error.code !== "ENOENT"
-      ) {
-        throw error;
+  await Promise.all(
+    probes.map(async (probe) => {
+      let present = false;
+      try {
+        const value = await stat(probe.path);
+        present =
+          probe.kind === "directory" ? value.isDirectory() : value.isFile();
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !("code" in error) ||
+          error.code !== "ENOENT"
+        ) {
+          throw error;
+        }
       }
-    }
-    if (present !== probe.present) {
-      throw new Error("Mirai Intl classifier proof frontier mutated");
-    }
-  }
+      if (present !== probe.present) {
+        throw new Error("Mirai Intl classifier proof frontier mutated");
+      }
+    })
+  );
 }
 
 async function assertRealpaths(
   realpaths: MiraiIntlGeneratedFacadeCandidateIndexShadow["realpaths"]
 ): Promise<void> {
-  for (const entry of realpaths) {
-    if ((await realpath(entry.path)) !== entry.target) {
-      throw new Error("Mirai Intl classifier proof frontier mutated");
-    }
-  }
+  await Promise.all(
+    realpaths.map(async (entry) => {
+      if ((await realpath(entry.path)) !== entry.target) {
+        throw new Error("Mirai Intl classifier proof frontier mutated");
+      }
+    })
+  );
 }
 
 async function assertIndexStillCurrent(
   index: MiraiIntlGeneratedFacadeCandidateIndexShadow
 ): Promise<void> {
-  await assertControlFiles(index.controls);
-  await assertProbes(index.probes);
-  await assertRealpaths(index.realpaths);
-  for (const expected of index.lstats) {
-    if (
-      canonicalJson(await currentPortableLstat(expected)) !==
-      canonicalJson(expected)
-    ) {
-      throw new Error("Mirai Intl classifier proof frontier mutated");
-    }
-  }
-  for (const scope of index.packageScopes) {
-    if (
-      sha256(await readFile(scope.manifestPath)) !== scope.manifestHash ||
-      (await realpath(scope.lexicalRoot)) !== scope.canonicalRoot
-    ) {
-      throw new Error("Mirai Intl classifier package scope mutated");
-    }
-  }
-  for (const topology of index.packageTopology) {
-    if (
-      canonicalJson(await currentPortableLstat(topology.root)) !==
-        canonicalJson(topology.root) ||
-      canonicalJson(await currentPortableLstat(topology.manifest)) !==
-        canonicalJson(topology.manifest) ||
-      (topology.manifestHash !== null &&
-        sha256(await readFile(topology.manifest.path)) !==
-          topology.manifestHash) ||
-      (topology.root.kind !== "absent" &&
-        (await realpath(topology.root.path)) !== topology.canonicalRoot)
-    ) {
-      throw new Error("Mirai Intl classifier package topology mutated");
-    }
-  }
-  await assertControlFiles(index.resolverFrontier.controlFiles);
-  await assertProbes(index.resolverFrontier.probes);
-  await assertRealpaths(index.resolverFrontier.realpaths);
-  for (const proof of index.barePackageProofs) {
-    await assertControlFiles(proof.controlFiles);
-  }
+  await Promise.all([
+    assertControlFiles(index.controls),
+    assertProbes(index.probes),
+    assertRealpaths(index.realpaths),
+    Promise.all(
+      index.lstats.map(async (expected) => {
+        if (
+          canonicalJson(await currentPortableLstat(expected)) !==
+          canonicalJson(expected)
+        ) {
+          throw new Error("Mirai Intl classifier proof frontier mutated");
+        }
+      })
+    ),
+    Promise.all(
+      index.packageScopes.map(async (scope) => {
+        const [manifestHash, canonicalRoot] = await Promise.all([
+          readFile(scope.manifestPath).then(sha256),
+          realpath(scope.lexicalRoot),
+        ]);
+        if (
+          manifestHash !== scope.manifestHash ||
+          canonicalRoot !== scope.canonicalRoot
+        ) {
+          throw new Error("Mirai Intl classifier package scope mutated");
+        }
+      })
+    ),
+    Promise.all(
+      index.packageTopology.map(async (topology) => {
+        const [root, manifest, manifestHash, canonicalRoot] = await Promise.all(
+          [
+            currentPortableLstat(topology.root),
+            currentPortableLstat(topology.manifest),
+            topology.manifestHash === null
+              ? Promise.resolve(null)
+              : readFile(topology.manifest.path).then(sha256),
+            topology.root.kind === "absent"
+              ? Promise.resolve(topology.canonicalRoot)
+              : realpath(topology.root.path),
+          ]
+        );
+        if (
+          canonicalJson(root) !== canonicalJson(topology.root) ||
+          canonicalJson(manifest) !== canonicalJson(topology.manifest) ||
+          manifestHash !== topology.manifestHash ||
+          canonicalRoot !== topology.canonicalRoot
+        ) {
+          throw new Error("Mirai Intl classifier package topology mutated");
+        }
+      })
+    ),
+    assertControlFiles(index.resolverFrontier.controlFiles),
+    assertProbes(index.resolverFrontier.probes),
+    assertRealpaths(index.resolverFrontier.realpaths),
+    Promise.all(
+      index.barePackageProofs.map((proof) =>
+        assertControlFiles(proof.controlFiles)
+      )
+    ),
+  ]);
 }
 
 async function assertProjectionStillCurrent(
   projection: MiraiIntlClassifierReceiptProjectionV3
 ): Promise<void> {
-  if (
-    sha256(await readFile(projection.generatedFacadePath)) !==
-    projection.generatedFacadeHash
-  ) {
+  const [generatedFacadeHash] = await Promise.all([
+    readFile(projection.generatedFacadePath).then(sha256),
+    assertIndexStillCurrent(projection.checkpoint.index),
+  ]);
+  if (generatedFacadeHash !== projection.generatedFacadeHash) {
     throw new Error("Mirai Intl classifier generated facade mutated");
   }
-  await assertIndexStillCurrent(projection.checkpoint.index);
 }
 
 function transactionState(
@@ -513,7 +530,8 @@ function assertOpenTransaction(state: TransactionState): void {
 
 async function validateFinalizedTransactionState(
   state: TransactionState,
-  finalized?: MiraiIntlClassifierFinalizedTransactionV3
+  finalized?: MiraiIntlClassifierFinalizedTransactionV3,
+  liveValidation: "all" | "none" | "projection" = "all"
 ): Promise<ReadonlyArray<CompletedAuthority>> {
   const values = [...state.completed.values()].toSorted((left, right) =>
     compareCanonicalStrings(left.authority.inputHash, right.authority.inputHash)
@@ -539,7 +557,13 @@ async function validateFinalizedTransactionState(
     throw new Error("Invalid Mirai Intl classifier finalized exact arrays");
   }
   for (const value of values) {
-    const identity = await authorityInputIdentity(value.input);
+    const identity =
+      liveValidation === "all"
+        ? await authorityInputIdentity(value.input)
+        : {
+            generatedFacadeHash: value.projection.generatedFacadeHash,
+            inputHash: value.authority.inputHash,
+          };
     if (
       identity.inputHash !== value.authority.inputHash ||
       identity.generatedFacadeHash !== value.projection.generatedFacadeHash ||
@@ -554,7 +578,9 @@ async function validateFinalizedTransactionState(
       );
     }
     validateMiraiIntlClassifierAuthorityV3(value.authority, identity.inputHash);
-    await assertProjectionStillCurrent(value.projection);
+    if (liveValidation !== "none") {
+      await assertProjectionStillCurrent(value.projection);
+    }
   }
   return values;
 }
@@ -562,6 +588,27 @@ async function validateFinalizedTransactionState(
 /** @internal Commit-last live revalidation; every non-concurrent call is fresh. */
 export function revalidateMiraiIntlClassifierFinalizedTransactionForCommitV3(
   finalized: MiraiIntlClassifierFinalizedTransactionV3
+): Promise<void> {
+  return revalidateFinalizedTransaction(finalized, "all");
+}
+
+/**
+ * Commit-last frontier verification after the caller has freshly verified the
+ * complete source, project-control, catalog, provider, and application input
+ * fingerprint. This retains the classifier-only live frontier checks without
+ * rereading those caller-owned byte families a second time.
+ *
+ * @internal Production publication optimization.
+ */
+export function revalidateMiraiIntlClassifierFinalizedTransactionAfterInputVerificationV3(
+  finalized: MiraiIntlClassifierFinalizedTransactionV3
+): Promise<void> {
+  return revalidateFinalizedTransaction(finalized, "projection");
+}
+
+function revalidateFinalizedTransaction(
+  finalized: MiraiIntlClassifierFinalizedTransactionV3,
+  liveValidation: "all" | "projection"
 ): Promise<void> {
   const state = finalizedTransactionStates.get(finalized);
   if (!state) {
@@ -585,7 +632,7 @@ export function revalidateMiraiIntlClassifierFinalizedTransactionForCommitV3(
   }
   const pending = (async () => {
     try {
-      await validateFinalizedTransactionState(state, finalized);
+      await validateFinalizedTransactionState(state, finalized, liveValidation);
     } catch (error) {
       throw poisonTransaction(state, error);
     } finally {
@@ -689,10 +736,7 @@ export async function createMiraiIntlClassifierWorkspaceTransactionV3(
             canonicalWorkspaceRoot,
             preparedSourceFiles,
             sourceObserver
-          ).then(async (result) => {
-            await assertProjectionStillCurrent(result.projection);
-            return result;
-          });
+          );
           byInput.set(identity.inputHash, pending);
         }
         const result = await pending;
