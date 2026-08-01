@@ -1538,6 +1538,28 @@ describe("authorization snapshot V3", () => {
     expect(canonicalIntlCheckReceiptV2Bytes(receiptV2)).toBe(before);
   });
 
+  it("preserves canonical ABI across independently allocated projection graphs", () => {
+    const fixtureReceipt = fixture();
+    const receiptV2 = v2FixtureFromV3(fixtureReceipt);
+    const evidence = classifierProjectionFixture(fixtureReceipt);
+    const before = canonicalIntlCheckReceiptV2Bytes(receiptV2);
+
+    const result = buildIntlCheckReceiptV3FromClassifierProjections(receiptV2, [
+      evidence,
+    ]);
+    const repeated = buildIntlCheckReceiptV3FromClassifierProjections(
+      mutableClone(receiptV2),
+      [mutableClone(evidence)]
+    );
+
+    expect(result.receipt.tables.frontiers).toHaveLength(2);
+    expect(repeated.receiptBytes).toBe(result.receiptBytes);
+    expect(parseCanonicalIntlCheckReceiptV3(result.receiptBytes)).toEqual(
+      result.receipt
+    );
+    expect(canonicalIntlCheckReceiptV2Bytes(receiptV2)).toBe(before);
+  });
+
   it("assembles native V3 with complete lexical authority and no invented semantic closure", () => {
     const input = rawFixture();
     const binding = first(input.classifierBindings);

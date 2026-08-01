@@ -34,6 +34,16 @@ export type MiraiIntlCandidateFallbackReason =
   | "symlink-boundary-ambiguous"
   | "unsupported-module-resolution";
 
+function equalCanonicalOrdinalArrays(
+  left: ReadonlyArray<number>,
+  right: ReadonlyArray<number>
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((ordinal, index) => ordinal === right[index])
+  );
+}
+
 export type MiraiIntlCandidateProjectionShadow = Readonly<{
   boundary: number;
   canonicalRoot: string;
@@ -1940,7 +1950,7 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
     }
     requestOffset += result.boundaries.length;
   }
-  if (canonicalJson(optimizedFacadeSet) !== canonicalJson(referenceFacadeSet)) {
+  if (!equalCanonicalOrdinalArrays(optimizedFacadeSet, referenceFacadeSet)) {
     throw new Error("Classifier V3 optimized/reference facade target mismatch");
   }
   const ownerFallbackVector = () => {
@@ -1972,8 +1982,10 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
       (ordinal) => sourceOffset + ordinal
     );
     if (
-      canonicalJson(optimizedSourceFacadeSet) !==
-      canonicalJson(referenceSourceFacadeSet)
+      !equalCanonicalOrdinalArrays(
+        optimizedSourceFacadeSet,
+        referenceSourceFacadeSet
+      )
     ) {
       throw new Error(
         `Classifier V3 optimized/reference facade target mismatch for ${result.source}`

@@ -17,6 +17,7 @@ import {
   buildMiraiIntlClassifierAuthorityEnvelopeV3,
   buildMiraiIntlPersistedClassifierAuthorityV3,
   canonicalMiraiIntlClassifierAuthorityEnvelopeV3Bytes,
+  deepFreezeMiraiIntlClassifierValue,
   hashMiraiIntlClassifierAuthorityEnvelopeV3,
   parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3,
 } from "../src/classifier-authority";
@@ -111,6 +112,16 @@ async function fixture() {
 }
 
 describe("classifier production authority V3", () => {
+  it("recursively freezes nested values beneath an externally frozen root", () => {
+    const nested = { value: ["arbitrary-string"] };
+    const root = Object.freeze({ nested });
+
+    expect(deepFreezeMiraiIntlClassifierValue(root)).toBe(root);
+    expect(Object.isFrozen(nested)).toBe(true);
+    expect(Object.isFrozen(nested.value)).toBe(true);
+    expect(() => nested.value.push("mutation")).toThrow(/extensible/u);
+  });
+
   it("preserves prepared-source capabilities outside the sealed authority input", async () => {
     const value = await fixture();
     const observations: Array<string> = [];
@@ -144,6 +155,9 @@ describe("classifier production authority V3", () => {
     const authority = await transaction.authorize(value.input);
 
     expect(validateMiraiIntlClassifierAuthorityV3(authority)).toBe(authority);
+    expect(() =>
+      validateMiraiIntlClassifierAuthorityV3(authority, sha256("other-input"))
+    ).toThrow("Invalid Mirai Intl classifier production authority");
     expect(authority.indexHash).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(authority.checkpointAHash).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(authority.optimizedRequiresProgramVectorHash).toBe(
@@ -615,6 +629,18 @@ describe("classifier production authority V3", () => {
     expect(hashMiraiIntlClassifierAuthorityEnvelopeV3(envelope)).toBe(
       sha256(bytes)
     );
+    const mutableEnvelope = {
+      authorities: [authority],
+      receiptHash: sha256("mutable-receipt"),
+      schemaVersion: 3 as const,
+      sourceAuthorizationHash: sha256("source-authorization"),
+    };
+    const mutableBytes =
+      canonicalMiraiIntlClassifierAuthorityEnvelopeV3Bytes(mutableEnvelope);
+    mutableEnvelope.receiptHash = sha256("mutated-receipt");
+    expect(
+      canonicalMiraiIntlClassifierAuthorityEnvelopeV3Bytes(mutableEnvelope)
+    ).not.toBe(mutableBytes);
     expect(bytes.endsWith("\n")).toBe(true);
     expect(bytes.slice(0, -1)).not.toContain("\n");
     expect(() =>

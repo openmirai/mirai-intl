@@ -75,18 +75,28 @@ export type MiraiIntlPersistedClassifierAuthorityBindingV3 = Omit<
 
 type AuthorityBinding = Omit<MiraiIntlClassifierAuthorityV3, "resultHash">;
 
+const recursivelyFrozenClassifierValues = new WeakSet<object>();
+const validatedClassifierAuthorities = new WeakSet<object>();
+const validatedPersistedClassifierAuthorities = new WeakSet<object>();
+const validatedClassifierAuthorityEnvelopes = new WeakSet<object>();
+const canonicalClassifierAuthorityEnvelopeBytes = new WeakMap<object, string>();
+const classifierAuthorityEnvelopeHashes = new WeakMap<object, Sha256>();
+
 function deepFreezeValue<T>(value: T, seen: WeakSet<object>): T {
   if (
     value &&
     typeof value === "object" &&
-    !Object.isFrozen(value) &&
+    !recursivelyFrozenClassifierValues.has(value) &&
     !seen.has(value)
   ) {
     seen.add(value);
     for (const entry of Object.values(value)) {
       deepFreezeValue(entry, seen);
     }
-    Object.freeze(value);
+    if (!Object.isFrozen(value)) {
+      Object.freeze(value);
+    }
+    recursivelyFrozenClassifierValues.add(value);
   }
   return value;
 }
@@ -151,6 +161,15 @@ export function validateMiraiIntlClassifierAuthorityV3(
   authority: MiraiIntlClassifierAuthorityV3,
   expectedInputHash?: Sha256
 ): MiraiIntlClassifierAuthorityV3 {
+  if (validatedClassifierAuthorities.has(authority)) {
+    if (
+      expectedInputHash !== undefined &&
+      authority.inputHash !== expectedInputHash
+    ) {
+      throw new Error("Invalid Mirai Intl classifier production authority");
+    }
+    return authority;
+  }
   const indexMode = (authority.indexBinding as Readonly<{ mode?: unknown }>)
     .mode;
   const checkpointAInput = authority.checkpointAInput.toSorted(
@@ -260,7 +279,9 @@ export function validateMiraiIntlClassifierAuthorityV3(
   ) {
     throw new Error("Invalid Mirai Intl classifier production authority");
   }
-  return deepFreezeMiraiIntlClassifierValue(authority);
+  const validated = deepFreezeMiraiIntlClassifierValue(authority);
+  validatedClassifierAuthorities.add(validated);
+  return validated;
 }
 
 function portablePath(value: string, label: string): string {
@@ -298,6 +319,9 @@ function persistedAuthorityResultHash(
 export function validateMiraiIntlPersistedClassifierAuthorityV3(
   authority: MiraiIntlPersistedClassifierAuthorityV3
 ): MiraiIntlPersistedClassifierAuthorityV3 {
+  if (validatedPersistedClassifierAuthorities.has(authority)) {
+    return authority;
+  }
   portablePath(authority.owner, "classifier authority owner");
   const sources = authority.sources.toSorted(([left], [right]) =>
     compareCanonicalStrings(left, right)
@@ -343,7 +367,9 @@ export function validateMiraiIntlPersistedClassifierAuthorityV3(
   ) {
     throw new Error("Invalid Mirai Intl persisted classifier authority");
   }
-  return deepFreezeMiraiIntlClassifierValue(authority);
+  const validated = deepFreezeMiraiIntlClassifierValue(authority);
+  validatedPersistedClassifierAuthorities.add(validated);
+  return validated;
 }
 
 export function buildMiraiIntlPersistedClassifierAuthorityV3(
@@ -599,18 +625,29 @@ export function buildMiraiIntlClassifierAuthorityEnvelopeV3(
     authorities.map(({ owner }) => owner),
     "persisted owner coverage"
   );
-  return deepFreezeMiraiIntlClassifierValue({
+  const envelope = deepFreezeMiraiIntlClassifierValue({
     authorities,
     receiptHash: input.receiptHash,
-    schemaVersion: 3,
+    schemaVersion: 3 as const,
     sourceAuthorizationHash: input.sourceAuthorizationHash,
   });
+  validatedClassifierAuthorityEnvelopes.add(envelope);
+  return envelope;
 }
 
 export function canonicalMiraiIntlClassifierAuthorityEnvelopeV3Bytes(
   value: MiraiIntlClassifierAuthorityEnvelopeV3
 ): string {
-  return `${canonicalJson(buildMiraiIntlClassifierAuthorityEnvelopeV3(value))}\n`;
+  const envelope = validatedClassifierAuthorityEnvelopes.has(value)
+    ? value
+    : buildMiraiIntlClassifierAuthorityEnvelopeV3(value);
+  const prior = canonicalClassifierAuthorityEnvelopeBytes.get(envelope);
+  if (prior !== undefined) {
+    return prior;
+  }
+  const bytes = `${canonicalJson(envelope)}\n`;
+  canonicalClassifierAuthorityEnvelopeBytes.set(envelope, bytes);
+  return bytes;
 }
 
 export function parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3(
@@ -651,5 +688,16 @@ export function parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3(
 export function hashMiraiIntlClassifierAuthorityEnvelopeV3(
   value: MiraiIntlClassifierAuthorityEnvelopeV3
 ): Sha256 {
+  if (validatedClassifierAuthorityEnvelopes.has(value)) {
+    const prior = classifierAuthorityEnvelopeHashes.get(value);
+    if (prior !== undefined) {
+      return prior;
+    }
+    const envelopeHash = sha256(
+      canonicalMiraiIntlClassifierAuthorityEnvelopeV3Bytes(value)
+    );
+    classifierAuthorityEnvelopeHashes.set(value, envelopeHash);
+    return envelopeHash;
+  }
   return sha256(canonicalMiraiIntlClassifierAuthorityEnvelopeV3Bytes(value));
 }

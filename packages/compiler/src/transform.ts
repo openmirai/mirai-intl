@@ -5861,22 +5861,42 @@ function analyzeSource(
     }
   >();
 
-  const symbolAt = (identifier: ts.Identifier): ts.Symbol | undefined =>
-    checker.getSymbolAtLocation(identifier);
+  // Binding propagation and escape validation intentionally revisit the same
+  // nodes. Preserve the exact checker result instead of repeating expensive
+  // symbol/type queries within one source analysis.
+  const symbols = new Map<ts.Identifier, ts.Symbol | null>();
+  const symbolAt = (identifier: ts.Identifier): ts.Symbol | undefined => {
+    const cached = symbols.get(identifier);
+    if (cached !== undefined) {
+      return cached ?? undefined;
+    }
+    const symbol = checker.getSymbolAtLocation(identifier);
+    symbols.set(identifier, symbol ?? null);
+    return symbol;
+  };
+  const types = new Map<ts.Node, ts.Type>();
+  const typeAt = (node: ts.Node): ts.Type => {
+    const cached = types.get(node);
+    if (cached) {
+      return cached;
+    }
+    const type = checker.getTypeAtLocation(node);
+    types.set(node, type);
+    return type;
+  };
+
+  const identifiers: Array<ts.Identifier> = [];
+  const declarations: Array<ts.VariableDeclaration> = [];
+  const formSchemaHelperReceivers: Array<ts.Identifier> = [];
 
   const collectFormSchemaHelperReferences = (symbol: ts.Symbol): boolean => {
     let found = false;
-    const visit = (node: ts.Node): void => {
-      if (ts.isPropertyAccessExpression(node) && node.name.text === "helper") {
-        const expression = unwrapExpression(node.expression);
-        if (ts.isIdentifier(expression) && symbolAt(expression) === symbol) {
-          allowedFormSchemaFactoryReferences.add(nodeKey(expression));
-          found = true;
-        }
+    for (const expression of formSchemaHelperReceivers) {
+      if (symbolAt(expression) === symbol) {
+        allowedFormSchemaFactoryReferences.add(nodeKey(expression));
+        found = true;
       }
-      ts.forEachChild(node, visit);
-    };
-    visit(sourceFile);
+    }
     return found;
   };
 
@@ -5995,32 +6015,6 @@ function analyzeSource(
     visit(builder.body);
   };
 
-  const visitIdentifiers = (node: ts.Node): void => {
-    if (ts.isIdentifier(node)) {
-      declaredNames.add(node.text);
-    }
-    ts.forEachChild(node, visitIdentifiers);
-  };
-  visitIdentifiers(sourceFile);
-
-  const collectFiniteSelectors = (node: ts.Node): void => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      isConstAssertion(node.initializer) &&
-      ts.isVariableDeclarationList(node.parent) &&
-      (node.parent.flags & ts.NodeFlags.Const) !== 0
-    ) {
-      const symbol = symbolAt(node.name);
-      if (symbol) {
-        finiteSelectorDeclarations.set(symbol, node.initializer);
-      }
-    }
-    ts.forEachChild(node, collectFiniteSelectors);
-  };
-  collectFiniteSelectors(sourceFile);
-
   for (const statement of sourceFile.statements) {
     if (
       !ts.isImportDeclaration(statement) ||
@@ -6050,7 +6044,35 @@ function analyzeSource(
     }
   }
 
-  const collectI18nextInstances = (node: ts.Node): void => {
+  // A single syntax census feeds all later semantic passes. Previously these
+  // collections each walked the complete AST independently.
+  const collectSourceSyntax = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) {
+      identifiers.push(node);
+      declaredNames.add(node.text);
+    }
+    if (ts.isPropertyAccessExpression(node) && node.name.text === "helper") {
+      const expression = unwrapExpression(node.expression);
+      if (ts.isIdentifier(expression)) {
+        formSchemaHelperReceivers.push(expression);
+      }
+    }
+    if (ts.isVariableDeclaration(node)) {
+      declarations.push(node);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isConstAssertion(node.initializer) &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0
+    ) {
+      const symbol = symbolAt(node.name);
+      if (symbol) {
+        finiteSelectorDeclarations.set(symbol, node.initializer);
+      }
+    }
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
@@ -6079,9 +6101,9 @@ function analyzeSource(
     ) {
       i18nextInstanceNames.add(node.name.text);
     }
-    ts.forEachChild(node, collectI18nextInstances);
+    ts.forEachChild(node, collectSourceSyntax);
   };
-  collectI18nextInstances(sourceFile);
+  collectSourceSyntax(sourceFile);
 
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) || !statement.importClause) {
@@ -6355,15 +6377,6 @@ function analyzeSource(
     );
   };
 
-  const declarations: Array<ts.VariableDeclaration> = [];
-  const collectDeclarations = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node)) {
-      declarations.push(node);
-    }
-    ts.forEachChild(node, collectDeclarations);
-  };
-  collectDeclarations(sourceFile);
-
   for (const declaration of declarations) {
     if (!declaration.initializer) {
       continue;
@@ -6589,7 +6602,7 @@ function analyzeSource(
     ) {
       return true;
     }
-    const type = checker.getTypeAtLocation(expression);
+    const type = typeAt(expression);
     const symbol = type.aliasSymbol ?? type.getSymbol();
     if (symbol?.getName() === "i18n") {
       return true;
@@ -6763,7 +6776,7 @@ function analyzeSource(
       }
       return undefined;
     };
-    const fromType = collect(checker.getTypeAtLocation(expression));
+    const fromType = collect(typeAt(expression));
     if (fromType) {
       return fromType;
     }
@@ -7263,104 +7276,101 @@ function analyzeSource(
   };
   visitCalls(sourceFile);
 
-  const validateTranslatorReferences = (node: ts.Node): void => {
-    if (ts.isIdentifier(node)) {
-      const symbol = referenceSymbol(node);
-      const dependencyArray = ts.isArrayLiteralExpression(node.parent)
-        ? node.parent
+  const validateTranslatorReference = (node: ts.Identifier): void => {
+    const symbol = referenceSymbol(node);
+    const dependencyArray = ts.isArrayLiteralExpression(node.parent)
+      ? node.parent
+      : undefined;
+    const dependencyCall =
+      dependencyArray && ts.isCallExpression(dependencyArray.parent)
+        ? dependencyArray.parent
         : undefined;
-      const dependencyCall =
-        dependencyArray && ts.isCallExpression(dependencyArray.parent)
-          ? dependencyArray.parent
-          : undefined;
-      const dependencyCallee = dependencyCall
-        ? unwrapExpression(dependencyCall.expression)
-        : undefined;
-      let dependencyHook: string | undefined;
-      if (dependencyCallee && ts.isIdentifier(dependencyCallee)) {
-        dependencyHook = dependencyCallee.text;
-      } else if (
-        dependencyCallee &&
-        ts.isPropertyAccessExpression(dependencyCallee)
-      ) {
-        dependencyHook = dependencyCallee.name.text;
-      }
-      const isDependency = Boolean(
-        dependencyArray &&
-        dependencyCall?.arguments.at(-1) === dependencyArray &&
-        dependencyHook &&
-        reactDependencyHooks.has(dependencyHook)
-      );
-      if (
-        symbol &&
-        translatorSymbols.has(symbol) &&
-        !isDeclarationIdentifier(node) &&
-        !isDependency &&
-        !allowedTranslatorReferences.has(nodeKey(node))
-      ) {
-        diagnostic(
-          node,
-          `Translator binding ${node.text} escapes the supported call syntax`
-        );
-      }
-      if (
-        symbol &&
-        translationKeySymbols.has(symbol) &&
-        !isDeclarationIdentifier(node) &&
-        !(ts.isTypeQueryNode(node.parent) && node.parent.exprName === node) &&
-        !allowedTranslationKeyReferences.has(nodeKey(node))
-      ) {
-        diagnostic(
-          node,
-          `Translation-key binding ${node.text} escapes the supported call syntax`
-        );
-      }
-      if (
-        symbol &&
-        translationKeyFactorySymbols.has(symbol) &&
-        !isDeclarationIdentifier(node) &&
-        !allowedTranslationKeyFactoryReferences.has(nodeKey(node))
-      ) {
-        diagnostic(
-          node,
-          `createTranslationKey escapes the supported generated-factory syntax`
-        );
-      }
-      if (
-        symbol &&
-        translationKeyParserSymbols.has(symbol) &&
-        !isDeclarationIdentifier(node) &&
-        !allowedTranslationKeyParserReferences.has(nodeKey(node))
-      ) {
-        diagnostic(
-          node,
-          `parseTranslationKey escapes the supported generated-parser syntax`
-        );
-      }
-      if (
-        symbol &&
-        formErrorTranslatorFactorySymbols.has(symbol) &&
-        !isDeclarationIdentifier(node) &&
-        !allowedFormErrorTranslatorFactoryReferences.has(nodeKey(node))
-      ) {
-        diagnostic(
-          node,
-          "createFormErrorTranslator escapes the supported generated-factory syntax"
-        );
-      }
-      if (
-        symbol &&
-        formSchemaFactorySymbols.has(symbol) &&
-        !isDeclarationIdentifier(node) &&
-        !allowedFormSchemaFactoryReferences.has(nodeKey(node))
-      ) {
-        diagnostic(
-          node,
-          "createFormSchema escapes the supported generated-factory syntax"
-        );
-      }
+    const dependencyCallee = dependencyCall
+      ? unwrapExpression(dependencyCall.expression)
+      : undefined;
+    let dependencyHook: string | undefined;
+    if (dependencyCallee && ts.isIdentifier(dependencyCallee)) {
+      dependencyHook = dependencyCallee.text;
+    } else if (
+      dependencyCallee &&
+      ts.isPropertyAccessExpression(dependencyCallee)
+    ) {
+      dependencyHook = dependencyCallee.name.text;
     }
-    ts.forEachChild(node, validateTranslatorReferences);
+    const isDependency = Boolean(
+      dependencyArray &&
+      dependencyCall?.arguments.at(-1) === dependencyArray &&
+      dependencyHook &&
+      reactDependencyHooks.has(dependencyHook)
+    );
+    if (
+      symbol &&
+      translatorSymbols.has(symbol) &&
+      !isDeclarationIdentifier(node) &&
+      !isDependency &&
+      !allowedTranslatorReferences.has(nodeKey(node))
+    ) {
+      diagnostic(
+        node,
+        `Translator binding ${node.text} escapes the supported call syntax`
+      );
+    }
+    if (
+      symbol &&
+      translationKeySymbols.has(symbol) &&
+      !isDeclarationIdentifier(node) &&
+      !(ts.isTypeQueryNode(node.parent) && node.parent.exprName === node) &&
+      !allowedTranslationKeyReferences.has(nodeKey(node))
+    ) {
+      diagnostic(
+        node,
+        `Translation-key binding ${node.text} escapes the supported call syntax`
+      );
+    }
+    if (
+      symbol &&
+      translationKeyFactorySymbols.has(symbol) &&
+      !isDeclarationIdentifier(node) &&
+      !allowedTranslationKeyFactoryReferences.has(nodeKey(node))
+    ) {
+      diagnostic(
+        node,
+        `createTranslationKey escapes the supported generated-factory syntax`
+      );
+    }
+    if (
+      symbol &&
+      translationKeyParserSymbols.has(symbol) &&
+      !isDeclarationIdentifier(node) &&
+      !allowedTranslationKeyParserReferences.has(nodeKey(node))
+    ) {
+      diagnostic(
+        node,
+        `parseTranslationKey escapes the supported generated-parser syntax`
+      );
+    }
+    if (
+      symbol &&
+      formErrorTranslatorFactorySymbols.has(symbol) &&
+      !isDeclarationIdentifier(node) &&
+      !allowedFormErrorTranslatorFactoryReferences.has(nodeKey(node))
+    ) {
+      diagnostic(
+        node,
+        "createFormErrorTranslator escapes the supported generated-factory syntax"
+      );
+    }
+    if (
+      symbol &&
+      formSchemaFactorySymbols.has(symbol) &&
+      !isDeclarationIdentifier(node) &&
+      !allowedFormSchemaFactoryReferences.has(nodeKey(node))
+    ) {
+      diagnostic(
+        node,
+        "createFormSchema escapes the supported generated-factory syntax"
+      );
+    }
   };
   if (
     translatorSymbols.size > 0 ||
@@ -7370,7 +7380,9 @@ function analyzeSource(
     formErrorTranslatorFactorySymbols.size > 0 ||
     formSchemaFactorySymbols.size > 0
   ) {
-    validateTranslatorReferences(sourceFile);
+    for (const identifier of identifiers) {
+      validateTranslatorReference(identifier);
+    }
   }
 
   recordSemanticPreparationProfile(

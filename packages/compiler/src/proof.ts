@@ -1249,22 +1249,87 @@ function transactionLedgerDifference(
   before: TransactionPathLedger,
   after: TransactionPathLedger
 ): string | undefined {
+  type LedgerEntry =
+    | TransactionPathLedger["directories"][number]
+    | TransactionPathLedger["files"][number];
   const entries = (
     ledger: TransactionPathLedger
-  ): ReadonlyMap<string, string> =>
+  ): ReadonlyMap<string, LedgerEntry> =>
     new Map([
       ...ledger.directories.map(
-        (entry) => [`directory:${entry.path}`, canonicalJson(entry)] as const
+        (entry) => [`directory:${entry.path}`, entry] as const
       ),
-      ...ledger.files.map(
-        (entry) => [`file:${entry.path}`, canonicalJson(entry)] as const
-      ),
+      ...ledger.files.map((entry) => [`file:${entry.path}`, entry] as const),
     ]);
+  const sameEntry = (
+    left: LedgerEntry | undefined,
+    right: LedgerEntry | undefined
+  ) => {
+    if (
+      left === undefined ||
+      right === undefined ||
+      left.path !== right.path ||
+      left.present !== right.present ||
+      left.target !== right.target ||
+      "entries" in left !== "entries" in right
+    ) {
+      return false;
+    }
+    if (!("entries" in left) || !("entries" in right)) {
+      return true;
+    }
+    return (
+      left.entries.length === right.entries.length &&
+      left.entries.every((entry, index) => {
+        const candidate = right.entries[index];
+        return (
+          candidate !== undefined &&
+          entry.kind === candidate.kind &&
+          entry.name === candidate.name &&
+          entry.symbolicLink === candidate.symbolicLink
+        );
+      })
+    );
+  };
   const beforeEntries = entries(before);
   const afterEntries = entries(after);
   return [...new Set([...beforeEntries.keys(), ...afterEntries.keys()])]
     .toSorted(compareCanonicalStrings)
-    .find((key) => beforeEntries.get(key) !== afterEntries.get(key));
+    .find((key) => !sameEntry(beforeEntries.get(key), afterEntries.get(key)));
+}
+
+function sameHashPathEntries(
+  left: ReadonlyArray<Readonly<{ hash: string; path: string }>>,
+  right: ReadonlyArray<Readonly<{ hash: string; path: string }>>
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const candidate = right[index];
+      return (
+        candidate !== undefined &&
+        entry.hash === candidate.hash &&
+        entry.path === candidate.path
+      );
+    })
+  );
+}
+
+function sameSourceSnapshotHashes(
+  left: ReadonlyArray<readonly [string, string]>,
+  right: ReadonlyArray<readonly [string, string]>
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const candidate = right[index];
+      return (
+        candidate !== undefined &&
+        entry[0] === candidate[0] &&
+        entry[1] === candidate[1]
+      );
+    })
+  );
 }
 
 /**
@@ -1563,6 +1628,14 @@ async function createConventionCheckReceipt(
       }
     );
   }
+  // No more classifier observations are recorded after successful source
+  // analysis. Finalize its immutable authority while the independent receipt
+  // projection and provider frontier are assembled below.
+  const classifierFinalized = classifierTransaction.finalize();
+  void classifierFinalized.catch(() => {
+    // The awaited promise below remains authoritative; this only prevents an
+    // early rejection from becoming unhandled while provider work completes.
+  });
   const universeIdentity = (value: typeof universe): unknown => ({
     files: value.files.map(({ file, owner }) => ({ file, owner })),
     projects: value.projects,
@@ -1586,11 +1659,14 @@ async function createConventionCheckReceipt(
   const providerInputFiles = providerInputs.map((entry) =>
     resolve(universe.workspaceRoot, entry.path)
   );
-  const providerLedgerBefore = await captureTransactionPathLedger(
+  const providerLedgerBefore = captureTransactionPathLedger(
     universe.workspaceRoot,
     providerInputFiles,
     providerInputFiles.map(dirname)
   );
+  void providerLedgerBefore.catch(() => {
+    // Preserve the rejection for the publication barrier await below.
+  });
   const snapshotIdentity = canonicalHash({
     application: applicationBefore,
     generationReceiptHash: generationReceiptBefore,
@@ -1797,12 +1873,12 @@ async function createConventionCheckReceipt(
   let finalVerification:
     | Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>
     | undefined;
-  const classifierFinalized = await classifierTransaction.finalize();
+  const finalizedClassifier = await classifierFinalized;
   const v3Binding = receiptV2
     ? buildIntlCheckReceiptV3FromClassifierProjections(
         receiptV2,
-        classifierFinalized.authorities.map((authority, index) => {
-          const projection = classifierFinalized.receiptProjections[index];
+        finalizedClassifier.authorities.map((authority, index) => {
+          const projection = finalizedClassifier.receiptProjections[index];
           if (!projection) {
             throw new Error(
               "Mirai Intl classifier finalized projection coverage is incomplete"
@@ -1813,8 +1889,8 @@ async function createConventionCheckReceipt(
       )
     : buildIntlCheckReceiptV3FromNativeInputs(
         snapshotInput,
-        classifierFinalized.authorities.map((authority, index) => {
-          const projection = classifierFinalized.receiptProjections[index];
+        finalizedClassifier.authorities.map((authority, index) => {
+          const projection = finalizedClassifier.receiptProjections[index];
           if (!projection) {
             throw new Error(
               "Mirai Intl classifier finalized projection coverage is incomplete"
@@ -1833,6 +1909,7 @@ async function createConventionCheckReceipt(
   // frontier transaction. Reading those families again would add I/O without
   // strengthening the commit barrier.
   const verifyPublicationFingerprint = async (): Promise<void> => {
+    const initialProviderLedger = await providerLedgerBefore;
     const useCommittedSnapshotVerification =
       finalVerificationOptions.validateEnvironment === true ||
       finalVerificationOptions.collectEnvironment === false;
@@ -1970,15 +2047,12 @@ async function createConventionCheckReceipt(
         : computeImmutableIntegrityIdentity(),
       providerFrontiers.recheck(),
     ]);
-    if (canonicalJson(sourceSnapshotHashes) !== canonicalJson(afterSources)) {
+    if (!sameSourceSnapshotHashes(sourceSnapshotHashes, afterSources)) {
       throw new Error(
         "Mirai Intl source inputs changed while source analysis ran"
       );
     }
-    if (
-      canonicalJson(projectManifestAfter) !==
-      canonicalJson(projectManifestBefore)
-    ) {
+    if (!sameHashPathEntries(projectManifestAfter, projectManifestBefore)) {
       throw new Error(
         "Mirai Intl TypeScript project configuration changed while source analysis ran"
       );
@@ -2002,7 +2076,7 @@ async function createConventionCheckReceipt(
       publicationLedger
     );
     const publicationProviderLedgerMutation = transactionLedgerDifference(
-      providerLedgerBefore,
+      initialProviderLedger,
       publicationProviderLedger
     );
     const publicationLedgerDifference =
@@ -2039,7 +2113,7 @@ async function createConventionCheckReceipt(
     universe.workspaceRoot,
     receiptV2 ?? null,
     v3Binding,
-    classifierFinalized,
+    finalizedClassifier,
     {
       activateV3: !finalVerificationOptions.dormantV3,
       ...(finalVerificationOptions.dormantV3PublicationBoundary

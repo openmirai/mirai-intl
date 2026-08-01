@@ -42,6 +42,7 @@ import type {
 } from "@openmirai/intl-abi";
 import {
   allocateWorkspaceCatalogResources,
+  defaultWorkspaceCatalogIoThreads,
   defaultWorkspaceAuthorizationWorkers,
   workspaceCatalogWeightsRequired,
 } from "./workspace-resources";
@@ -494,6 +495,7 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
       memoryBytes
     ).map(({ index, lanes }) => [index, lanes])
   );
+  const ioThreads = defaultWorkspaceCatalogIoThreads(workerCount, availableCpu);
   if (ordered.length === 1) {
     const [entry] = ordered;
     if (entry) {
@@ -515,7 +517,8 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
           authorized[entry.index] = await authorizeWorkspaceCatalogChild(
             entry.root,
             workspaceRoot,
-            resourcePlan.get(entry.index) ?? 1
+            resourcePlan.get(entry.index) ?? 1,
+            ioThreads
           );
         }
       })
@@ -629,7 +632,8 @@ async function workspaceCatalogSourceWeight(root: string): Promise<number> {
 async function authorizeWorkspaceCatalogChild(
   root: string,
   workspaceRoot: string,
-  resourceLanes = 1
+  resourceLanes = 1,
+  ioThreads = 1
 ): Promise<{
   authorization?: IntlSemanticAuthorizationObservationV2 &
     Readonly<{ checkerProjects: number; ownerProjects: number }>;
@@ -657,11 +661,9 @@ async function authorizeWorkspaceCatalogChild(
         ...process.env,
         MIRAI_INTL_CATALOG_CPU_LANES: String(resourceLanes),
         MIRAI_INTL_WORKSPACE_CHILD: "1",
-        // Workspace authorization already owns process-level parallelism.
-        // One libuv worker per child prevents five catalogs from multiplying
-        // filesystem thread-pool contention while preserving the exact same
-        // fail-closed reads, hashes, and publication barriers.
-        UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? "1",
+        // Semantic work remains process-scoped. The bounded I/O pool overlaps
+        // hashing and mutation-barrier reads without multiplying Programs.
+        UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? String(ioThreads),
       },
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],

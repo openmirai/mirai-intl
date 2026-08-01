@@ -42,6 +42,22 @@ export function defaultWorkspaceAuthorizationWorkers(
   return Math.max(1, Math.min(catalogCount, 5, cpuCapacity, memoryCapacity));
 }
 
+/**
+ * Filesystem hashing and mutation barriers are I/O-bound even while semantic
+ * analysis consumes the catalog process's JavaScript thread. Give each active
+ * catalog at most two libuv workers, but only when the machine has more CPUs
+ * than catalog processes. This avoids the former fixed single-threaded I/O
+ * tail without allowing large hosts to multiply unbounded thread pools.
+ */
+export function defaultWorkspaceCatalogIoThreads(
+  workerCount: number,
+  availableCpu: number
+): number {
+  const workers = Math.max(1, Math.floor(workerCount));
+  const cpuCapacity = Math.max(1, Math.floor(availableCpu));
+  return Math.max(1, Math.min(2, Math.ceil(cpuCapacity / workers)));
+}
+
 export function workspaceCatalogWeightsRequired(
   catalogCount: number,
   workerCount: number,

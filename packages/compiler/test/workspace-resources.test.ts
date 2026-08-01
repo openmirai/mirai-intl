@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allocateWorkspaceCatalogResources,
+  defaultWorkspaceCatalogIoThreads,
   defaultWorkspaceAuthorizationWorkers,
   workspaceCatalogWeightsRequired,
 } from "../src/workspace-resources";
@@ -33,6 +34,13 @@ describe("workspace catalog resource allocation", () => {
     expect(defaultWorkspaceAuthorizationWorkers(5, 8, 16 * GIB)).toBe(5);
     expect(defaultWorkspaceAuthorizationWorkers(5, 2, 4 * GIB)).toBe(2);
     expect(defaultWorkspaceAuthorizationWorkers(1, 8, 16 * GIB)).toBe(1);
+  });
+
+  it("bounds filesystem concurrency by the active catalog pool", () => {
+    expect(defaultWorkspaceCatalogIoThreads(5, 8)).toBe(2);
+    expect(defaultWorkspaceCatalogIoThreads(5, 5)).toBe(1);
+    expect(defaultWorkspaceCatalogIoThreads(2, 2)).toBe(1);
+    expect(defaultWorkspaceCatalogIoThreads(2, 8)).toBe(2);
   });
 
   it("does not reserve extra lanes for queued catalogs", () => {

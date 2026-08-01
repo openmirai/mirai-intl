@@ -5747,40 +5747,102 @@ function projectionPortablePath(
   return result;
 }
 
-function projectionCanonicalValues<T>(values: Iterable<T>): ReadonlyArray<T> {
+type ProjectionCanonicalValueIndex = Readonly<{
+  byObject: WeakMap<object, string>;
+  identities: ReadonlyArray<string>;
+}>;
+
+const projectionCanonicalValueIndexes = new WeakMap<
+  ReadonlyArray<unknown>,
+  ProjectionCanonicalValueIndex
+>();
+
+function projectionCanonicalValues<T>(
+  values: Iterable<T>,
+  compareValues?: (left: T, right: T) => number
+): ReadonlyArray<T> {
   const entries = new Map<string, T>();
   for (const value of values) {
     entries.set(canonicalJson(value), value);
   }
-  return [...entries]
-    .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
-    .map(([, value]) => value);
+  const sortedEntries = [...entries].toSorted(
+    compareValues === undefined
+      ? ([left], [right]) => compareCanonicalStrings(left, right)
+      : ([leftIdentity, left], [rightIdentity, right]) =>
+          compareValues(left, right) ||
+          compareCanonicalStrings(leftIdentity, rightIdentity)
+  );
+  const canonicalValues = sortedEntries.map(([, value]) => value);
+  const byObject = new WeakMap<object, string>();
+  sortedEntries.forEach(([identity, value]) => {
+    if (value !== null && typeof value === "object") {
+      byObject.set(value, identity);
+    }
+  });
+  projectionCanonicalValueIndexes.set(canonicalValues, {
+    byObject,
+    identities: sortedEntries.map(([identity]) => identity),
+  });
+  return canonicalValues;
 }
 
-const projectionReferenceIndexes = new WeakMap<
-  ReadonlyArray<unknown>,
-  Readonly<{
-    byIdentity: Map<string, Ref>;
-    byObject: WeakMap<object, Ref>;
-  }>
->();
+type ProjectionReferenceIndex = Readonly<{
+  byIdentity: Map<string, Ref>;
+  byObject: WeakMap<object, Ref>;
+}>;
 
-function projectionReference<T>(
+type ProjectionReferenceContext = Readonly<{
+  identitiesByObject: WeakMap<object, string>;
+  indexes: WeakMap<ReadonlyArray<unknown>, ProjectionReferenceIndex>;
+}>;
+
+function createProjectionReferenceContext(): ProjectionReferenceContext {
+  return {
+    identitiesByObject: new WeakMap(),
+    indexes: new WeakMap(),
+  };
+}
+
+function projectionCanonicalValueIdentity<T>(
+  values: ReadonlyArray<T>,
+  value: T
+): string {
+  if (value !== null && typeof value === "object") {
+    const identity = projectionCanonicalValueIndexes
+      .get(values)
+      ?.byObject.get(value);
+    if (identity !== undefined) {
+      return identity;
+    }
+  }
+  return canonicalJson(value);
+}
+
+function projectionReferenceInContext<T>(
+  referenceContext: ProjectionReferenceContext,
   table: ReadonlyArray<T>,
   value: T,
   context: string
 ): Ref {
-  let references = projectionReferenceIndexes.get(table);
+  let references = referenceContext.indexes.get(table);
   if (!references) {
     const byIdentity = new Map<string, Ref>();
     const byObject = new WeakMap<object, Ref>();
+    const canonicalIndex = projectionCanonicalValueIndexes.get(table);
     table.forEach((candidate, reference) => {
       if (candidate !== null && typeof candidate === "object") {
         byObject.set(candidate, reference);
       }
+      const identity = canonicalIndex?.identities[reference];
+      if (identity !== undefined) {
+        byIdentity.set(identity, reference);
+        if (candidate !== null && typeof candidate === "object") {
+          referenceContext.identitiesByObject.set(candidate, identity);
+        }
+      }
     });
     references = { byIdentity, byObject };
-    projectionReferenceIndexes.set(table, references);
+    referenceContext.indexes.set(table, references);
   }
   const directReference =
     value !== null && typeof value === "object"
@@ -5791,23 +5853,42 @@ function projectionReference<T>(
   }
   if (references.byIdentity.size === 0) {
     table.forEach((candidate, reference) => {
-      references.byIdentity.set(canonicalJson(candidate), reference);
+      const identity = canonicalJson(candidate);
+      references.byIdentity.set(identity, reference);
+      if (candidate !== null && typeof candidate === "object") {
+        referenceContext.identitiesByObject.set(candidate, identity);
+      }
     });
   }
-  const reference = references.byIdentity.get(canonicalJson(value));
+  const cachedIdentity =
+    value !== null && typeof value === "object"
+      ? referenceContext.identitiesByObject.get(value)
+      : undefined;
+  const identity = cachedIdentity ?? canonicalJson(value);
+  if (
+    cachedIdentity === undefined &&
+    value !== null &&
+    typeof value === "object"
+  ) {
+    referenceContext.identitiesByObject.set(value, identity);
+  }
+  const reference = references.byIdentity.get(identity);
   return reference === undefined
     ? fail(context, "is missing from its normalized V3 table")
     : reference;
 }
 
-function projectionReferences<T>(
+function projectionReferencesInContext<T>(
+  referenceContext: ProjectionReferenceContext,
   table: ReadonlyArray<T>,
   values: ReadonlyArray<T>,
   context: string
 ): ReadonlyArray<Ref> {
   return [
     ...new Set(
-      values.map((value) => projectionReference(table, value, context))
+      values.map((value) =>
+        projectionReferenceInContext(referenceContext, table, value, context)
+      )
     ),
   ].toSorted((left, right) => left - right);
 }
@@ -5832,8 +5913,9 @@ function projectionControl(
           file.path,
           `${context}.files[${index}].path`
         ),
-      }))
-    ).toSorted((left, right) => compareCanonicalStrings(left.path, right.path)),
+      })),
+      (left, right) => compareCanonicalStrings(left.path, right.path)
+    ),
   };
 }
 
@@ -5864,11 +5946,9 @@ function mergeProjectionPackageScopes(
     byRoot.set(identity, {
       ...existing,
       control: {
-        files: projectionCanonicalValues([
-          ...existing.control.files,
-          ...scope.control.files,
-        ]).toSorted((left, right) =>
-          compareCanonicalStrings(left.path, right.path)
+        files: projectionCanonicalValues(
+          [...existing.control.files, ...scope.control.files],
+          (left, right) => compareCanonicalStrings(left.path, right.path)
         ),
       },
     });
@@ -6143,17 +6223,18 @@ function projectionOwner(
   const lstats = projectionCanonicalValues(
     index.lstats.map((entry, entryIndex) =>
       projectionLstat(projection, entry, `${context}.lstats[${entryIndex}]`)
-    )
-  ).toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
+    ),
+    (left, right) => compareCanonicalStrings(left.path, right.path)
+  );
   const probes = projectionCanonicalValues(
     index.probes.map((entry, entryIndex) =>
       projectionProbe(projection, entry, `${context}.probes[${entryIndex}]`)
-    )
-  ).toSorted((left, right) =>
-    compareCanonicalStrings(
-      `${left.path}\0${left.kind}`,
-      `${right.path}\0${right.kind}`
-    )
+    ),
+    (left, right) =>
+      compareCanonicalStrings(
+        `${left.path}\0${left.kind}`,
+        `${right.path}\0${right.kind}`
+      )
   );
   const realpaths = projectionCanonicalValues(
     index.realpaths.map((entry, entryIndex) =>
@@ -6162,8 +6243,9 @@ function projectionOwner(
         entry,
         `${context}.realpaths[${entryIndex}]`
       )
-    )
-  ).toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
+    ),
+    (left, right) => compareCanonicalStrings(left.path, right.path)
+  );
 
   const packageScopes = index.packageScopes.map((scope, scopeIndex) => {
     const scopeContext = `${context}.packageScopes[${scopeIndex}]`;
@@ -6242,14 +6324,13 @@ function projectionOwner(
       rootLstat,
     };
   });
-  const packageProbes = projectionCanonicalValues([
-    ...probes,
-    ...packageScopes.map((scope) => scope.manifestProbe),
-  ]).toSorted((left, right) =>
-    compareCanonicalStrings(
-      `${left.path}\0${left.kind}`,
-      `${right.path}\0${right.kind}`
-    )
+  const packageProbes = projectionCanonicalValues(
+    [...probes, ...packageScopes.map((scope) => scope.manifestProbe)],
+    (left, right) =>
+      compareCanonicalStrings(
+        `${left.path}\0${left.kind}`,
+        `${right.path}\0${right.kind}`
+      )
   );
 
   const sourceByPath = new Map<string, V3ProjectionSource>();
@@ -6362,12 +6443,12 @@ function projectionOwner(
             entry,
             `${requestContext}.frontier.probes[${entryIndex}]`
           )
-        )
-      ).toSorted((left, right) =>
-        compareCanonicalStrings(
-          `${left.path}\0${left.kind}`,
-          `${right.path}\0${right.kind}`
-        )
+        ),
+        (left, right) =>
+          compareCanonicalStrings(
+            `${left.path}\0${left.kind}`,
+            `${right.path}\0${right.kind}`
+          )
       );
       const requestRealpaths = projectionCanonicalValues(
         request.frontier.realpaths.map((entry, entryIndex) =>
@@ -6376,9 +6457,8 @@ function projectionOwner(
             entry,
             `${requestContext}.frontier.realpaths[${entryIndex}]`
           )
-        )
-      ).toSorted((left, right) =>
-        compareCanonicalStrings(left.path, right.path)
+        ),
+        (left, right) => compareCanonicalStrings(left.path, right.path)
       );
       const resolvedFile =
         request.resolvedFileName === null
@@ -6653,6 +6733,19 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
   metrics: IntlCheckReceiptV3HashMetrics,
   options: IntlCheckReceiptV3VerificationOptions
 ): IntlCheckReceiptV3ClassifierAuthorityBinding {
+  const referenceContext = createProjectionReferenceContext();
+  const projectionReference = <T>(
+    table: ReadonlyArray<T>,
+    value: T,
+    context: string
+  ): Ref =>
+    projectionReferenceInContext(referenceContext, table, value, context);
+  const projectionReferences = <T>(
+    table: ReadonlyArray<T>,
+    values: ReadonlyArray<T>,
+    context: string
+  ): ReadonlyArray<Ref> =>
+    projectionReferencesInContext(referenceContext, table, values, context);
   const profileStarted = performance.now();
   let profilePrior = profileStarted;
   const profilePhases: Array<
@@ -6788,12 +6881,12 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
   markProfilePhase("semantic-requests");
 
   const boundaries = projectionCanonicalValues(
-    owners.flatMap((owner) => [...owner.boundaryByReference.values()])
-  ).toSorted((left, right) =>
-    compareCanonicalStrings(
-      `${left.source}\0${left.ordinal.toString().padStart(16, "0")}`,
-      `${right.source}\0${right.ordinal.toString().padStart(16, "0")}`
-    )
+    owners.flatMap((owner) => [...owner.boundaryByReference.values()]),
+    (left, right) =>
+      compareCanonicalStrings(
+        `${left.source}\0${left.ordinal.toString().padStart(16, "0")}`,
+        `${right.source}\0${right.ordinal.toString().padStart(16, "0")}`
+      )
   );
   const unknownBoundaries = projectionCanonicalValues(
     owners.flatMap((owner) =>
@@ -6806,12 +6899,12 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
           )
         )
       )
-    )
-  ).toSorted((left, right) =>
-    compareCanonicalStrings(
-      `${left.source}\0${left.observationOrdinal.toString().padStart(16, "0")}`,
-      `${right.source}\0${right.observationOrdinal.toString().padStart(16, "0")}`
-    )
+    ),
+    (left, right) =>
+      compareCanonicalStrings(
+        `${left.source}\0${left.observationOrdinal.toString().padStart(16, "0")}`,
+        `${right.source}\0${right.observationOrdinal.toString().padStart(16, "0")}`
+      )
   );
   const expandedScopes = mergeProjectionPackageScopes(
     owners.flatMap((owner) => owner.packageScopes)
@@ -6837,31 +6930,37 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
       )
     );
   const lstats = projectionCanonicalValues(
-    owners.flatMap((owner) => owner.lstats)
-  ).toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
-  const probes = projectionCanonicalValues([
-    ...owners.flatMap((owner) => owner.probes),
-    ...owners.flatMap((owner) =>
-      [...owner.requestsBySource.values()].flatMap((requests) =>
-        requests.flatMap((request) => request.frontier.probes)
-      )
-    ),
-    ...semanticRequests.flatMap((request) => request.frontier.probes),
-  ]).toSorted((left, right) =>
-    compareCanonicalStrings(
-      `${left.path}\0${left.kind}`,
-      `${right.path}\0${right.kind}`
-    )
+    owners.flatMap((owner) => owner.lstats),
+    (left, right) => compareCanonicalStrings(left.path, right.path)
   );
-  const realpaths = projectionCanonicalValues([
-    ...owners.flatMap((owner) => owner.realpaths),
-    ...owners.flatMap((owner) =>
-      [...owner.requestsBySource.values()].flatMap((requests) =>
-        requests.flatMap((request) => request.frontier.realpaths)
+  const probes = projectionCanonicalValues(
+    [
+      ...owners.flatMap((owner) => owner.probes),
+      ...owners.flatMap((owner) =>
+        [...owner.requestsBySource.values()].flatMap((requests) =>
+          requests.flatMap((request) => request.frontier.probes)
+        )
+      ),
+      ...semanticRequests.flatMap((request) => request.frontier.probes),
+    ],
+    (left, right) =>
+      compareCanonicalStrings(
+        `${left.path}\0${left.kind}`,
+        `${right.path}\0${right.kind}`
       )
-    ),
-    ...semanticRequests.flatMap((request) => request.frontier.realpaths),
-  ]).toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
+  );
+  const realpaths = projectionCanonicalValues(
+    [
+      ...owners.flatMap((owner) => owner.realpaths),
+      ...owners.flatMap((owner) =>
+        [...owner.requestsBySource.values()].flatMap((requests) =>
+          requests.flatMap((request) => request.frontier.realpaths)
+        )
+      ),
+      ...semanticRequests.flatMap((request) => request.frontier.realpaths),
+    ],
+    (left, right) => compareCanonicalStrings(left.path, right.path)
+  );
   const packageScopes: ReadonlyArray<IntlCheckPackageScopeV3> = expandedScopes
     .map((scope) => ({
       canonicalRoot: scope.canonicalRoot,
@@ -6924,7 +7023,10 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
     if (objectCached) {
       return objectCached;
     }
-    const identity = canonicalJson(frontier);
+    const identity = projectionCanonicalValueIdentity(
+      expandedFrontiers,
+      frontier
+    );
     const cached = projectedFrontierCache.get(identity);
     if (cached) {
       projectedFrontierObjectCache.set(frontier, cached);
@@ -6980,7 +7082,8 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
     return result;
   };
   const frontiers: ReadonlyArray<IntlCheckPhysicalFrontierV3> =
-    projectionCanonicalValues(expandedFrontiers.map(projectFrontier)).toSorted(
+    projectionCanonicalValues(
+      expandedFrontiers.map(projectFrontier),
       (left, right) =>
         compareCanonicalStrings(left.frontierHash, right.frontierHash)
     );
