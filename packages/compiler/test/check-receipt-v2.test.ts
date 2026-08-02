@@ -601,6 +601,8 @@ async function repositoryWorkspaceFixture(): Promise<{
     [
       'import { useTranslations } from "@openmirai/intl";',
       'const { t } = useTranslations("group");',
+      'const moduleName: string = "./dynamic";',
+      "void import(moduleName);",
       'export const page = t("greeting");',
       "",
     ].join("\n")
@@ -1346,6 +1348,7 @@ describe("immutable package authority-set selection", () => {
       binding.authorityBytes
     );
     expect(envelope.authorities).not.toHaveLength(0);
+    expect(binding.receipt.tables.unknownBoundaries).not.toHaveLength(0);
     expect(
       buildIntlCheckReceiptV3PersistedAuthorityBinding(
         binding.receipt,
@@ -1381,15 +1384,22 @@ describe("immutable package authority-set selection", () => {
     }
     semanticProgramInstrumentation.failFast = true;
     const { readConventionCheckReceipt } = await import("../src/check-receipt");
-    await expect(
-      readConventionCheckReceipt(packageRoot)
-    ).resolves.toMatchObject({
-      authoritySetHash: sha256(await readFile(validState.authoritySetPath)),
-      receipt: { schemaVersion: 3 },
-      receiptHash: binding.receiptHash,
-      receiptName: INTL_CHECK_RECEIPT_V3_NAME,
-      selection: "authority-set",
-    });
+    const cwdSpy = vi
+      .spyOn(process, "cwd")
+      .mockReturnValue(join(tmpdir(), "outside-workspace"));
+    try {
+      await expect(
+        readConventionCheckReceipt(packageRoot)
+      ).resolves.toMatchObject({
+        authoritySetHash: sha256(await readFile(validState.authoritySetPath)),
+        receipt: { schemaVersion: 3 },
+        receiptHash: binding.receiptHash,
+        receiptName: INTL_CHECK_RECEIPT_V3_NAME,
+        selection: "authority-set",
+      });
+    } finally {
+      cwdSpy.mockRestore();
+    }
     expect(semanticConstructionCount()).toBe(0);
 
     const original = envelope.authorities[0];

@@ -96,6 +96,19 @@ function relativePath(root: string, file: string): string {
   return path;
 }
 
+function readWorkspaceSourceBytes(
+  workspace: string,
+  sourcePath: string
+): Uint8Array {
+  const path = resolve(workspace, sourcePath);
+  if (relativePath(workspace, path) !== sourcePath) {
+    throw new Error(
+      `Mirai Intl check receipt V3 source path is not canonical: ${sourcePath}`
+    );
+  }
+  return readFileSync(path);
+}
+
 async function workspaceRoot(packageRoot: string): Promise<string> {
   let directory = await realpath(packageRoot);
   for (;;) {
@@ -458,15 +471,8 @@ function parseSelectedReceipt(
   if (schemaVersion === 3) {
     try {
       return parseCanonicalIntlCheckReceiptV3(source, undefined, {
-        readSourceBytes(sourcePath) {
-          const path = resolve(workspace, sourcePath);
-          if (relativePath(workspace, path) !== sourcePath) {
-            throw new Error(
-              `Mirai Intl check receipt V3 source path is not canonical: ${sourcePath}`
-            );
-          }
-          return readFileSync(path);
-        },
+        readSourceBytes: (sourcePath) =>
+          readWorkspaceSourceBytes(workspace, sourcePath),
       });
     } catch (error) {
       throw new Error("Mirai Intl selected check receipt V3 is invalid", {
@@ -659,7 +665,12 @@ async function readPackageAuthoritySetReceipt(
     );
     const binding = buildIntlCheckReceiptV3PersistedAuthorityBinding(
       receipt,
-      envelope
+      envelope,
+      undefined,
+      {
+        readSourceBytes: (sourcePath) =>
+          readWorkspaceSourceBytes(workspace, sourcePath),
+      }
     );
     if (
       binding.receiptHash !== authoritySet.receipt.hash ||
@@ -802,7 +813,12 @@ export async function readConventionCheckReceipt(
       );
     receipt = buildIntlCheckReceiptV3PersistedAuthorityBinding(
       receipt,
-      authorityEnvelope
+      authorityEnvelope,
+      undefined,
+      {
+        readSourceBytes: (sourcePath) =>
+          readWorkspaceSourceBytes(workspace, sourcePath),
+      }
     ).receipt;
   }
   return {

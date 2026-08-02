@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.12](https://github.com/openmirai/mirai-intl/compare/v0.3.11...v0.3.12) (2026-08-02)
+
+### Bug Fixes
+
+- **compiler:** resolve workspace-relative V3 receipt source evidence from the workspace root during persisted authority verification
+
 ## [0.3.9](https://github.com/openmirai/mirai-intl/compare/v0.3.8...v0.3.9) (2026-08-01)
 
 ### Performance Improvements
