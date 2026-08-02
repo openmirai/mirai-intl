@@ -1,6 +1,6 @@
 {
   "name": "@openmirai/intl-runtime",
-  "version": "0.3.0",
+  "version": "0.3.12",
   "repository": {
     "type": "git",
     "url": "https://github.com/openmirai/mirai-intl.git",
@@ -57,17 +57,14 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@openmirai/intl-abi": "workspace:*"
+    "@openmirai/intl-abi": "workspace:*",
+    "@opentelemetry/api-logs": "0.220.0"
   },
   "peerDependencies": {
-    "@opentelemetry/api-logs": "^0.220.0",
     "i18next": "26.3.6",
     "react": "19.2.7"
   },
   "peerDependenciesMeta": {
-    "@opentelemetry/api-logs": {
-      "optional": true
-    },
     "i18next": {
       "optional": true
     },

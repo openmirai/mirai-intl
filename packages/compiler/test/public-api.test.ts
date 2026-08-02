@@ -11,6 +11,7 @@ describe("published compiler root", () => {
       "generateConventionCatalog",
       "loadConventionCatalog",
       "proveConventionCatalog",
+      "verifyConventionBuildReceipt",
       "verifyConventionCatalog",
       "verifyConventionCheckReceipt",
       "verifyFinalizedBuildProof",

@@ -152,7 +152,11 @@ export type RecoveringI18nextRuntimeOptions<Instance extends I18nextLike> =
   I18nextRuntimeOptions<Instance> &
     Pick<
       RecoveringIntlRuntimeOptions,
-      "proofIdentity" | "release" | "richFallback" | "valueFallback"
+      | "proofIdentity"
+      | "release"
+      | "richFallback"
+      | "textFallback"
+      | "valueFallback"
     > &
     Readonly<{
       recoveryDiagnosticSink?: (diagnostic: IntlRecoveryDiagnostic) => void;
@@ -330,9 +334,28 @@ export function createRecoveringI18nextRuntime<
     recoveryDiagnosticSink,
     release,
     richFallback,
+    textFallback,
     valueFallback,
     ...strictOptions
   } = options;
+  const missingMessageFallback = strictOptions.missingMessageFallback;
+  let inheritedTextFallback = textFallback;
+  if (
+    inheritedTextFallback === undefined &&
+    typeof missingMessageFallback === "function"
+  ) {
+    inheritedTextFallback = (diagnostic): string =>
+      missingMessageFallback({
+        code: "INTL_MISSING_RESOURCE",
+        locale: diagnostic.locale,
+        message: "Translation resource is unavailable",
+      });
+  } else if (
+    inheritedTextFallback === undefined &&
+    typeof missingMessageFallback === "string"
+  ) {
+    inheritedTextFallback = (): string => missingMessageFallback;
+  }
   return createRecoveringRuntimeFrom(
     createI18nextRuntime(catalogManifest, instance, locale, strictOptions),
     {
@@ -342,6 +365,9 @@ export function createRecoveringI18nextRuntime<
         : { diagnosticSink: recoveryDiagnosticSink }),
       ...(release === undefined ? {} : { release }),
       ...(richFallback === undefined ? {} : { richFallback }),
+      ...(inheritedTextFallback === undefined
+        ? {}
+        : { textFallback: inheritedTextFallback }),
       ...(valueFallback === undefined ? {} : { valueFallback }),
     }
   );

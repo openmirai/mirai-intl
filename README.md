@@ -29,10 +29,29 @@ mirai-intl check
 
 `check` verifies selected catalog artifacts and runs a full-tree source analysis
 (same diagnostics as the Vite/Next transform) so unknown keys, widened strings,
-and translator escapes fail in CI/build without visiting every lazy route. Pass
-`--skip-sources` only for fixture packages that intentionally have no app
-sources. Commands emit concise, human-readable diagnostics by default; use
-`--format=json` (or the compatible `--json`) for one machine-readable report.
+and translator escapes fail in CI/build without visiting every lazy route.
+Commands emit concise, human-readable diagnostics by default; use
+`--format=json` (or the compatible `--json`) for one bounded, versioned
+machine-readable envelope:
+
+```json
+{
+  "command": "check",
+  "diagnostics": [],
+  "schemaVersion": 1,
+  "success": true,
+  "summary": {
+    "semanticAuthorizationRuns": 1,
+    "semanticFilesAnalyzed": 613,
+    "valid": true
+  }
+}
+```
+
+Normal JSON never contains receipts, proofs, manifests, source inventories, or
+translation values. `mirai-intl contract` is the explicit raw compiler-contract
+command and remains JSON-first. `--report-file` atomically writes the
+ANSI-free diagnostic report; it is not a dump of command internals.
 
 The compiler derives the locale root, paired locales, source locale, framework,
 package/catalog identity, generated output, and semantic paths. ICU ASTs infer

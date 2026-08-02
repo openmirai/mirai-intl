@@ -1,5 +1,5 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { canonicalJson } from "./canonical";
 
@@ -25,12 +25,22 @@ export type ReporterOptions = Readonly<{
   reportFile: string | undefined;
 }>;
 
+type CliSummaryScalar = boolean | number | string;
+
+export type CliSummary = Readonly<
+  Record<
+    string,
+    CliSummaryScalar | ReadonlyArray<Readonly<Record<string, CliSummaryScalar>>>
+  >
+>;
+
 export type CliReport = Readonly<{
   command: string;
   diagnostics: ReadonlyArray<CliDiagnostic>;
-  result?: unknown;
+  rawJson?: unknown;
   schemaVersion: 1;
   success: boolean;
+  summary: CliSummary;
 }>;
 
 const ANSI = {
@@ -126,10 +136,32 @@ export async function writeReportFile(
   report: CliReport
 ): Promise<void> {
   const path = resolve(destination);
+  const reportFile = {
+    command: report.command,
+    diagnostics: report.diagnostics.map((diagnostic) => ({
+      code: diagnostic.code,
+      ...(diagnostic.column === undefined ? {} : { column: diagnostic.column }),
+      ...(diagnostic.file
+        ? {
+            file: isAbsolute(diagnostic.file)
+              ? relative(process.cwd(), diagnostic.file)
+              : diagnostic.file,
+          }
+        : {}),
+      ...(diagnostic.hint ? { hint: diagnostic.hint } : {}),
+      ...(diagnostic.line === undefined ? {} : { line: diagnostic.line }),
+      ...(diagnostic.locale ? { locale: diagnostic.locale } : {}),
+      message: diagnostic.message,
+      ...(diagnostic.path ? { path: diagnostic.path } : {}),
+      severity: diagnostic.severity,
+    })),
+    schemaVersion: report.schemaVersion,
+    success: report.success,
+  };
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
   try {
-    await writeFile(temporary, `${canonicalJson(report)}\n`, "utf8");
+    await writeFile(temporary, `${canonicalJson(reportFile)}\n`, "utf8");
     await rename(temporary, path);
   } finally {
     await rm(temporary, { force: true });
@@ -145,7 +177,17 @@ export async function emitReport(
     await writeReportFile(options.reportFile, report);
   }
   if (options.format === "json") {
-    process.stdout.write(`${canonicalJson(report.result)}\n`);
+    process.stdout.write(
+      `${canonicalJson(
+        report.rawJson ?? {
+          command: report.command,
+          diagnostics: report.diagnostics,
+          schemaVersion: report.schemaVersion,
+          success: report.success,
+          summary: report.summary,
+        }
+      )}\n`
+    );
     return;
   }
   if (report.diagnostics.length > 0) {

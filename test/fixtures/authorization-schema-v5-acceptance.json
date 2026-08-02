@@ -1,0 +1,62 @@
+{
+  "reportSha256": "sha256:4b9d3d01b71992ad701e0ad454b68528f33a2458900cae79d985341ca1a61dc1",
+  "scenarios": {
+    "admin-613": {
+      "absoluteMedianLimit": 10000,
+      "absoluteP95Limit": 12000,
+      "baseline": {
+        "coefficientOfVariation": 0.112,
+        "medianMilliseconds": 9759.568,
+        "p95Milliseconds": 12121.622
+      },
+      "candidate": {
+        "coefficientOfVariation": 0.149,
+        "medianMilliseconds": 2036.548,
+        "p95Milliseconds": 2565.078
+      },
+      "confidenceUpperPercent": -78.91023394183856,
+      "expectedContractPass": true,
+      "expectedLegacyCompositePass": true,
+      "expectedStabilityPass": false,
+      "relativeMedianLimit": 0.4
+    },
+    "shared-workspace": {
+      "absoluteMedianLimit": 10000,
+      "absoluteP95Limit": 20000,
+      "baseline": {
+        "coefficientOfVariation": 0.137,
+        "medianMilliseconds": 5801.415,
+        "p95Milliseconds": 7497.558
+      },
+      "candidate": {
+        "coefficientOfVariation": 0.158,
+        "medianMilliseconds": 5289.876,
+        "p95Milliseconds": 7182.677
+      },
+      "confidenceUpperPercent": -1.823547673882135,
+      "expectedContractPass": true,
+      "expectedLegacyCompositePass": false,
+      "expectedStabilityPass": false,
+      "relativeMedianLimit": 0.5
+    },
+    "smoke-18": {
+      "absoluteMedianLimit": 2000,
+      "absoluteP95Limit": 2500,
+      "baseline": {
+        "coefficientOfVariation": 0.216,
+        "medianMilliseconds": 1277.485,
+        "p95Milliseconds": 1720.73
+      },
+      "candidate": {
+        "coefficientOfVariation": 0.226,
+        "medianMilliseconds": 1130.962,
+        "p95Milliseconds": 1444.402
+      },
+      "confidenceUpperPercent": -8.212904049387868,
+      "expectedContractPass": true,
+      "expectedLegacyCompositePass": false,
+      "expectedStabilityPass": false,
+      "relativeMedianLimit": 0.5
+    }
+  }
+}

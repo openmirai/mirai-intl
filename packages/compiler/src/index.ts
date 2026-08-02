@@ -13,6 +13,8 @@ export type {
   ConventionSourceAnalysis,
   ConventionSourceDiagnostic,
 } from "./analyze-sources";
+export { verifyConventionBuildReceipt } from "./check-receipt";
+export type { IntlBuildReceiptVerification } from "./check-receipt";
 export { COMPILER_VERSION } from "./compile";
 export {
   generateConventionCatalog,

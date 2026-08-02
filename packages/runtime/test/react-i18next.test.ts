@@ -175,6 +175,35 @@ describe("i18next runtime binding", () => {
     ]);
   });
 
+  it("inherits the locale-owned missing-message fallback for terminal unlowered recovery", async () => {
+    const instance = await i18nextFixture({
+      resources: { th: { translation: {} } },
+      locale: "th",
+    });
+    const fallbackLocales: Array<string | undefined> = [];
+    const runtime = createRecoveringI18nextRuntime(
+      catalogManifest,
+      instance,
+      undefined,
+      {
+        missingMessageFallback: (diagnostic) => {
+          fallbackLocales.push(diagnostic.locale);
+          return diagnostic.locale === "th"
+            ? "ไม่สามารถแสดงคำแปลนี้ได้"
+            : "Translation unavailable";
+        },
+      }
+    );
+    const t = createRecoveringTranslationFunction(runtime) as unknown as (
+      key: unknown
+    ) => string;
+
+    const output = t("missing.parent.key");
+    expect(output).toBe("ไม่สามารถแสดงคำแปลนี้ได้");
+    expect(output).not.toBe("missing.parent.key");
+    expect(fallbackLocales).toEqual(["th"]);
+  });
+
   it("shares one listener per instance, cleans it up, and isolates instances", async () => {
     const first = await i18nextFixture();
     const second = await i18nextFixture();

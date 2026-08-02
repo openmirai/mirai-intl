@@ -21,6 +21,10 @@ import type {
 import type { BackendModule } from "i18next";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  createMiraiI18next,
+  createProviderBoundUseTranslations,
+} from "@openmirai/intl-i18next";
 
 import {
   alternateGreetingText,
@@ -231,6 +235,31 @@ const catalogBackend: BackendModule = createI18nextCatalogBackend({
   loadCatalogResource: loadFixtureResource,
 });
 catalogBackend.type satisfies "backend";
+
+const i18nextAdapter = createMiraiI18next({
+  catalogManifest: exactCatalogManifest,
+  isCatalogLocale: isFixtureLocale,
+  loadCatalogResource: loadFixtureResource,
+});
+const adapterTranslations = i18nextAdapter.useTranslations("app");
+adapterTranslations.t("greeting", {
+  count: 1,
+  name: "Ada",
+}) satisfies string;
+const requestController = i18nextAdapter.createRequestController("en");
+requestController.getActiveLocale() satisfies ExactCatalogLocale | undefined;
+const controllerTranslations = requestController.getTranslations("app");
+controllerTranslations.t("greeting", {
+  count: 1,
+  name: "Ada",
+}) satisfies string;
+const useSharedTranslations =
+  createProviderBoundUseTranslations<FixtureCatalog>();
+const sharedTranslations = useSharedTranslations("app");
+sharedTranslations.t("greeting", {
+  count: 1,
+  name: "Ada",
+}) satisfies string;
 
 const createTranslationKey = bindTranslationKeyFactory<FixtureCatalog>();
 const parseTranslationKey = bindTranslationKeyParser<FixtureCatalog>();

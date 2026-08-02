@@ -10,6 +10,7 @@
     "noUncheckedIndexedAccess": true,
     "paths": {
       "@openmirai/intl-abi": ["../../packages/abi/src/index.ts"],
+      "@openmirai/intl-i18next": ["../../packages/intl-i18next/src/index.ts"],
       "@openmirai/intl-runtime": ["../../packages/runtime/src/index.ts"],
       "@openmirai/intl-runtime/react": ["../../packages/runtime/src/react.ts"],
       "@openmirai/intl-runtime/react-i18next": [

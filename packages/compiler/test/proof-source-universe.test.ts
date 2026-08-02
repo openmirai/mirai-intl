@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { verifyConventionBuildReceipt } from "../src/check-receipt";
 import { proveConventionCatalog } from "../src/proof";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -93,6 +94,32 @@ describe("owner TypeScript source universe authority", () => {
             verdict: "accepted",
           },
         ],
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("does not let a broad package include absorb siblings of an explicit external file", async () => {
+    const { appRoot, sharedSource, workspaceRoot } = await createWorkspace();
+    try {
+      await writeJson(join(appRoot, "tsconfig.intl.json"), {
+        include: ["**/*.ts", "../shared/src/copy.tsx"],
+      });
+      await writeFile(
+        join(dirname(sharedSource), "unrelated.ts"),
+        'export const prose = "not part of this project";\n'
+      );
+
+      const receipt = await proveConventionCatalog(appRoot);
+      expect(receipt.sources.map(({ file }) => file)).not.toContain(
+        "packages/shared/src/unrelated.ts"
+      );
+      await expect(
+        verifyConventionBuildReceipt(appRoot)
+      ).resolves.toMatchObject({
+        buildReceiptVerifications: 1,
+        buildSemanticAnalysisRuns: 0,
       });
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });

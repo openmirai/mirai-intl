@@ -27,6 +27,12 @@ type CompositionOwner =
       type: "fragment";
     }>;
 
+interface MessagePathTrieNode {
+  readonly children: Map<string, MessagePathTrieNode>;
+  firstTerminal?: MessagePathTrieNode;
+  terminal?: ComposedMessage;
+}
+
 export type ComposedMessage = MessageSource &
   Readonly<{ owner: CompositionOwner }>;
 
@@ -93,13 +99,18 @@ function assertSafePathSegment(segment: unknown, context: string): void {
   }
 }
 
-function assertSafePath(path: unknown, context: string): void {
+function safePathSegments(
+  path: unknown,
+  context: string
+): ReadonlyArray<string> {
   if (typeof path !== "string") {
     throw new Error(`${context} must be a string`);
   }
-  for (const segment of path.split(".")) {
+  const segments = path.split(".");
+  for (const segment of segments) {
     assertSafePathSegment(segment, context);
   }
+  return segments;
 }
 
 function assertSafeMountPath(path: ReadonlyArray<string>): void {
@@ -168,8 +179,8 @@ function mountedMessages(
   }));
 }
 
-function prefixCollision(left: string, right: string): boolean {
-  return left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
+function createMessagePathTrieNode(): MessagePathTrieNode {
+  return { children: new Map() };
 }
 
 function assertReplacement(
@@ -235,6 +246,7 @@ export function composeCatalog(source: CatalogSource): CompositionResult {
   const replacements = source.replacements ?? [];
   const replacementByPath = new Map<string, ReplacementDeclaration>();
   const messages = new Map<string, ComposedMessage>();
+  const messagePaths = createMessagePathTrieNode();
   const provenance: Array<{
     action: "add" | "replace";
     base?: string;
@@ -244,20 +256,36 @@ export function composeCatalog(source: CatalogSource): CompositionResult {
   }> = [];
 
   const add = (message: ComposedMessage): void => {
-    assertSafePath(message.path, "Message path");
-    for (const existing of messages.values()) {
-      if (
-        existing.path !== message.path &&
-        prefixCollision(existing.path, message.path)
-      ) {
+    const segments = safePathSegments(message.path, "Message path");
+    const traversed = [messagePaths];
+    let node = messagePaths;
+    for (const segment of segments) {
+      if (node.terminal) {
         throw new Error(
-          `Object/leaf collision between ${existing.path} (${existing.provenance}) and ${message.path} (${message.provenance})`
+          `Object/leaf collision between ${node.terminal.path} (${node.terminal.provenance}) and ${message.path} (${message.provenance})`
         );
       }
+      let child = node.children.get(segment);
+      if (!child) {
+        child = createMessagePathTrieNode();
+        node.children.set(segment, child);
+      }
+      node = child;
+      traversed.push(node);
     }
-    const existing = messages.get(message.path);
+    const existing = node.terminal;
     if (!existing) {
+      const firstDescendant = node.firstTerminal?.terminal;
+      if (firstDescendant) {
+        throw new Error(
+          `Object/leaf collision between ${firstDescendant.path} (${firstDescendant.provenance}) and ${message.path} (${message.provenance})`
+        );
+      }
       messages.set(message.path, message);
+      node.terminal = message;
+      for (const traversedNode of traversed) {
+        traversedNode.firstTerminal ??= node;
+      }
       provenance.push({
         action: "add",
         path: message.path,
@@ -273,6 +301,7 @@ export function composeCatalog(source: CatalogSource): CompositionResult {
     }
     assertReplacement(declaration, existing, message);
     messages.set(message.path, message);
+    node.terminal = message;
     provenance.push({
       action: "replace",
       base: existing.provenance,
@@ -283,7 +312,7 @@ export function composeCatalog(source: CatalogSource): CompositionResult {
   };
 
   for (const replacement of replacements) {
-    assertSafePath(replacement.exactKey, "Replacement exact key");
+    safePathSegments(replacement.exactKey, "Replacement exact key");
     if (replacementByPath.has(replacement.exactKey)) {
       throw new Error(
         `Duplicate replacement declaration for ${replacement.exactKey}`

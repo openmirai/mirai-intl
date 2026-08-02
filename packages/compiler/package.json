@@ -1,6 +1,6 @@
 {
   "name": "@openmirai/intl-compiler",
-  "version": "0.3.0",
+  "version": "0.3.12",
   "repository": {
     "type": "git",
     "url": "https://github.com/openmirai/mirai-intl.git",
@@ -34,6 +34,11 @@
       "types": "./dist/transform.d.ts",
       "import": "./dist/transform.js",
       "default": "./dist/transform.js"
+    },
+    "./verify": {
+      "types": "./dist/verify.d.ts",
+      "import": "./dist/verify.js",
+      "default": "./dist/verify.js"
     },
     "./vite": {
       "types": "./dist/vite.d.ts",

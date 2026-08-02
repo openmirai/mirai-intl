@@ -148,21 +148,21 @@ export function analyzeHardcodedLiterals(options: {
   filePath: string;
   packageRoot: string;
   source: string;
+  sourceFile?: ts.SourceFile;
 }): ReadonlyArray<HardcodedLiteralDiagnostic> {
   if (shouldSkipHardcodedLiteralFile(options.filePath)) {
     return [];
   }
 
-  const scriptKind = options.filePath.endsWith("x")
-    ? ts.ScriptKind.TSX
-    : ts.ScriptKind.TS;
-  const sourceFile = ts.createSourceFile(
-    options.filePath,
-    options.source,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKind
-  );
+  const sourceFile =
+    options.sourceFile ??
+    ts.createSourceFile(
+      options.filePath,
+      options.source,
+      ts.ScriptTarget.Latest,
+      true,
+      options.filePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    );
   const relativeFile = relative(options.packageRoot, options.filePath);
   const diagnostics: Array<HardcodedLiteralDiagnostic> = [];
 

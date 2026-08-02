@@ -84,11 +84,31 @@ describe("RecoveringIntlRuntime", () => {
       catalog: compiled.catalog,
       formatters,
       locale: "en",
+      textFallback: () => "Translation unavailable",
     });
     const t = createRecoveringTranslationFunction(runtime) as unknown as (
       key: unknown
     ) => string;
+    expect(t("unlowered.translation")).toBe("Translation unavailable");
+    expect(t("unlowered.translation")).not.toBe("unlowered.translation");
+  });
+
+  it("contains text fallback failures without exposing the input key", () => {
+    const runtime = createRecoveringIntlRuntime({
+      backend: failingBackend,
+      catalog: compiled.catalog,
+      formatters,
+      locale: "en",
+      textFallback() {
+        throw new Error("fallback failure");
+      },
+    });
+    const t = createRecoveringTranslationFunction(runtime) as unknown as (
+      key: unknown
+    ) => string;
+
     expect(t("unlowered.translation")).toBe("");
+    expect(t("unlowered.translation")).not.toBe("unlowered.translation");
   });
 
   it("preserves map container shapes when lowering is absent", () => {
@@ -99,17 +119,24 @@ describe("RecoveringIntlRuntime", () => {
       formatters,
       locale: "en",
       diagnosticSink: (diagnostic) => diagnostics.push(diagnostic),
+      textFallback: () => "Translation unavailable",
     });
     const t = createRecoveringTranslationFunction(runtime) as unknown as {
       map: (...input: ReadonlyArray<unknown>) => unknown;
     };
-    expect(t.map(["one", "two"])).toEqual({ one: "", two: "" });
+    expect(t.map(["one", "two"])).toEqual({
+      one: "Translation unavailable",
+      two: "Translation unavailable",
+    });
     expect(t.map(["row"], ["first", "second"])).toEqual({
-      row: { first: "", second: "" },
+      row: {
+        first: "Translation unavailable",
+        second: "Translation unavailable",
+      },
     });
     expect(t.map({ first: "key.first", second: "key.second" })).toEqual({
-      first: "",
-      second: "",
+      first: "Translation unavailable",
+      second: "Translation unavailable",
     });
     expect(diagnostics).toEqual([
       {

@@ -10,14 +10,22 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
+import { emptyObjectSchema } from "@openmirai/intl-abi";
 import type { NextConfig as OfficialNextConfig } from "next";
 import { build as buildVite, createServer as createViteServer } from "vite";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  compileCatalog,
+  defineIntlConfig,
+  emitArtifacts,
+} from "../src/internal";
+import type { CatalogSource } from "../src/internal";
 import { withMiraiIntl } from "../src/next";
 import { miraiIntlVite } from "../src/vite";
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -26,48 +34,36 @@ async function writeJson(path: string, value: unknown): Promise<void> {
 
 const messageModule = "catalog.messages.gen.mjs";
 const privateCarrier = "catalog.manifest.gen.mjs";
+const adapterArtifacts = emitArtifacts(
+  compileCatalog(
+    defineIntlConfig({
+      buildId: "adapter-fixture-build",
+      catalogPackage: "@example/adapter-fixture",
+      id: "adapter-fixture",
+      locales: ["en"],
+      messages: [
+        {
+          kind: "text",
+          path: "pages.home.title",
+          provenance:
+            "packages/compiler/test/adapters.test.ts:pages.home.title",
+          resultSchema: { type: "string" },
+          translations: { en: "Title" },
+          valuesSchema: emptyObjectSchema,
+        },
+      ],
+      rendererCapabilityId: "portable-ir-v1",
+      sourceLocale: "en",
+    } satisfies CatalogSource)
+  ),
+  "constants",
+  { compact: true }
+);
 
 async function createAdapterFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "mirai-intl-adapter-"));
   const generated = join(root, "src/i18n/generated");
-  const hash = "b".repeat(64);
-  const directory = `builds/${hash}`;
-  await writeJson(join(generated, "current.json"), {
-    contentHash: `sha256:${hash}`,
-    directory,
-  });
-  await writeFile(
-    join(generated, "index.ts"),
-    `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${hash}`, directory, schemaVersion: 1 })}\n`,
-    "utf8"
-  );
-  await writeJson(join(generated, directory, "catalog.contract.gen.json"), {
-    catalogId: "fixture",
-    messages: [{ kind: "text", path: "pages.home.title" }],
-    schemaVersion: 1,
-  });
-  await writeJson(join(generated, directory, "catalog.provenance.gen.json"), {
-    catalogHash: "sha256:catalog",
-    entries: [],
-    exports: [
-      {
-        descriptorExport: "m0",
-        module: messageModule,
-        path: "pages.home.title",
-        runtimeExport: "r0",
-      },
-    ],
-  });
-  await writeFile(
-    join(generated, directory, messageModule),
-    "export const m0 = {};\n",
-    "utf8"
-  );
-  await writeFile(
-    join(generated, directory, privateCarrier),
-    "export const catalogManifest = {};\n",
-    "utf8"
-  );
+  await writeArtifactSet(generated, adapterArtifacts);
   return root;
 }
 
@@ -77,6 +73,9 @@ async function createConventionViteFixture(): Promise<string> {
     dependencies: { vite: "7.3.6" },
     name: "@example/vite-app",
     version: "1.0.0",
+  });
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
   });
   await writeJson(join(root, "src/locales/global/en.json"), {
     title: "Title",
@@ -93,6 +92,9 @@ async function createConventionViteBundleFixture(): Promise<string> {
     dependencies: { vite: "7.3.6" },
     name: "@example/vite-bundle-app",
     version: "1.0.0",
+  });
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
   });
   await writeJson(join(root, "src/locales/global/en.json"), {
     components: {
@@ -173,6 +175,41 @@ describe("Vite adapter", () => {
       expect(result?.code).toContain("t(__miraiIntlMessage0)");
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("confines shared workspace providers to the workspace instead of the app root", async () => {
+    const workspace = await mkdtemp(
+      join(tmpdir(), "mirai-intl-vite-workspace-")
+    );
+    const root = join(workspace, "apps/app");
+    const sharedFile = join(workspace, "packages/shared/src/schema.ts");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - apps/*\n  - packages/*\n",
+        "utf8"
+      );
+      await writeArtifactSet(
+        join(root, "src/i18n/generated"),
+        adapterArtifacts
+      );
+      await mkdir(dirname(sharedFile), { recursive: true });
+      const source = [
+        'import { createTranslationKey } from "../../../apps/app/src/i18n/generated";',
+        'export const key = createTranslationKey("pages.home")("title");',
+        "",
+      ].join("\n");
+      await writeFile(sharedFile, source, "utf8");
+
+      const result = await miraiIntlVite({ root }).transform(
+        source,
+        sharedFile
+      );
+
+      expect(result?.code).toContain('export const key = "pages.home.title";');
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
     }
   });
 
@@ -561,6 +598,117 @@ describe("Vite adapter", () => {
       expect(result?.code).toContain("t(__miraiIntlMessage0)");
       cleanup();
       expect(watcher.off).toHaveBeenCalledTimes(2);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("watches workspace presets and inferred projects as unique restart inputs", async () => {
+    const root = await createConventionViteFixture();
+    const preset = join(root, "mirai-intl.workspace.json");
+    const project = join(root, "tsconfig.json");
+    const watched: Array<string> = [];
+    const logger = { error: vi.fn() };
+    const watcher = {
+      add: vi.fn(),
+      off: vi.fn(),
+      on: vi.fn(),
+    };
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        "packages: ['.']\n",
+        "utf8"
+      );
+      await writeJson(preset, {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
+      });
+      const plugin = miraiIntlVite({ root });
+      await plugin.buildStart.call({
+        addWatchFile(file: string) {
+          watched.push(file);
+        },
+      });
+
+      expect(watched).toContain(await realpath(preset));
+      expect(watched).toContain(await realpath(project));
+      expect(new Set(watched).size).toBe(watched.length);
+      expect(watched).not.toContain(join(root, "src/locales/global/en.json"));
+
+      await expect(
+        plugin.handleHotUpdate({
+          file: preset,
+          server: { config: { logger }, watcher },
+        })
+      ).resolves.toEqual([]);
+      await expect(
+        plugin.handleHotUpdate({
+          file: project,
+          server: { config: { logger }, watcher },
+        })
+      ).resolves.toEqual([]);
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Restart Vite/u)
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("registers prospective identity inputs after default-root published startup", async () => {
+    const root = await createConventionViteFixture();
+    const logger = { error: vi.fn() };
+    const watcher = {
+      add: vi.fn(),
+      off: vi.fn(),
+      on: vi.fn(),
+    };
+    try {
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        "packages: ['.']\n",
+        "utf8"
+      );
+      const publisher = miraiIntlVite({ root });
+      await publisher.buildStart.call({ addWatchFile: vi.fn() });
+
+      const plugin = miraiIntlVite();
+      plugin.configResolved({ root });
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+      const cleanup = plugin.configureServer({
+        config: { logger },
+        watcher,
+      });
+      const canonicalRoot = await realpath(root);
+      const prospective = [
+        join(canonicalRoot, "mirai-intl.config.json"),
+        join(canonicalRoot, "mirai-intl.workspace.json"),
+        join(canonicalRoot, "tsconfig.intl.json"),
+      ];
+      await vi.waitFor(() => {
+        for (const path of prospective) {
+          expect(watcher.add).toHaveBeenCalledWith(path);
+        }
+        expect(watcher.add).toHaveBeenCalledWith(
+          join(canonicalRoot, "tsconfig.json")
+        );
+        expect(watcher.add).toHaveBeenCalledWith(
+          join(canonicalRoot, "src/locales")
+        );
+      });
+
+      for (const file of prospective) {
+        await expect(
+          plugin.handleHotUpdate({
+            file,
+            server: { config: { logger }, watcher },
+          })
+        ).resolves.toEqual([]);
+      }
+      expect(logger.error).toHaveBeenCalledTimes(prospective.length);
+      cleanup();
     } finally {
       await rm(root, { force: true, recursive: true });
     }

@@ -1,7 +1,16 @@
 import { execFile } from "node:child_process";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -11,6 +20,7 @@ import {
   emptyObjectSchema,
 } from "@openmirai/intl-abi";
 import type {
+  IntlCheckCanonicalJsonV2,
   IntlCheckExceptionV1,
   IntlCheckProjectV1,
   IrNode,
@@ -23,6 +33,20 @@ import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import { COMPILER_VERSION, compileCatalog } from "./compile";
 import { emitArtifacts } from "./emit";
 import type { DescriptorRepresentation, EmittedArtifacts } from "./emit";
+import {
+  buildCatalogGenerationInputIdentity,
+  buildCatalogGenerationSnapshot,
+} from "./generation-snapshot";
+import type {
+  CatalogGenerationInputIdentityV1,
+  CatalogGenerationSnapshot,
+} from "./generation-snapshot";
+import {
+  computeApplicationPackageIdentity,
+  computeImmutableIntegrityIdentity,
+  createIntegrityManifest,
+  getImmutableIntegrityIdentity,
+} from "./integrity-identity";
 import { inferMessageContract, inspectMessageSyntax } from "./parser";
 import type { CatalogSource, MessageSource } from "./source";
 import { verifyArtifactSet, writeArtifactSet } from "./writer";
@@ -81,6 +105,7 @@ type MessageSchema = Readonly<{
 type SourceFileEvidence = Readonly<{
   hash: `sha256:${string}`;
   path: string;
+  size: number;
 }>;
 
 export type ConventionFramework = "next" | "vite";
@@ -212,6 +237,22 @@ export type ConventionGenerationResult = Readonly<{
 export type ConventionOptions = Readonly<{
   collectEnvironment?: boolean;
 }>;
+
+const compiledConventionCatalogs = new WeakMap<
+  LoadedConventionCatalog,
+  ReturnType<typeof compileCatalog>
+>();
+
+function compiledConventionCatalog(
+  loaded: LoadedConventionCatalog
+): ReturnType<typeof compileCatalog> {
+  let compiled = compiledConventionCatalogs.get(loaded);
+  if (compiled === undefined) {
+    compiled = compileCatalog(loaded.source);
+    compiledConventionCatalogs.set(loaded, compiled);
+  }
+  return compiled;
+}
 
 function isPlainObject(value: unknown): value is JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -726,7 +767,11 @@ async function discoverSource(
               ? toJsonValue(assertObject(parsed, relativePath), relativePath)
               : toJsonValue(parsed, relativePath),
         };
-        files.push({ hash: sha256(content), path: relativePath });
+        files.push({
+          hash: sha256(content),
+          path: relativePath,
+          size: Buffer.byteLength(content),
+        });
       }
       const mount =
         logicalParts.length > 0 && flatten.has(logicalParts[0] ?? "")
@@ -1246,31 +1291,121 @@ function messageContractIdentity(
   }));
 }
 
+type GitRepository = Readonly<{
+  commonDirectory: string;
+  gitDirectory: string;
+  root: string;
+}>;
+
+async function gitRepository(start: string): Promise<GitRepository> {
+  let current = await realpath(start);
+  for (;;) {
+    const marker = join(current, ".git");
+    const entry = await lstat(marker).catch(() => undefined);
+    if (entry) {
+      if (entry.isSymbolicLink()) {
+        throw new Error("Git metadata marker must not be a symbolic link");
+      }
+      let gitDirectory: string;
+      if (entry.isDirectory()) {
+        gitDirectory = marker;
+      } else if (entry.isFile()) {
+        const match = /^gitdir: (.+)\r?\n?$/u.exec(
+          await readFile(marker, "utf8")
+        );
+        if (!match?.[1]) {
+          throw new Error("Git metadata pointer is invalid");
+        }
+        gitDirectory = await realpath(resolve(current, match[1]));
+      } else {
+        throw new Error("Git metadata marker is not a regular entry");
+      }
+      const commonSource = await readFile(
+        join(gitDirectory, "commondir"),
+        "utf8"
+      ).catch(() => undefined);
+      const commonDirectory = commonSource
+        ? await realpath(resolve(gitDirectory, commonSource.trim()))
+        : gitDirectory;
+      return { commonDirectory, gitDirectory, root: current };
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error("Git repository is unavailable");
+    }
+    current = parent;
+  }
+}
+
+async function gitHead(repository: GitRepository): Promise<string | null> {
+  const source = (await readFile(join(repository.gitDirectory, "HEAD"), "utf8"))
+    .trim()
+    .replace(/\r$/u, "");
+  if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(source)) {
+    return source;
+  }
+  const match = /^ref: (refs\/[^\s]+)$/u.exec(source);
+  if (!match?.[1]) {
+    return null;
+  }
+  const ref = match[1];
+  if (
+    ref.includes("\\") ||
+    ref
+      .split("/")
+      .some(
+        (segment) => segment.length === 0 || segment === "." || segment === ".."
+      )
+  ) {
+    return null;
+  }
+  const loose = await readFile(join(repository.commonDirectory, ref), "utf8")
+    .then((value) => value.trim())
+    .catch(() => undefined);
+  if (loose && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(loose)) {
+    return loose;
+  }
+  const packed = await readFile(
+    join(repository.commonDirectory, "packed-refs"),
+    "utf8"
+  ).catch(() => "");
+  for (const line of packed.split("\n")) {
+    const [hash, name] = line.trim().split(" ");
+    if (name === ref && hash && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(hash)) {
+      return hash;
+    }
+  }
+  return null;
+}
+
 async function gitEvidence(start: string): Promise<GitEvidence> {
   try {
-    const { stdout: rootOutput } = await execFileAsync("git", [
-      "-C",
-      start,
-      "rev-parse",
-      "--show-toplevel",
-    ]);
-    const root = rootOutput.trim();
-    const head = await execFileAsync("git", ["-C", root, "rev-parse", "HEAD"])
-      .then(({ stdout }) => stdout.trim())
-      .catch(() => null);
-    const { stdout } = await execFileAsync("git", [
-      "-C",
-      root,
-      "status",
-      "--porcelain=v1",
-      "--untracked-files=all",
+    const repository = await gitRepository(start);
+    const [head, { stdout }] = await Promise.all([
+      gitHead(repository),
+      execFileAsync(
+        "git",
+        [
+          "-C",
+          repository.root,
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=all",
+        ],
+        { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }
+      ),
     ]);
     const status = stdout
       .split("\n")
       .map((line) => line.trimEnd())
       .filter(Boolean)
       .toSorted(compareCanonicalStrings);
-    return { dirty: status.length > 0, head, root, status };
+    return {
+      dirty: status.length > 0,
+      head,
+      root: repository.root,
+      status,
+    };
   } catch {
     return { dirty: true, head: null, root: null, status: ["git-unavailable"] };
   }
@@ -1497,6 +1632,73 @@ function lockfileHasImporter(lockfile: string, importer: string): boolean {
   return false;
 }
 
+function simpleWorkspaceMembership(
+  manifest: string,
+  importer: string
+): boolean | undefined {
+  const patterns: Array<string> = [];
+  let inPackages = false;
+  for (const rawLine of manifest.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.trim().length === 0 || line.trimStart().startsWith("#")) {
+      continue;
+    }
+    if (!inPackages) {
+      if (line === "packages:") {
+        inPackages = true;
+        continue;
+      }
+      return undefined;
+    }
+    if (!line.startsWith(" ")) {
+      break;
+    }
+    const match = /^  - ([!*a-zA-Z0-9._@/-]+)$/u.exec(line);
+    if (!match?.[1]) {
+      return undefined;
+    }
+    const pattern = match[1].startsWith("!") ? match[1].slice(1) : match[1];
+    let prefix = pattern;
+    if (pattern.endsWith("/**")) {
+      prefix = pattern.slice(0, -3);
+    } else if (pattern.endsWith("/*")) {
+      prefix = pattern.slice(0, -2);
+    }
+    if (prefix.includes("*") || (pattern.includes("*") && prefix === pattern)) {
+      return undefined;
+    }
+    patterns.push(match[1]);
+  }
+  if (!inPackages || patterns.length === 0) {
+    return undefined;
+  }
+  const matches = (pattern: string): boolean => {
+    if (pattern.endsWith("/**")) {
+      const prefix = pattern.slice(0, -3);
+      return importer === prefix || importer.startsWith(`${prefix}/`);
+    }
+    if (pattern.endsWith("/*")) {
+      const prefix = pattern.slice(0, -2);
+      const remainder = importer.slice(prefix.length + 1);
+      return (
+        importer.startsWith(`${prefix}/`) &&
+        remainder.length > 0 &&
+        !remainder.includes("/")
+      );
+    }
+    return importer === pattern;
+  };
+  let included = false;
+  for (const rawPattern of patterns) {
+    const excluded = rawPattern.startsWith("!");
+    const pattern = excluded ? rawPattern.slice(1) : rawPattern;
+    if (matches(pattern)) {
+      included = !excluded;
+    }
+  }
+  return included;
+}
+
 async function workspaceIncludesPackage(
   workspaceRoot: string,
   packageRoot: string
@@ -1557,11 +1759,20 @@ async function pnpmLockfileEvidence(
       "pnpm-workspace.yaml"
     );
     if (hasWorkspaceManifest && hasLockfile) {
-      const content = await readFile(lockfilePath, "utf8");
+      const [content, workspaceManifest] = await Promise.all([
+        readFile(lockfilePath, "utf8"),
+        readFile(join(directory, "pnpm-workspace.yaml"), "utf8"),
+      ]);
       const importer = relative(directory, packageRoot).split(sep).join("/");
+      const simpleMembership = simpleWorkspaceMembership(
+        workspaceManifest,
+        importer
+      );
       if (
         lockfileHasImporter(content, importer) &&
-        (await workspaceIncludesPackage(directory, packageRoot))
+        (simpleMembership === true ||
+          (simpleMembership === undefined &&
+            (await workspaceIncludesPackage(directory, packageRoot))))
       ) {
         return { content };
       }
@@ -1581,24 +1792,22 @@ async function collectEnvironment(
   loaded: LoadedConventionCatalog
 ): Promise<CatalogEnvironmentEvidence> {
   const packageJsonPath = join(loaded.repositoryRoot, "package.json");
-  const [packageJson, lockfileEvidence, appGit] = await Promise.all([
-    readFile(packageJsonPath, "utf8"),
-    pnpmLockfileEvidence(loaded.repositoryRoot),
-    gitEvidence(loaded.repositoryRoot),
-  ]);
-  const compilerStart = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../../.."
-  );
-  const compilerGit = await gitEvidence(compilerStart);
+  const packageJson = await readFile(packageJsonPath, "utf8");
   const packageJsonObject = assertObject(
     JSON.parse(packageJson) as unknown,
     "application package.json"
   );
-  const resolvedInstalledTuple = await installedTuple(
-    loaded.repositoryRoot,
-    packageJsonObject.packageManager
+  const compilerStart = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../.."
   );
+  const [lockfileEvidence, appGit, compilerGit, resolvedInstalledTuple] =
+    await Promise.all([
+      pnpmLockfileEvidence(loaded.repositoryRoot),
+      gitEvidence(loaded.repositoryRoot),
+      gitEvidence(compilerStart),
+      installedTuple(loaded.repositoryRoot, packageJsonObject.packageManager),
+    ]);
   return {
     appGit,
     compilerGit,
@@ -1606,6 +1815,13 @@ async function collectEnvironment(
     lockfileHash: sha256(lockfileEvidence.content),
     packageJsonHash: sha256(packageJson),
   };
+}
+
+/** @internal Preserve fail-closed lockfile/workspace membership validation. */
+export async function validateConventionEnvironment(
+  loaded: LoadedConventionCatalog
+): Promise<void> {
+  await pnpmLockfileEvidence(loaded.repositoryRoot);
 }
 
 function artifactBytes(artifacts: EmittedArtifacts): number {
@@ -1741,10 +1957,10 @@ function installedTupleComplete(
 
 async function createReport(
   loaded: LoadedConventionCatalog,
+  compiled: ReturnType<typeof compileCatalog>,
   artifacts: EmittedArtifacts,
   options: ConventionOptions
 ): Promise<ConventionReport> {
-  const compiled = compileCatalog(loaded.source);
   const environment =
     options.collectEnvironment === false
       ? null
@@ -2084,6 +2300,19 @@ type ConventionExceptions = Readonly<{
   sourceLocale?: string;
 }>;
 
+type ConventionWorkspacePreset = Readonly<{
+  content: string;
+  path: string;
+  requiredLocales?: ReadonlyArray<string>;
+  sourceLocale?: string;
+}>;
+
+type ConventionWorkspace = Readonly<{
+  preset?: ConventionWorkspacePreset;
+  presetCandidates: ReadonlyArray<string>;
+  root: string;
+}>;
+
 function emptyConventionExceptions(): ConventionExceptions {
   return {
     checkExceptions: [],
@@ -2093,6 +2322,336 @@ function emptyConventionExceptions(): ConventionExceptions {
     schema: { messages: {} },
     sources: [],
   };
+}
+
+async function loadConventionWorkspacePreset(
+  repositoryRoot: string
+): Promise<ConventionWorkspace> {
+  let workspaceRoot: string | undefined;
+  let directory = repositoryRoot;
+  while (true) {
+    const workspaceManifestPath = join(directory, "pnpm-workspace.yaml");
+    if (await regularFileExists(workspaceManifestPath, "pnpm-workspace.yaml")) {
+      workspaceRoot = directory;
+      break;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      break;
+    }
+    directory = parent;
+  }
+  workspaceRoot ??= repositoryRoot;
+  let nestedDirectory = repositoryRoot;
+  while (nestedDirectory !== workspaceRoot) {
+    const nestedPreset = join(nestedDirectory, "mirai-intl.workspace.json");
+    if (
+      await regularFileExists(nestedPreset, "nested mirai-intl.workspace.json")
+    ) {
+      throw new Error(
+        `Convention workspace preset ${nestedPreset} is nested below the authoritative workspace root ${workspaceRoot}`
+      );
+    }
+    const parent = dirname(nestedDirectory);
+    if (parent === nestedDirectory || !within(workspaceRoot, parent)) {
+      throw new Error(
+        "Unable to resolve the package path within its authoritative pnpm workspace root"
+      );
+    }
+    nestedDirectory = parent;
+  }
+  const presetCandidates =
+    workspaceRoot === repositoryRoot &&
+    !(await regularFileExists(
+      join(workspaceRoot, "pnpm-workspace.yaml"),
+      "pnpm-workspace.yaml"
+    ))
+      ? []
+      : [join(workspaceRoot, "mirai-intl.workspace.json")];
+  const presetPath = presetCandidates[0];
+  if (
+    presetPath === undefined ||
+    !(await regularFileExists(presetPath, "mirai-intl.workspace.json"))
+  ) {
+    return { presetCandidates, root: workspaceRoot };
+  }
+  const canonicalRoot = await realpath(workspaceRoot);
+  const canonicalPath = await realpath(presetPath);
+  if (!within(canonicalRoot, canonicalPath)) {
+    throw new Error(
+      "mirai-intl.workspace.json must stay inside its pnpm workspace root"
+    );
+  }
+  const content = await readFile(canonicalPath, "utf8");
+  let value: unknown;
+  try {
+    value = JSON.parse(content) as unknown;
+  } catch (error) {
+    throw new Error("mirai-intl.workspace.json must contain valid JSON", {
+      cause: error,
+    });
+  }
+  const root = assertObject(value, "mirai-intl.workspace.json");
+  assertExactKeys(
+    root,
+    ["requiredLocales", "sourceLocale"],
+    "mirai-intl.workspace.json"
+  );
+  const requiredLocales = parseRequiredLocales(
+    root.requiredLocales,
+    "mirai-intl.workspace.json"
+  );
+  const sourceLocaleValue = root.sourceLocale;
+  if (
+    sourceLocaleValue !== undefined &&
+    (typeof sourceLocaleValue !== "string" ||
+      sourceLocaleValue.length === 0 ||
+      sourceLocaleValue.normalize("NFC") !== sourceLocaleValue)
+  ) {
+    throw new TypeError(
+      "mirai-intl.workspace.json.sourceLocale must be a non-empty NFC locale"
+    );
+  }
+  if (
+    requiredLocales !== undefined &&
+    sourceLocaleValue !== undefined &&
+    !requiredLocales.includes(sourceLocaleValue)
+  ) {
+    throw new TypeError(
+      `mirai-intl.workspace.json.sourceLocale ${sourceLocaleValue} is not one of ${requiredLocales.join(",")}`
+    );
+  }
+  return {
+    preset: {
+      content,
+      path: canonicalPath,
+      ...(requiredLocales === undefined ? {} : { requiredLocales }),
+      ...(sourceLocaleValue === undefined
+        ? {}
+        : { sourceLocale: sourceLocaleValue }),
+    },
+    presetCandidates,
+    root: canonicalRoot,
+  };
+}
+
+async function inferredCheckProjects(
+  repositoryRoot: string
+): Promise<ReadonlyArray<IntlCheckProjectV1>> {
+  for (const path of ["tsconfig.intl.json", "tsconfig.json"] as const) {
+    if (
+      await regularFileExists(
+        join(repositoryRoot, path),
+        `inferred check project ${path}`
+      )
+    ) {
+      return [{ path, role: "owner" }];
+    }
+  }
+  throw new Error(
+    "Convention check project discovery found neither tsconfig.intl.json nor tsconfig.json; add one or configure checkProjects explicitly"
+  );
+}
+
+function parseConfigJsonc(source: string, context: string): JsonObject {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const current = source[index] as string;
+    const next = source[index + 1];
+    if (inString) {
+      output += current;
+      if (escaped) {
+        escaped = false;
+      } else if (current === "\\") {
+        escaped = true;
+      } else if (current === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (current === '"') {
+      inString = true;
+      output += current;
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      while (index < source.length && source[index] !== "\n") {
+        index += 1;
+      }
+      output += "\n";
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      index += 2;
+      while (
+        index < source.length &&
+        !(source[index] === "*" && source[index + 1] === "/")
+      ) {
+        output += source[index] === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      index += 1;
+      continue;
+    }
+    output += current;
+  }
+  try {
+    return assertObject(
+      JSON.parse(output.replace(/,\s*([}\]])/gu, "$1")) as unknown,
+      context
+    );
+  } catch (error) {
+    throw new Error(`${context} must contain valid JSONC`, { cause: error });
+  }
+}
+
+type CheckProjectConfigInput = Readonly<{
+  absolute: string;
+  hash: `sha256:${string}`;
+  path: string;
+}>;
+
+async function checkProjectConfigManifest(
+  repositoryRoot: string,
+  workspaceRoot: string,
+  project: IntlCheckProjectV1
+): Promise<ReadonlyArray<CheckProjectConfigInput>> {
+  const resolveConfig = async (
+    from: string,
+    specifier: string
+  ): Promise<string> => {
+    let direct: string;
+    if (
+      specifier.startsWith(".") ||
+      specifier.startsWith("/") ||
+      /^[A-Za-z]:[/\\]/u.test(specifier)
+    ) {
+      direct = resolve(dirname(from), specifier);
+    } else {
+      try {
+        direct = resolve(createRequire(from).resolve(specifier));
+      } catch (error) {
+        throw new Error(
+          `Check project ${project.path} has unresolved transitive config ${specifier}`,
+          { cause: error }
+        );
+      }
+    }
+    const candidates = [
+      direct,
+      ...(direct.endsWith(".json") ? [] : [`${direct}.json`]),
+      join(direct, "tsconfig.json"),
+    ];
+    for (const candidate of candidates) {
+      let entry;
+      try {
+        entry = await lstat(candidate);
+      } catch (error) {
+        if (fileSystemErrorCode(error) === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
+      if (entry.isSymbolicLink()) {
+        throw new Error(
+          `Check project ${project.path} transitive config ${candidate} must not be a symbolic link`
+        );
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const canonical = await realpath(candidate);
+      if (
+        !within(workspaceRoot, canonical) ||
+        canonical !== resolve(candidate)
+      ) {
+        throw new Error(
+          `Check project ${project.path} transitive config ${candidate} escapes its workspace root or traverses a symbolic link`
+        );
+      }
+      return canonical;
+    }
+    throw new Error(
+      `Check project ${project.path} has unresolved transitive config ${specifier}`
+    );
+  };
+
+  const rootConfig = resolve(repositoryRoot, project.path);
+  const pending = [rootConfig];
+  const visited = new Map<string, string>();
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (!path || visited.has(path)) {
+      continue;
+    }
+    const entry = await lstat(path).catch(() => undefined);
+    if (!entry || entry.isSymbolicLink() || !entry.isFile()) {
+      throw new Error(
+        `Check project ${project.path} transitive config must be a readable regular file`
+      );
+    }
+    const canonical = await realpath(path);
+    if (!within(workspaceRoot, canonical) || canonical !== resolve(path)) {
+      throw new Error(
+        `Check project ${project.path} transitive config escapes its workspace root or traverses a symbolic link`
+      );
+    }
+    const content = await readFile(canonical, "utf8");
+    visited.set(canonical, content);
+    const config = parseConfigJsonc(
+      content,
+      `Check project ${project.path} config ${relative(workspaceRoot, canonical)}`
+    );
+    const extendsValue = config.extends;
+    let extendsSpecifiers: ReadonlyArray<string> | undefined;
+    if (extendsValue === undefined) {
+      extendsSpecifiers = [];
+    } else if (typeof extendsValue === "string") {
+      extendsSpecifiers = [extendsValue];
+    } else if (
+      Array.isArray(extendsValue) &&
+      extendsValue.every((value) => typeof value === "string")
+    ) {
+      extendsSpecifiers = extendsValue;
+    }
+    if (!extendsSpecifiers) {
+      throw new Error(
+        `Check project ${project.path} extends must be a string or string array`
+      );
+    }
+    const referencesValue = config.references;
+    if (referencesValue !== undefined && !Array.isArray(referencesValue)) {
+      throw new Error(
+        `Check project ${project.path} references must be an array`
+      );
+    }
+    const referenceSpecifiers = (referencesValue ?? []).map(
+      (reference, index) => {
+        if (
+          !isPlainObject(reference) ||
+          typeof reference.path !== "string" ||
+          reference.path.length === 0
+        ) {
+          throw new Error(
+            `Check project ${project.path} references[${index}].path must be a non-empty string`
+          );
+        }
+        return reference.path;
+      }
+    );
+    for (const specifier of [...extendsSpecifiers, ...referenceSpecifiers]) {
+      pending.push(await resolveConfig(canonical, specifier));
+    }
+  }
+  return [...visited]
+    .map(([path, content]) => ({
+      absolute: path,
+      hash: sha256(content),
+      path: relative(workspaceRoot, path).split(sep).join("/"),
+    }))
+    .toSorted((left, right) => compareCanonicalStrings(left.path, right.path));
 }
 
 function checkProjects(
@@ -2371,10 +2930,13 @@ function conventionExceptions(
   };
 }
 
-export async function loadConventionCatalog(
-  packageRoot: string
+async function loadConventionCatalogSnapshot(
+  packageRoot: string,
+  compile: boolean
 ): Promise<LoadedConventionCatalog> {
   const repositoryRoot = await realpath(resolve(packageRoot));
+  const workspace = await loadConventionWorkspacePreset(repositoryRoot);
+  const workspacePreset = workspace.preset;
   const packagePath = join(repositoryRoot, "package.json");
   const packageContent = await readFile(packagePath, "utf8");
   const packageJson = assertObject(
@@ -2418,6 +2980,21 @@ export async function loadConventionCatalog(
       "package.json miraiIntl"
     );
   }
+  if (
+    workspacePreset?.requiredLocales !== undefined &&
+    exceptions.requiredLocales !== undefined &&
+    workspacePreset.requiredLocales.some(
+      (locale) => !exceptions.requiredLocales?.includes(locale)
+    )
+  ) {
+    throw new TypeError(
+      "Package requiredLocales must include every mirai-intl.workspace.json.requiredLocales entry"
+    );
+  }
+  const requiredLocales =
+    exceptions.requiredLocales ?? workspacePreset?.requiredLocales;
+  const configuredSourceLocale =
+    exceptions.sourceLocale ?? workspacePreset?.sourceLocale;
   for (const project of exceptions.checkProjects) {
     const projectPath = resolve(repositoryRoot, project.path);
     if (
@@ -2492,14 +3069,14 @@ export async function loadConventionCatalog(
   // An explicit locale set is the source contract.  Let discovery validate
   // every locale directory against it so a missing translation can identify
   // the exact JSON file to create instead of only reporting the aggregate set.
-  const locales = exceptions.requiredLocales ?? discoveredLocales;
+  const locales = requiredLocales ?? discoveredLocales;
   let inferredSourceLocale: string | undefined;
   if (locales.includes("en")) {
     inferredSourceLocale = "en";
   } else if (locales.length === 1) {
     inferredSourceLocale = locales[0];
   }
-  const sourceLocale = exceptions.sourceLocale ?? inferredSourceLocale;
+  const sourceLocale = configuredSourceLocale ?? inferredSourceLocale;
   if (!sourceLocale) {
     throw new Error(
       `Convention source locale is ambiguous across ${locales.join(",")}; set sourceLocale in mirai-intl.config.json or package.json miraiIntl`
@@ -2521,7 +3098,7 @@ export async function loadConventionCatalog(
       resolveMountedSource(repositoryRoot, dependencies, source)
     )
   );
-  const config: ResolvedCatalogConfig = {
+  let config: ResolvedCatalogConfig = {
     catalog: {
       buildId: packageVersionValue,
       id: packageName,
@@ -2571,6 +3148,32 @@ export async function loadConventionCatalog(
       `Convention value declaration ${unusedDeclarations.toSorted(compareCanonicalStrings)[0]} has no matching source message`
     );
   }
+  const resolvedCheckProjects =
+    exceptions.checkProjects.length > 0
+      ? exceptions.checkProjects
+      : await inferredCheckProjects(repositoryRoot);
+  const checkProjectInputs = await Promise.all(
+    resolvedCheckProjects.map(async (project) => {
+      const projectPath = resolve(repositoryRoot, project.path);
+      if (
+        !within(repositoryRoot, projectPath) ||
+        !(await regularFileExists(projectPath, `check project ${project.path}`))
+      ) {
+        throw new Error(
+          `Check project ${project.path} must be a readable regular tsconfig within its package root`
+        );
+      }
+      return {
+        manifest: await checkProjectConfigManifest(
+          repositoryRoot,
+          workspace.root,
+          project
+        ),
+        project,
+      };
+    })
+  );
+  config = { ...config, checkProjects: resolvedCheckProjects };
   const source: CatalogSource = {
     buildId: config.catalog.buildId,
     catalogPackage: config.catalog.package,
@@ -2581,7 +3184,6 @@ export async function loadConventionCatalog(
     rendererCapabilityId: config.catalog.rendererCapabilityId,
     sourceLocale: config.catalog.sourceLocale,
   };
-  compileCatalog(source);
   const outputRoot = await confinedProspectivePath(
     repositoryRoot,
     resolve(repositoryRoot, config.output),
@@ -2615,7 +3217,7 @@ export async function loadConventionCatalog(
         ) ||
         compareCanonicalStrings(left.root, right.root)
     );
-  return {
+  const loaded: LoadedConventionCatalog = {
     checkExceptions: exceptions.checkExceptions,
     checkProjects: config.checkProjects,
     config,
@@ -2623,24 +3225,50 @@ export async function loadConventionCatalog(
     discovery,
     inputs: {
       discoveryPolicyHash: sha256(
-        canonicalJson({ discovery, sources: discoverySources })
+        canonicalJson({
+          checkProjects: checkProjectInputs.map(({ manifest, project }) => ({
+            configManifest: manifest.map(({ hash, path }) => ({ hash, path })),
+            project,
+          })),
+          discovery,
+          sources: discoverySources,
+          workspacePreset:
+            workspacePreset === undefined
+              ? null
+              : {
+                  contentHash: sha256(workspacePreset.content),
+                  path: relative(repositoryRoot, workspacePreset.path)
+                    .split(sep)
+                    .join("/"),
+                },
+        })
       ),
       exceptionsHash: sha256(
         canonicalJson({
           ...(hasJsonConfig ? { configFile: "mirai-intl.config.json" } : {}),
-          checkProjects: exceptions.checkProjects,
+          checkProjects: resolvedCheckProjects,
           checkExceptions: exceptions.checkExceptions,
           formatterVersions: exceptions.formatterVersions,
-          sourceLocale: exceptions.sourceLocale ?? null,
+          requiredLocales: requiredLocales ?? null,
+          sourceLocale: configuredSourceLocale ?? null,
           sources: exceptions.sources.map(({ from, mount, path }) => ({
             from,
             mount,
             path,
           })),
           values: exceptions.schema.messages,
+          workspacePreset:
+            workspacePreset === undefined
+              ? null
+              : {
+                  contentHash: sha256(workspacePreset.content),
+                  path: relative(repositoryRoot, workspacePreset.path)
+                    .split(sep)
+                    .join("/"),
+                },
         })
       ),
-      exceptionsPresent: exceptions.present,
+      exceptionsPresent: exceptions.present || workspacePreset !== undefined,
       messageContractHash: sha256(
         canonicalJson(messageContractIdentity(messages))
       ),
@@ -2655,31 +3283,373 @@ export async function loadConventionCatalog(
     source,
     watch: {
       files: [
-        ...(hasJsonConfig ? [configPath] : []),
+        packagePath,
+        jsonConfigPath,
+        ...workspace.presetCandidates,
+        join(repositoryRoot, "tsconfig.intl.json"),
+        join(repositoryRoot, "tsconfig.json"),
+        ...checkProjectInputs.flatMap(({ manifest }) =>
+          manifest.map(({ absolute }) => absolute)
+        ),
         ...discovered.flatMap((entry) => entry.watchFiles),
-      ].toSorted(compareCanonicalStrings),
+      ]
+        .filter((path, index, values) => values.indexOf(path) === index)
+        .toSorted(compareCanonicalStrings),
       roots: discovered
         .map((entry) => entry.root)
         .toSorted(compareCanonicalStrings),
     },
   };
+  if (compile) {
+    compiledConventionCatalogs.set(loaded, compileCatalog(source));
+  }
+  return loaded;
+}
+
+export async function loadConventionCatalog(
+  packageRoot: string
+): Promise<LoadedConventionCatalog> {
+  return loadConventionCatalogSnapshot(packageRoot, true);
+}
+
+const catalogArtifactAbi = "mirai-intl-artifact-v2";
+const applicationLockNames = [
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+] as const;
+const generationInputCache = new Map<
+  string,
+  Readonly<{
+    fingerprint: `sha256:${string}`;
+    generationInput: CatalogGenerationInputIdentityV1;
+    loaded: LoadedConventionCatalog;
+  }>
+>();
+
+function canonicalIdentityValue(value: unknown): IntlCheckCanonicalJsonV2 {
+  return JSON.parse(canonicalJson(value)) as IntlCheckCanonicalJsonV2;
+}
+
+function normalizedGenerationConfig(
+  loaded: LoadedConventionCatalog
+): IntlCheckCanonicalJsonV2 {
+  return canonicalIdentityValue({
+    catalog: loaded.config.catalog,
+    checkProjects: loaded.config.checkProjects,
+    discovery: loaded.discovery,
+    inputs: {
+      discoveryPolicyHash: loaded.inputs.discoveryPolicyHash,
+      exceptionsHash: loaded.inputs.exceptionsHash,
+      exceptionsPresent: loaded.inputs.exceptionsPresent,
+      messageContractHash: loaded.inputs.messageContractHash,
+    },
+    output: loaded.config.output,
+    representation: loaded.config.representation,
+    sources: loaded.config.sources.map((source) => ({
+      dependency: source.dependency ?? null,
+      excludeDirectories: source.excludeDirectories,
+      flattenDirectories: source.flattenDirectories,
+      mount: source.mount,
+      root: source.root,
+    })),
+  });
+}
+
+async function generationInputEnvironment(repositoryRoot: string): Promise<
+  Readonly<{
+    application: Awaited<ReturnType<typeof computeApplicationPackageIdentity>>;
+    immutable: Awaited<ReturnType<typeof getImmutableIntegrityIdentity>>;
+  }>
+> {
+  const [immutable, application] = await Promise.all([
+    getImmutableIntegrityIdentity(),
+    computeApplicationPackageIdentity(repositoryRoot),
+  ]);
+  return { application, immutable };
+}
+
+async function generationInputIdentity(
+  loaded: LoadedConventionCatalog,
+  environment = generationInputEnvironment(loaded.repositoryRoot)
+): Promise<CatalogGenerationInputIdentityV1> {
+  const { application, immutable } = await environment;
+  const normalizedConfig = canonicalJson(normalizedGenerationConfig(loaded));
+  return buildCatalogGenerationInputIdentity({
+    application,
+    artifactAbi: catalogArtifactAbi,
+    compiler: immutable.compiler,
+    config: createIntegrityManifest([
+      {
+        hash: sha256(normalizedConfig),
+        path: "normalized-config.v1.json",
+        size: Buffer.byteLength(normalizedConfig),
+      },
+    ]),
+    environment: {
+      typescript: canonicalIdentityValue(immutable.typescript),
+      typescriptLibs: canonicalIdentityValue(immutable.typescriptLibs),
+    },
+    generationOptions: {
+      compact: true,
+      representation: loaded.config.representation,
+    },
+    icu: immutable.icuParser,
+    locales: createIntegrityManifest(loaded.inputs.sourceFiles),
+    runtimeAbi: RUNTIME_ABI,
+  });
+}
+
+function generationWatchEntries(
+  root: string,
+  path: string
+): Array<readonly [string, string]> {
+  try {
+    const entry = lstatSync(path, { bigint: true });
+    const relativePath = relative(root, path).split(sep).join("/");
+    if (entry.isSymbolicLink()) {
+      throw new Error(
+        `Catalog generation input contains symbolic link ${path}`
+      );
+    }
+    const identity = [
+      entry.dev,
+      entry.ino,
+      entry.mode,
+      entry.size,
+      entry.mtimeNs,
+      entry.ctimeNs,
+    ].join(":");
+    if (entry.isFile()) {
+      return [[relativePath, identity]];
+    }
+    if (!entry.isDirectory()) {
+      throw new Error(
+        `Catalog generation input contains non-regular entry ${path}`
+      );
+    }
+    const children = readdirSync(path, { withFileTypes: true }).toSorted(
+      (left, right) => compareCanonicalStrings(left.name, right.name)
+    );
+    const nested = children.map((child) =>
+      generationWatchEntries(root, join(path, child.name))
+    );
+    return [[`${relativePath}/`, identity], ...nested.flat()];
+  } catch (error) {
+    if (fileSystemErrorCode(error) === "ENOENT") {
+      return [[relative(root, path).split(sep).join("/"), "missing"]];
+    }
+    throw error;
+  }
+}
+
+function generationLockWatchEntries(
+  root: string
+): Array<readonly [string, string]> {
+  const entries: Array<readonly [string, string]> = [];
+  let directory = root;
+  for (;;) {
+    const candidates = applicationLockNames.map((name) =>
+      generationWatchEntries(root, join(directory, name))
+    );
+    entries.push(...candidates.flat());
+    if (
+      candidates.some((candidate) =>
+        candidate.some(([, identity]) => identity !== "missing")
+      )
+    ) {
+      return entries;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      return entries;
+    }
+    directory = parent;
+  }
+}
+
+function withinWatchRoot(root: string, path: string): boolean {
+  const relation = relative(root, path);
+  return (
+    relation === "" ||
+    (relation !== ".." &&
+      !relation.startsWith(`..${sep}`) &&
+      !isAbsolute(relation))
+  );
+}
+
+function generationInputFingerprint(
+  loaded: LoadedConventionCatalog
+): `sha256:${string}` {
+  const watchRoots = [
+    ...loaded.watch.roots,
+    join(loaded.repositoryRoot, "src/locales"),
+    join(loaded.repositoryRoot, "locales"),
+  ]
+    .filter(
+      (root, index, values) =>
+        values.indexOf(root) === index &&
+        !values.some(
+          (candidate, candidateIndex) =>
+            candidateIndex !== index && withinWatchRoot(candidate, root)
+        )
+    )
+    .toSorted(compareCanonicalStrings);
+  const roots = watchRoots
+    .map((path) => generationWatchEntries(loaded.repositoryRoot, path))
+    .flat();
+  const files = [...new Set(loaded.watch.files)]
+    .filter((path) => !watchRoots.some((root) => withinWatchRoot(root, path)))
+    .toSorted(compareCanonicalStrings)
+    .map((path) => generationWatchEntries(loaded.repositoryRoot, path))
+    .flat();
+  const entries = [
+    ...roots,
+    ...files,
+    ...generationLockWatchEntries(loaded.repositoryRoot),
+  ].toSorted(([left], [right]) => compareCanonicalStrings(left, right));
+  return sha256(canonicalJson(entries));
+}
+
+/** @internal Load only the deterministic generation-input ledger. */
+export async function loadConventionCatalogGenerationInput(
+  packageRoot: string
+): Promise<
+  Readonly<{
+    generationInput: CatalogGenerationInputIdentityV1;
+    loaded: LoadedConventionCatalog;
+  }>
+> {
+  const root = realpathSync(resolve(packageRoot));
+  const cached = generationInputCache.get(root);
+  if (cached !== undefined) {
+    const fingerprintBefore = generationInputFingerprint(cached.loaded);
+    if (
+      fingerprintBefore === cached.fingerprint &&
+      generationInputFingerprint(cached.loaded) === fingerprintBefore
+    ) {
+      return {
+        generationInput: cached.generationInput,
+        loaded: cached.loaded,
+      };
+    }
+  }
+  const environment = generationInputEnvironment(root);
+  const loaded = await loadConventionCatalogSnapshot(root, false);
+  const generationInput = await generationInputIdentity(loaded, environment);
+  generationInputCache.set(root, {
+    fingerprint: generationInputFingerprint(loaded),
+    generationInput,
+    loaded,
+  });
+  return { generationInput, loaded };
+}
+
+/** @internal Load and hash every generation input without using the cache. */
+export async function loadFreshConventionCatalogGenerationInput(
+  packageRoot: string
+): Promise<
+  Readonly<{
+    generationInput: CatalogGenerationInputIdentityV1;
+    integrity: Readonly<{
+      application: Awaited<
+        ReturnType<typeof computeApplicationPackageIdentity>
+      >;
+      immutable: Awaited<ReturnType<typeof computeImmutableIntegrityIdentity>>;
+    }>;
+    loaded: LoadedConventionCatalog;
+  }>
+> {
+  const root = realpathSync(resolve(packageRoot));
+  const [integrity, loaded] = await Promise.all([
+    Promise.all([
+      computeImmutableIntegrityIdentity(),
+      computeApplicationPackageIdentity(root),
+    ]).then(([immutable, application]) => ({ application, immutable })),
+    loadConventionCatalogSnapshot(root, false),
+  ]);
+  return {
+    generationInput: await generationInputIdentity(
+      loaded,
+      Promise.resolve(integrity)
+    ),
+    integrity,
+    loaded,
+  };
+}
+
+/** @internal Generate and retain the compiler-owned loaded snapshot. */
+export async function generateConventionCatalogWithSnapshot(
+  packageRoot: string,
+  options: ConventionOptions = {}
+): Promise<
+  Readonly<{
+    loaded: LoadedConventionCatalog;
+    result: ConventionGenerationResult;
+  }>
+> {
+  const { generationInput, loaded } =
+    await loadConventionCatalogGenerationInput(packageRoot);
+  const compiled = compiledConventionCatalog(loaded);
+  const artifacts = emitArtifacts(compiled, loaded.config.representation, {
+    compact: true,
+  });
+  const facade = stableFacadeOptions(loaded, compiled);
+  const report = await createReport(loaded, compiled, artifacts, options);
+  const reconstructGenerationSnapshot = async (
+    snapshot: CatalogGenerationSnapshot
+  ): Promise<CatalogGenerationSnapshot> => {
+    const current = await loadConventionCatalogGenerationInput(
+      loaded.repositoryRoot
+    );
+    const reconstructed = buildCatalogGenerationSnapshot({
+      catalogLockHash: snapshot.catalogLockHash,
+      generationInput: current.generationInput,
+      payloadContentHash: snapshot.payload.contentHash,
+      payloadDirectory: snapshot.payload.directory,
+      payloadEntries: snapshot.payload.manifest.entries,
+      stableFacadeHash: snapshot.stableFacadeHash,
+    });
+    return reconstructed;
+  };
+  const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
+    afterPointerCommit: reconstructGenerationSnapshot,
+    beforePayloadInstall: reconstructGenerationSnapshot,
+    expectedCanonicalRoot: loaded.outputRoot,
+    generationInput,
+  });
+  return { loaded, result: { report, write } };
 }
 
 export async function generateConventionCatalog(
   packageRoot: string,
   options: ConventionOptions = {}
 ): Promise<ConventionGenerationResult> {
-  const loaded = await loadConventionCatalog(packageRoot);
-  const compiled = compileCatalog(loaded.source);
+  return (await generateConventionCatalogWithSnapshot(packageRoot, options))
+    .result;
+}
+
+/** @internal Verify an already-loaded, compiler-owned catalog snapshot. */
+export async function verifyLoadedConventionCatalog(
+  loaded: LoadedConventionCatalog,
+  options: ConventionOptions = {}
+): Promise<
+  Readonly<{ report: ConventionReport; valid: true; write: WriteResult }>
+> {
+  const compiled = compiledConventionCatalog(loaded);
   const artifacts = emitArtifacts(compiled, loaded.config.representation, {
     compact: true,
   });
   const facade = stableFacadeOptions(loaded, compiled);
-  const report = await createReport(loaded, artifacts, options);
-  const write = await writeArtifactSet(loaded.outputRoot, artifacts, facade, {
+  const report = await createReport(loaded, compiled, artifacts, options);
+  const generationInput = await generationInputIdentity(loaded);
+  const write = await verifyArtifactSet(loaded.outputRoot, artifacts, facade, {
     expectedCanonicalRoot: loaded.outputRoot,
+    generationInput,
   });
-  return { report, write };
+  return { report, valid: true, write };
 }
 
 export async function verifyConventionCatalog(
@@ -2688,15 +3658,8 @@ export async function verifyConventionCatalog(
 ): Promise<
   Readonly<{ report: ConventionReport; valid: true; write: WriteResult }>
 > {
-  const loaded = await loadConventionCatalog(packageRoot);
-  const compiled = compileCatalog(loaded.source);
-  const artifacts = emitArtifacts(compiled, loaded.config.representation, {
-    compact: true,
-  });
-  const facade = stableFacadeOptions(loaded, compiled);
-  const report = await createReport(loaded, artifacts, options);
-  const write = await verifyArtifactSet(loaded.outputRoot, artifacts, facade, {
-    expectedCanonicalRoot: loaded.outputRoot,
-  });
-  return { report, valid: true, write };
+  return verifyLoadedConventionCatalog(
+    await loadConventionCatalog(packageRoot),
+    options
+  );
 }

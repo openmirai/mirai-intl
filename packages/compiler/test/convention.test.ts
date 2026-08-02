@@ -10,14 +10,17 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import {
   compileCatalog,
   generateConventionCatalog,
+  generateConventionCatalogWithSnapshot,
   loadConventionCatalog,
+  loadConventionCatalogGenerationInput,
   semanticMessageExportName,
   verifyConventionCatalog,
+  verifyLoadedConventionCatalog,
 } from "@openmirai/intl-compiler/internal";
 import { describe, expect, it } from "vitest";
 
@@ -32,6 +35,9 @@ async function createConventionApp(): Promise<string> {
     dependencies: { vite: "8.1.4" },
     name: "@example/dashboard",
     version: "1.2.3",
+  });
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
   });
   await writeJson(join(root, "src/locales/global/en.json"), {
     greeting: "Hello {name}",
@@ -134,6 +140,15 @@ describe("convention-first catalog discovery", () => {
           },
         ],
       });
+      expect(loaded.checkProjects).toEqual([
+        { path: "tsconfig.json", role: "owner" },
+      ]);
+      expect(loaded.watch.files).toEqual(
+        expect.arrayContaining([
+          join(await realpath(root), "mirai-intl.config.json"),
+          join(await realpath(root), "tsconfig.intl.json"),
+        ])
+      );
       expect(loaded.discovery).toEqual({
         catalogId: "@example/dashboard",
         catalogPackage: "@example/dashboard-intl-catalog",
@@ -158,8 +173,19 @@ describe("convention-first catalog discovery", () => {
         type: "object",
       });
 
-      const generated = await generateConventionCatalog(root, {
+      const generation = await generateConventionCatalogWithSnapshot(root, {
         collectEnvironment: false,
+      });
+      const generated = generation.result;
+      expect(Object.keys(generated)).toEqual(["report", "write"]);
+      const snapshotVerification = await verifyLoadedConventionCatalog(
+        generation.loaded,
+        { collectEnvironment: false }
+      );
+      expect(snapshotVerification.report).toEqual(generated.report);
+      expect(snapshotVerification.write).toEqual({
+        ...generated.write,
+        changed: false,
       });
       expect(generated.report).toMatchObject({
         authoritative: false,
@@ -204,6 +230,260 @@ describe("convention-first catalog discovery", () => {
     }
   });
 
+  it("prefers tsconfig.intl.json and preserves explicit checkProjects", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "tsconfig.intl.json"), {
+        include: ["src/i18n/**/*.ts"],
+      });
+      const inferred = await loadConventionCatalog(root);
+      expect(inferred.checkProjects).toEqual([
+        { path: "tsconfig.intl.json", role: "owner" },
+      ]);
+      expect(inferred.watch.files).toContain(
+        await realpath(join(root, "tsconfig.intl.json"))
+      );
+
+      await writeJson(join(root, "tsconfig.check.json"), {
+        include: ["src/**/*.ts"],
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.check.json", role: "owner" }],
+      });
+      const explicit = await loadConventionCatalog(root);
+      expect(explicit.checkProjects).toEqual([
+        { path: "tsconfig.check.json", role: "owner" },
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("fails closed when no TypeScript project can be inferred", async () => {
+    const root = await createConventionApp();
+    try {
+      await rm(join(root, "tsconfig.json"));
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /neither tsconfig\.intl\.json nor tsconfig\.json/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("identity-binds and watches confined transitive TypeScript configs", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "configs/base.json"), {
+        compilerOptions: { strict: true },
+      });
+      await writeJson(join(root, "packages/shared/tsconfig.json"), {
+        compilerOptions: { composite: true },
+      });
+      await writeJson(join(root, "tsconfig.json"), {
+        extends: "./configs/base.json",
+        include: ["src/**/*.ts"],
+        references: [{ path: "./packages/shared" }],
+      });
+      const first = await loadConventionCatalogGenerationInput(root);
+      expect(first.loaded.watch.files).toEqual(
+        expect.arrayContaining([
+          await realpath(join(root, "configs/base.json")),
+          await realpath(join(root, "packages/shared/tsconfig.json")),
+        ])
+      );
+
+      await writeJson(join(root, "configs/base.json"), {
+        compilerOptions: { noUncheckedIndexedAccess: true, strict: true },
+      });
+      const second = await loadConventionCatalogGenerationInput(root);
+      expect(second.generationInput).not.toEqual(first.generationInput);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects escaping and symlinked transitive TypeScript configs", async () => {
+    const root = await createConventionApp();
+    const external = join(root, "..", `${basename(root)}-external.json`);
+    try {
+      await writeJson(external, { compilerOptions: { strict: true } });
+      await writeJson(join(root, "tsconfig.json"), {
+        extends: `../${basename(external)}`,
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /escapes its workspace root/u
+      );
+
+      await writeJson(join(root, "configs/real.json"), {
+        compilerOptions: { strict: true },
+      });
+      await symlink(
+        join(root, "configs/real.json"),
+        join(root, "configs/linked.json")
+      );
+      await writeJson(join(root, "tsconfig.json"), {
+        extends: "./configs/linked.json",
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /must not be a symbolic link/u
+      );
+    } finally {
+      await rm(external, { force: true });
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("applies and identity-binds the pnpm workspace locale preset", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeFile(join(root, "pnpm-workspace.yaml"), "packages: ['.']\n");
+      const presetPath = join(root, "mirai-intl.workspace.json");
+      await writeJson(presetPath, {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
+      });
+      const first = await loadConventionCatalogGenerationInput(root);
+      expect(first.loaded.source.locales).toEqual(["en", "th"]);
+      expect(first.loaded.source.sourceLocale).toBe("en");
+      expect(first.loaded.watch.files).toContain(await realpath(presetPath));
+
+      await writeJson(presetPath, {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "th",
+      });
+      const second = await loadConventionCatalogGenerationInput(root);
+      expect(second.loaded.source.sourceLocale).toBe("th");
+      expect(second.generationInput).not.toEqual(first.generationInput);
+
+      await writeJson(join(root, "tsconfig.json"), {
+        compilerOptions: { strict: true },
+        include: ["src/**/*.ts", "src/**/*.tsx"],
+      });
+      const third = await loadConventionCatalogGenerationInput(root);
+      expect(third.generationInput).not.toEqual(second.generationInput);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects package narrowing and permits explicit workspace locale widening", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeFile(join(root, "pnpm-workspace.yaml"), "packages: ['.']\n");
+      await writeJson(join(root, "mirai-intl.workspace.json"), {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        requiredLocales: ["en"],
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /must include every/u
+      );
+
+      await writeJson(join(root, "src/locales/global/ja.json"), {
+        greeting: "こんにちは {name}",
+      });
+      await writeJson(
+        join(root, "src/locales/pages/{-$locale}/short-links/ja.json"),
+        { title: "{count, plural, other {# links}}" }
+      );
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        requiredLocales: ["en", "ja", "th"],
+        sourceLocale: "th",
+      });
+      await expect(loadConventionCatalog(root)).resolves.toMatchObject({
+        source: { locales: ["en", "ja", "th"], sourceLocale: "th" },
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("uses workspace required locales to pinpoint a missing locale file", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeFile(join(root, "pnpm-workspace.yaml"), "packages: ['.']\n");
+      await writeJson(join(root, "mirai-intl.workspace.json"), {
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
+      });
+      await rm(join(root, "src/locales/pages"), { recursive: true });
+      await rm(join(root, "src/locales/global/th.json"));
+      await expect(loadConventionCatalog(root)).rejects.toMatchObject({
+        file: "src/locales/global/th.json",
+        locale: "th",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects unknown and symlinked presets and selects the nearest nested workspace", async () => {
+    const outer = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const root = join(outer, "packages/app");
+    try {
+      await mkdir(root, { recursive: true });
+      await writeJson(join(root, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@example/dashboard",
+        version: "1.2.3",
+      });
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["src/**/*.ts"],
+      });
+      await writeJson(join(root, "src/locales/global/en.json"), {
+        greeting: "Hello",
+      });
+      await writeFile(
+        join(outer, "pnpm-workspace.yaml"),
+        "packages: ['packages/*']\n"
+      );
+      await writeJson(join(outer, "mirai-intl.workspace.json"), {
+        unexpected: true,
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /unknown field "unexpected"/u
+      );
+
+      await rm(join(outer, "mirai-intl.workspace.json"));
+      await writeFile(join(outer, "mirai-intl.workspace.json"), "{\n");
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /must contain valid JSON/u
+      );
+
+      await rm(join(outer, "mirai-intl.workspace.json"));
+      await writeJson(join(outer, "preset.json"), { sourceLocale: "en" });
+      await symlink(
+        join(outer, "preset.json"),
+        join(outer, "mirai-intl.workspace.json")
+      );
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /must be a regular file/u
+      );
+
+      await rm(join(outer, "mirai-intl.workspace.json"));
+      await writeJson(join(outer, "mirai-intl.workspace.json"), {
+        sourceLocale: "en",
+      });
+      await writeFile(join(root, "pnpm-workspace.yaml"), "packages: ['.']\n");
+      await writeJson(join(root, "mirai-intl.workspace.json"), {
+        sourceLocale: "en",
+      });
+      const nested = await loadConventionCatalog(root);
+      expect(nested.source.sourceLocale).toBe("en");
+      expect(nested.watch.files).toContain(
+        await realpath(join(root, "mirai-intl.workspace.json"))
+      );
+      expect(nested.watch.files).not.toContain(
+        await realpath(join(outer, "mirai-intl.workspace.json"))
+      );
+    } finally {
+      await rm(outer, { force: true, recursive: true });
+    }
+  });
+
   it("infers exact value contracts from whole-locale value files", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-value-files-"));
     try {
@@ -211,6 +491,9 @@ describe("convention-first catalog discovery", () => {
         dependencies: { vite: "8.1.4" },
         name: "@example/value-files",
         version: "1.0.0",
+      });
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["src/**/*.ts"],
       });
       await writeJson(join(root, "locales/runtime/en.json"), {
         label: "Course catalog",
@@ -396,6 +679,19 @@ describe("convention-first catalog discovery", () => {
       await writeJson(join(root, "src/locales/global/th.json"), {
         greeting: "ยินดีต้อนรับ {name}",
       });
+      await expect(
+        generateConventionCatalog(root, {
+          collectEnvironment: false,
+        })
+      ).rejects.toThrow(/no journal ownership proof/u);
+      await expect(readdir(join(root, "src/i18n"))).resolves.toContain(
+        ".generated.abandoned.tmp"
+      );
+      await expect(
+        readdir(join(root, "src/i18n/generated/builds"))
+      ).resolves.toEqual([first.write.contentHash.slice(7)]);
+
+      await rm(abandonedTemporary, { recursive: true });
       const second = await generateConventionCatalog(root, {
         collectEnvironment: false,
       });
@@ -410,10 +706,6 @@ describe("convention-first catalog discovery", () => {
       await expect(
         readdir(join(root, "src/i18n/generated/builds"))
       ).resolves.toEqual([second.write.contentHash.slice(7)]);
-      await expect(readdir(join(root, "src/i18n"))).resolves.not.toContain(
-        ".generated.abandoned.tmp"
-      );
-
       const unchanged = await generateConventionCatalog(root, {
         collectEnvironment: false,
       });
@@ -796,6 +1088,9 @@ describe("convention-first catalog discovery", () => {
             : {}),
           name: `@example/app-${index + 1}`,
           version: "1.0.0",
+        });
+        await writeJson(join(app, "tsconfig.json"), {
+          include: ["src/**/*.ts"],
         });
         await writeJson(join(app, "src/locales/global/en.json"), {
           title: `App ${index + 1}`,

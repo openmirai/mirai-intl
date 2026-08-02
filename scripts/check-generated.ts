@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
-  verifyArtifactSet,
 } from "../packages/compiler/src/internal";
+import { verifyArtifactSet } from "../packages/compiler/test/non-authoritative-writer";
 
 import { catalogFixtureSource } from "../test/fixtures/catalog";
 

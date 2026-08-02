@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   chmod,
   mkdir,
@@ -10,7 +9,9 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { delimiter, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -24,6 +25,8 @@ import {
 import { colorEnabled } from "../src/reporter";
 
 const cli = resolve(import.meta.dirname, "../src/cli.ts");
+const repositoryRoot = resolve(import.meta.dirname, "../../..");
+const builtCli = join(repositoryRoot, "packages/compiler/dist/cli.js");
 const tsx = resolve(
   import.meta.dirname,
   "../../../node_modules/tsx/dist/cli.mjs"
@@ -53,10 +56,12 @@ async function writeConventionApp(root: string): Promise<void> {
   await writeJson(join(root, "src/locales/global/th.json"), {
     greeting: "สวัสดี {name}",
   });
-}
-
-function sha256(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+  await writeJson(join(root, "tsconfig.json"), {
+    include: ["src/**/*.ts", "src/**/*.tsx"],
+  });
+  await writeJson(join(root, "mirai-intl.config.json"), {
+    checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+  });
 }
 
 function runCliWithEnvironment(
@@ -77,6 +82,126 @@ function runCliWithEnvironment(
 
 function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
   return runCliWithEnvironment(root, process.env, ...arguments_);
+}
+
+async function requireBuiltCli(): Promise<string> {
+  await readFile(builtCli, "utf8").catch(() => {
+    throw new Error(
+      "Mirai Intl CLI tests require the pretest build; run corepack pnpm test instead of invoking Vitest without building"
+    );
+  });
+  return builtCli;
+}
+
+async function ensureInstrumentation(
+  directory: string
+): Promise<Readonly<{ hook: string; report: string }>> {
+  const report = join(directory, "ensure-instrumentation.json");
+  const actualTypeScript = createRequire(
+    join(repositoryRoot, "packages/compiler/package.json")
+  ).resolve("typescript");
+  await writeFile(
+    join(directory, "ensure-loader.mjs"),
+    [
+      `const typescript = ${JSON.stringify(pathToFileURL(actualTypeScript).href)};`,
+      "export function load(url, context, nextLoad) {",
+      "  const loaded = nextLoad(url, context);",
+      "  if (url === typescript) {",
+      "    globalThis.__miraiEnsureTypeScriptLoaded = true;",
+      "    return loaded;",
+      "  }",
+      '  if (loaded.format !== "module") return loaded;',
+      '  let source = Buffer.isBuffer(loaded.source) ? loaded.source.toString("utf8") : String(loaded.source);',
+      '  if (url.includes("/packages/compiler/dist/analyze-sources-")) {',
+      '    source += "\\nglobalThis.__miraiEnsureAnalyzeSourcesLoaded = true;\\n";',
+      "    return { ...loaded, source };",
+      "  }",
+      '  if (url.includes("/packages/compiler/dist/transform-")) {',
+      '    source += "\\nglobalThis.__miraiEnsureTransformLoaded = true;\\n";',
+      "    return { ...loaded, source };",
+      "  }",
+      '  if (!url.includes("/packages/compiler/dist/catalog-")) return loaded;',
+      '  source = source.replace("function compileCatalog(source) {", "function compileCatalog(source) {\\n globalThis.__miraiEnsureCompileCalls += 1;");',
+      '  source = source.replace("function emitArtifacts(output, representation, options = {}) {", "function emitArtifacts(output, representation, options = {}) {\\n globalThis.__miraiEnsureEmitCalls += 1;");',
+      '  source += "\\nglobalThis.__miraiEnsureCompilerBundleInstrumented = true;\\n";',
+      "  return { ...loaded, source };",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const hook = join(directory, "ensure-hook.mjs");
+  await writeFile(
+    hook,
+    [
+      'import { writeFileSync } from "node:fs";',
+      'import { registerHooks } from "node:module";',
+      'import { load } from "./ensure-loader.mjs";',
+      "globalThis.__miraiEnsureCompileCalls = 0;",
+      "globalThis.__miraiEnsureEmitCalls = 0;",
+      "globalThis.__miraiEnsurePrograms = 0;",
+      "globalThis.__miraiEnsureAnalyzeSourcesLoaded = false;",
+      "globalThis.__miraiEnsureTypeScriptLoaded = false;",
+      "globalThis.__miraiEnsureTransformLoaded = false;",
+      "globalThis.__miraiEnsureCompilerBundleInstrumented = false;",
+      `const report = ${JSON.stringify(report)};`,
+      'process.on("exit", () => writeFileSync(report, JSON.stringify({',
+      "  analyzeSourcesLoaded: globalThis.__miraiEnsureAnalyzeSourcesLoaded,",
+      "  compileCalls: globalThis.__miraiEnsureCompileCalls,",
+      "  compilerBundleInstrumented: globalThis.__miraiEnsureCompilerBundleInstrumented,",
+      "  emitCalls: globalThis.__miraiEnsureEmitCalls,",
+      "  programs: globalThis.__miraiEnsurePrograms,",
+      "  transformLoaded: globalThis.__miraiEnsureTransformLoaded,",
+      "  typescriptLoaded: globalThis.__miraiEnsureTypeScriptLoaded,",
+      "})));",
+      "registerHooks({ load });",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  return { hook, report };
+}
+
+async function workspaceAnalysisInstrumentation(
+  directory: string
+): Promise<Readonly<{ hook: string; report: string }>> {
+  const report = join(directory, "workspace-analysis-instrumentation.json");
+  await writeFile(
+    join(directory, "workspace-analysis-loader.mjs"),
+    [
+      "export function load(url, context, nextLoad) {",
+      "  const loaded = nextLoad(url, context);",
+      '  if (loaded.format !== "module" || !url.includes("/packages/compiler/dist/analyze-sources-")) return loaded;',
+      '  const source = typeof loaded.source === "string" ? loaded.source : Buffer.from(loaded.source).toString("utf8");',
+      '  const signature = "async function analyzeLoadedConventionSourceFiles(loaded, root, generatedDirectory, sourceFiles, workspaceRoot = root, options = {}, preparedSources, classifierProjectControls) {";',
+      "  const transformed = source.replace(signature, `${signature}\\n globalThis.__miraiWorkspaceAnalysisCalls += 1;`);",
+      '  if (source.includes("async function analyzeLoadedConventionSourceFiles(") && transformed === source) throw new Error("Failed to instrument workspace source analysis");',
+      "  return { ...loaded, source: transformed === source ? source : `${transformed}\\nglobalThis.__miraiWorkspaceAnalysisInstrumented = true;\\n` };",
+      "}",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  const hook = join(directory, "workspace-analysis-hook.mjs");
+  await writeFile(
+    hook,
+    [
+      'import { writeFileSync } from "node:fs";',
+      'import { registerHooks } from "node:module";',
+      'import { load } from "./workspace-analysis-loader.mjs";',
+      "globalThis.__miraiWorkspaceAnalysisCalls = 0;",
+      "globalThis.__miraiWorkspaceAnalysisInstrumented = false;",
+      `const report = ${JSON.stringify(report)};`,
+      'process.on("exit", () => writeFileSync(report, JSON.stringify({',
+      "  analysisCalls: globalThis.__miraiWorkspaceAnalysisCalls,",
+      "  instrumented: globalThis.__miraiWorkspaceAnalysisInstrumented,",
+      "})));",
+      "registerHooks({ load });",
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+  return { hook, report };
 }
 
 describe("convention-only CLI", () => {
@@ -110,7 +235,7 @@ describe("convention-only CLI", () => {
       expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
       expect(checked.stderr).toBe("");
       expect(checked.stdout).toMatch(
-        /^mirai-intl check ✓ @example\/cli-app · en\+th · 1 message\n$/u
+        /^mirai-intl check ✓ @example\/cli-app · en\+th · 1 message · 1 authorization · 0 files\n$/u
       );
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -172,23 +297,326 @@ describe("convention-only CLI", () => {
       );
       expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
       expect(checked.stderr).toBe("");
-      expect(JSON.parse(checked.stdout)).toMatchObject({
-        catalogs: [
-          { receipt: { schemaVersion: 1 }, root: "apps/auth" },
-          { receipt: { schemaVersion: 1 }, root: "packages/i18n" },
-        ],
-        valid: true,
+      expect(JSON.parse(checked.stdout)).toEqual({
+        command: "check",
+        diagnostics: [],
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          catalogCount: 2,
+          projects: [
+            { findings: 0, path: "apps/auth", valid: true },
+            { findings: 0, path: "packages/i18n", valid: true },
+          ],
+          checkerProjects: 0,
+          ownerProjects: 2,
+          semanticAuthorizationRuns: 1,
+          semanticFilesAnalyzed: 2,
+          valid: true,
+        },
       });
-      await expect(
-        readFile(join(app, ".mirai-intl/check-receipt.v1.json"), "utf8")
-      ).resolves.toContain('"schemaVersion":1');
-      await expect(
-        readFile(join(shared, ".mirai-intl/check-receipt.v1.json"), "utf8")
-      ).resolves.toContain('"schemaVersion":1');
+      expect(checked.stdout).not.toMatch(
+        /"(?:compiled|environment|loaded|proof|receipt|report|sources)":/u
+      );
+      const verified = runCli(
+        workspace,
+        "verify",
+        "--workspace",
+        "--format=json"
+      );
+      expect(verified.status, `${verified.stdout}${verified.stderr}`).toBe(0);
+      expect(verified.stderr).toBe("");
+      expect(JSON.parse(verified.stdout)).toEqual({
+        command: "verify",
+        diagnostics: [],
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          buildReceiptVerifications: 2,
+          buildSemanticAnalysisRuns: 0,
+          valid: true,
+        },
+      });
     } finally {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 90_000);
+
+  it.each([
+    {
+      mutate: async (workspace: string) =>
+        writeFile(
+          join(workspace, "pnpm-workspace.yaml"),
+          "packages:\n  - packages/*\n"
+        ),
+      name: "workspace exclusion",
+    },
+    {
+      mutate: async (workspace: string) =>
+        rm(join(workspace, "pnpm-lock.yaml")),
+      name: "missing workspace lockfile",
+    },
+  ])(
+    "fails closed before writing a workspace receipt after $name",
+    async ({ mutate }) => {
+      const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+      const app = join(workspace, "apps/auth");
+      try {
+        await writeFile(
+          join(workspace, "pnpm-workspace.yaml"),
+          "packages:\n  - apps/*\n"
+        );
+        await writeFile(
+          join(workspace, "pnpm-lock.yaml"),
+          "lockfileVersion: '9.0'\nimporters:\n\n  apps/auth:\n    dependencies: {}\n"
+        );
+        await writeConventionApp(app);
+        expect(runCli(app, "generate").status).toBe(0);
+        await mutate(workspace);
+
+        const checked = runCli(
+          workspace,
+          "check",
+          "--workspace",
+          "--format=json"
+        );
+        expect(checked.status).toBe(1);
+        expect(JSON.parse(checked.stdout)).toMatchObject({
+          command: "check",
+          success: false,
+        });
+        expect(checked.stdout).toContain(
+          "no pnpm-lock.yaml exists at the package root and no parent pnpm workspace lockfile includes the target package importer"
+        );
+        await expect(
+          readFile(join(app, ".mirai-intl/check-receipt.v2.json"), "utf8")
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await rm(workspace, { force: true, recursive: true });
+      }
+    },
+    90_000
+  );
+
+  it("uses simple workspace membership with later top-level settings", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const binRoot = join(workspace, "bin");
+    const app = join(workspace, "apps/auth");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - apps/*\n\noverrides:\n  postcss: 8.5.10\n"
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\nimporters:\n\n  apps/auth:\n    dependencies: {}\n"
+      );
+      await writeConventionApp(app);
+      await mkdir(binRoot, { recursive: true });
+      const pnpm = join(binRoot, "pnpm");
+      await writeFile(
+        pnpm,
+        "#!/usr/bin/env node\nprocess.stderr.write('pnpm must not run for simple workspace membership\\n');\nprocess.exitCode = 1;\n",
+        "utf8"
+      );
+      await chmod(pnpm, 0o755);
+
+      const generated = runCliWithEnvironment(
+        app,
+        {
+          ...process.env,
+          PATH: `${binRoot}${delimiter}${process.env.PATH ?? ""}`,
+        },
+        "generate",
+        "--json"
+      );
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("falls back to pnpm for unsupported workspace YAML syntax", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const binRoot = join(workspace, "bin");
+    const app = join(workspace, "apps/auth");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        'packages:\n  - "apps/*"\n'
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\nimporters:\n\n  apps/auth:\n    dependencies: {}\n"
+      );
+      await writeConventionApp(app);
+      await mkdir(binRoot, { recursive: true });
+      const pnpm = join(binRoot, "pnpm");
+      await writeFile(
+        pnpm,
+        `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(
+          JSON.stringify([{ name: "@example/cli-app", path: app }])
+        )});\n`,
+        "utf8"
+      );
+      await chmod(pnpm, 0o755);
+
+      const generated = runCliWithEnvironment(
+        app,
+        {
+          ...process.env,
+          PATH: `${binRoot}${delimiter}${process.env.PATH ?? ""}`,
+        },
+        "generate",
+        "--json"
+      );
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("preserves workspace authorization failures without repeating source analysis", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const app = join(workspace, "apps/auth");
+    const instrumentationRoot = await mkdtemp(
+      join(tmpdir(), "mirai-intl-workspace-instrumentation-")
+    );
+    const report = join(workspace, "workspace-check-report.json");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - apps/*\n"
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        [
+          "lockfileVersion: '9.0'",
+          "importers:",
+          "",
+          "  apps/auth:",
+          "    dependencies: {}",
+          "",
+        ].join("\n")
+      );
+      await writeConventionApp(app);
+      await writeJson(join(app, "tsconfig.json"), {
+        include: ["src/**/*.ts", "src/**/*.tsx"],
+      });
+      await writeJson(join(app, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+      });
+
+      const publishedCli = await requireBuiltCli();
+      const generated = spawnSync(
+        process.execPath,
+        [publishedCli, "generate"],
+        {
+          cwd: app,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      await writeFile(
+        join(app, "src/page.tsx"),
+        [
+          'import { useTranslations } from "x";',
+          "const { t } = useTranslations();",
+          't("missing");',
+          "<div>Hello world</div>;",
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+
+      const instrumentation =
+        await workspaceAnalysisInstrumentation(instrumentationRoot);
+      const checked = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          instrumentation.hook,
+          publishedCli,
+          "check",
+          "--workspace",
+          "--format=json",
+          "--report-file",
+          report,
+        ],
+        {
+          cwd: workspace,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+
+      expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(1);
+      expect(checked.stderr).toBe("");
+      const failureReport = JSON.parse(await readFile(report, "utf8"));
+      expect(
+        JSON.parse(await readFile(instrumentation.report, "utf8"))
+      ).toEqual({ analysisCalls: 1, instrumented: true });
+      expect(failureReport).toEqual({
+        command: "check",
+        diagnostics: [
+          {
+            code: "INTL_SOURCE_INVALID",
+            column: 3,
+            file: "apps/auth/src/page.tsx",
+            hint: "Fix the source usage, then rerun mirai-intl check.",
+            line: 3,
+            message: "Unknown translation path missing",
+            severity: "error",
+          },
+          {
+            code: "INTL_SOURCE_INVALID",
+            file: "apps/auth/src/page.tsx",
+            hint: "Fix the source usage, then rerun mirai-intl check.",
+            line: 4,
+            message:
+              "hardcoded JSX text must use t()/t.rich() from locale JSON",
+            severity: "error",
+          },
+        ],
+        schemaVersion: 1,
+        success: false,
+      });
+      expect(JSON.parse(checked.stdout)).toEqual({
+        ...failureReport,
+        summary: {
+          catalogCount: 1,
+          projects: [{ findings: 2, path: "apps/auth", valid: false }],
+          checkerProjects: 0,
+          ownerProjects: 1,
+          semanticAuthorizationRuns: 1,
+          semanticFilesAnalyzed: 1,
+          valid: false,
+        },
+      });
+      expect(JSON.stringify(failureReport)).toContain(
+        "Unknown translation path missing"
+      );
+      expect(JSON.stringify(failureReport)).not.toMatch(
+        /"(?:compiled|environment|loaded|proof|receipt|report|sources)":/u
+      );
+    } finally {
+      await Promise.all([
+        rm(workspace, { force: true, recursive: true }),
+        rm(instrumentationRoot, { force: true, recursive: true }),
+      ]);
+    }
+  }, 180_000);
 
   it("finalizes repeated named artifact targets in one CLI invocation", async () => {
     const root = await createConventionApp();
@@ -230,10 +658,17 @@ describe("convention-only CLI", () => {
       );
       expect(finalized.status).toBe(0);
       expect(finalized.stderr).toBe("");
-      expect(JSON.parse(finalized.stdout)).toMatchObject([
-        { state: "finalized", target: "client" },
-        { state: "finalized", target: "worker" },
-      ]);
+      expect(JSON.parse(finalized.stdout)).toMatchObject({
+        command: "finalize-proof",
+        diagnostics: [],
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          buildReceiptVerifications: 1,
+          buildSemanticAnalysisRuns: 0,
+          valid: true,
+        },
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -336,14 +771,29 @@ describe("convention-only CLI", () => {
       expect(generated.status).toBe(0);
       expect(generated.stderr).toBe("");
       expect(generated.stdout).not.toContain("\u001b[");
-      expect(JSON.parse(generated.stdout)).toMatchObject({
-        report: { discovery: { catalogId: "@example/cli-app" } },
+      expect(JSON.parse(generated.stdout)).toEqual({
+        command: "generate",
+        diagnostics: [],
+        schemaVersion: 1,
+        success: true,
+        summary: {
+          catalogId: "@example/cli-app",
+          locales: "en+th",
+          messageCount: 1,
+          valid: true,
+        },
       });
 
       const ensured = runCli(root, "ensure", "--json");
       expect(ensured.status).toBe(0);
       expect(ensured.stderr).toBe("");
-      expect(JSON.parse(ensured.stdout)).toMatchObject({ changed: false });
+      expect(JSON.parse(ensured.stdout)).toEqual({
+        command: "ensure",
+        diagnostics: [],
+        schemaVersion: 1,
+        success: true,
+        summary: { changed: false, valid: true },
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -366,12 +816,9 @@ describe("convention-only CLI", () => {
 
       const source = await readFile(report, "utf8");
       expect(source).not.toContain("\u001b[");
-      expect(JSON.parse(source)).toMatchObject({
+      expect(JSON.parse(source)).toEqual({
         command: "generate",
         diagnostics: [],
-        result: {
-          report: { discovery: { catalogId: "@example/cli-app" } },
-        },
         schemaVersion: 1,
         success: true,
       });
@@ -497,7 +944,7 @@ describe("convention-only CLI", () => {
     }
   }, 60_000);
 
-  it("generates and verifies a convention catalog without configuration", async () => {
+  it("generates and verifies a convention catalog with minimal configuration", async () => {
     const root = await createConventionApp();
     try {
       const generated = runCli(root, "generate", "--json");
@@ -506,19 +953,11 @@ describe("convention-only CLI", () => {
       expect(generated.stderr).toBe("");
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
-        report: {
-          contracts: {
-            discovery: { mode: "convention" },
-            messages: { generated: true, source: "message-ast" },
-          },
-          discovery: {
-            catalogId: "@example/cli-app",
-            framework: "vite",
-            sourceLocale: "en",
-          },
-          environment: {
-            lockfileHash: sha256("lockfileVersion: '9.0'\n"),
-          },
+        command: "generate",
+        success: true,
+        summary: {
+          catalogId: "@example/cli-app",
+          valid: true,
         },
       });
 
@@ -527,7 +966,11 @@ describe("convention-only CLI", () => {
       expect(checked.signal).toBeNull();
       expect(checked.stderr).toBe("");
       expect(checked.status).toBe(0);
-      expect(JSON.parse(checked.stdout)).toMatchObject({ valid: true });
+      expect(JSON.parse(checked.stdout)).toMatchObject({
+        command: "check",
+        success: true,
+        summary: { valid: true },
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -554,10 +997,9 @@ describe("convention-only CLI", () => {
       expect(generated.stderr).toBe("");
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
-        report: {
-          discovery: { catalogId: "@example/cli-app" },
-          environment: { lockfileHash: sha256(lockfile) },
-        },
+        command: "generate",
+        success: true,
+        summary: { catalogId: "@example/cli-app", valid: true },
       });
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
@@ -630,11 +1072,9 @@ describe("convention-only CLI", () => {
       );
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
-        report: {
-          environment: {
-            installedTuple: { typescript: "6.0.3", vite: "7.3.6" },
-          },
-        },
+        command: "generate",
+        success: true,
+        summary: { valid: true },
       });
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
@@ -714,16 +1154,9 @@ describe("convention-only CLI", () => {
       const generated = runCli(root, "generate", "--json");
       expect(generated.status).toBe(0);
       expect(JSON.parse(generated.stdout)).toMatchObject({
-        report: {
-          contracts: { exceptions: { present: true } },
-          inputs: {
-            sourceFiles: expect.arrayContaining([
-              expect.objectContaining({
-                path: "node_modules/@mirai/i18n/locales/components/ui/global/en.json",
-              }),
-            ]),
-          },
-        },
+        command: "generate",
+        success: true,
+        summary: { catalogId: "@example/cli-app", valid: true },
       });
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -736,15 +1169,14 @@ describe("convention-only CLI", () => {
       const missing = runCli(root, "ensure", "--json");
       expect(missing.status).toBe(0);
       expect(JSON.parse(missing.stdout)).toMatchObject({
-        changed: true,
-        contentHash: expect.stringMatching(/^sha256:[a-f\d]{64}$/u),
-        directory: expect.stringContaining("src/i18n/generated/builds/"),
+        command: "ensure",
+        summary: { changed: true, valid: true },
       });
 
       const current = runCli(root, "ensure", "--json");
       expect(current.status).toBe(0);
       expect(JSON.parse(current.stdout)).toMatchObject({
-        changed: false,
+        summary: { changed: false, valid: true },
       });
 
       await writeJson(join(root, "src/locales/global/en.json"), {
@@ -756,12 +1188,124 @@ describe("convention-only CLI", () => {
       const stale = runCli(root, "ensure", "--json");
       expect(stale.status).toBe(0);
       expect(JSON.parse(stale.stdout)).toMatchObject({
-        changed: true,
+        summary: { changed: true, valid: true },
       });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("uses the receipt-first unchanged ensure path without Program, compile, or emit work", async () => {
+    const root = await createConventionApp();
+    const instrumentationRoot = await mkdtemp(
+      join(tmpdir(), "mirai-intl-ensure-instrumentation-")
+    );
+    try {
+      const publishedCli = await requireBuiltCli();
+      const generated = spawnSync(
+        process.execPath,
+        [publishedCli, "generate"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      expect(await readFile(publishedCli, "utf8")).not.toMatch(
+        /^import .*["']\.\/analyze-sources-/mu
+      );
+      const instrumentation = await ensureInstrumentation(instrumentationRoot);
+      const ensured = spawnSync(
+        process.execPath,
+        ["--import", instrumentation.hook, publishedCli, "ensure", "--json"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+      expect(ensured.status, `${ensured.stdout}${ensured.stderr}`).toBe(0);
+      expect(JSON.parse(ensured.stdout)).toMatchObject({
+        summary: { changed: false, valid: true },
+      });
+      expect(
+        JSON.parse(await readFile(instrumentation.report, "utf8"))
+      ).toEqual({
+        analyzeSourcesLoaded: false,
+        compileCalls: 0,
+        compilerBundleInstrumented: true,
+        emitCalls: 0,
+        programs: 0,
+        transformLoaded: false,
+        typescriptLoaded: false,
+      });
+    } finally {
+      await Promise.all([
+        rm(root, { force: true, recursive: true }),
+        rm(instrumentationRoot, { force: true, recursive: true }),
+      ]);
+    }
+  }, 180_000);
+
+  it("verifies selected authority without loading TypeScript or semantic analysis", async () => {
+    const root = await createConventionApp();
+    const instrumentationRoot = await mkdtemp(
+      join(tmpdir(), "mirai-intl-verify-instrumentation-")
+    );
+    try {
+      const publishedCli = await requireBuiltCli();
+      const proved = spawnSync(process.execPath, [publishedCli, "prove"], {
+        cwd: root,
+        encoding: "utf8",
+        env: process.env,
+        shell: false,
+        timeout: 60_000,
+      });
+      expect(proved.status, `${proved.stdout}${proved.stderr}`).toBe(0);
+      const instrumentation = await ensureInstrumentation(instrumentationRoot);
+      const verified = spawnSync(
+        process.execPath,
+        ["--import", instrumentation.hook, publishedCli, "verify", "--json"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: process.env,
+          shell: false,
+          timeout: 60_000,
+        }
+      );
+      expect(verified.status, `${verified.stdout}${verified.stderr}`).toBe(0);
+      expect(JSON.parse(verified.stdout)).toMatchObject({
+        command: "verify",
+        success: true,
+        summary: {
+          buildReceiptVerifications: 1,
+          buildSemanticAnalysisRuns: 0,
+          valid: true,
+        },
+      });
+      expect(
+        JSON.parse(await readFile(instrumentation.report, "utf8"))
+      ).toMatchObject({
+        analyzeSourcesLoaded: false,
+        programs: 0,
+        transformLoaded: false,
+        typescriptLoaded: false,
+      });
+    } finally {
+      await Promise.all([
+        rm(root, { force: true, recursive: true }),
+        rm(instrumentationRoot, { force: true, recursive: true }),
+      ]);
+    }
+  }, 180_000);
 
   it.each([
     ["--config", "intl.config.json"],
@@ -817,21 +1361,20 @@ describe("convention-only CLI", () => {
       expect(second.status).toBe(0);
       expect(second.stdout).toBe(first.stdout);
       expect(JSON.parse(first.stdout)).toMatchObject({
-        projects: [{ path: "tsconfig.json", role: "owner" }],
-        schemaVersion: 1,
-        sources: [
-          expect.objectContaining({
-            file: "src/page.ts",
-            owner: "tsconfig.json",
-          }),
-        ],
+        command: "prove",
+        success: true,
+        summary: {
+          semanticAuthorizationRuns: 1,
+          semanticFilesAnalyzed: 1,
+          valid: true,
+        },
       });
       await expect(verifyConventionCheckReceipt(root)).resolves.toMatchObject({
-        schemaVersion: 1,
+        schemaVersion: 3,
       });
       await writeFile(join(root, "src", "page.ts"), "export const page = 2;\n");
       await expect(verifyConventionCheckReceipt(root)).rejects.toThrow(
-        /stale check receipt/u
+        /bound file is stale or corrupt/u
       );
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -944,6 +1487,7 @@ describe("convention-only CLI", () => {
             rule: "source-analysis",
           },
         ],
+        checkProjects: [{ path: "tsconfig.json", role: "owner" }],
       });
       const generated = runCli(root, "generate");
       expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
@@ -981,13 +1525,18 @@ describe("convention-only CLI", () => {
         /Unknown translation path missing/u
       );
       expect(JSON.parse(checked.stdout)).toMatchObject({
-        sourceAnalysis: {
-          candidates: 1,
-          diagnostics: [
-            { message: expect.stringContaining("Unknown translation path") },
-          ],
+        command: "check",
+        diagnostics: [
+          {
+            code: "INTL_SOURCE_INVALID",
+            message: expect.stringContaining("Unknown translation path"),
+          },
+        ],
+        success: false,
+        summary: {
+          semanticFilesAnalyzed: 1,
+          valid: false,
         },
-        valid: false,
       });
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -1070,12 +1619,13 @@ describe("convention-only CLI", () => {
       expect(checked.error).toBeUndefined();
       expect(checked.status).toBe(0);
       expect(JSON.parse(checked.stdout)).toMatchObject({
-        sourceAnalysis: {
-          candidates: 1,
-          diagnostics: [],
-          filesAnalyzed: 1,
+        command: "check",
+        diagnostics: [],
+        success: true,
+        summary: {
+          semanticFilesAnalyzed: 1,
+          valid: true,
         },
-        valid: true,
       });
     } finally {
       await rm(root, { force: true, recursive: true });

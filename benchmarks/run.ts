@@ -14,8 +14,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
-  writeArtifactSet,
 } from "../packages/compiler/src/internal";
+import { writeArtifactSet } from "../packages/compiler/test/non-authoritative-writer";
 
 import {
   treeShakingCatalogSource,
@@ -236,6 +236,17 @@ async function createViteProject(
         resolve(directory, "src/useTranslations.mjs"),
         fakeUseTranslationsSource
       ),
+      writeText(
+        resolve(directory, "tsconfig.intl.json"),
+        `${JSON.stringify(
+          {
+            compilerOptions: { allowJs: true, checkJs: false, noEmit: true },
+            include: ["src/**/*.mjs"],
+          },
+          null,
+          2
+        )}\n`
+      ),
       linkPublicIntlPackage(directory),
       writeConventionMessages(directory),
     ]);
@@ -284,6 +295,17 @@ async function createNextProject(
       writeText(
         resolve(directory, "app/useTranslations.mjs"),
         fakeUseTranslationsSource
+      ),
+      writeText(
+        resolve(directory, "tsconfig.intl.json"),
+        `${JSON.stringify(
+          {
+            compilerOptions: { allowJs: true, checkJs: false, noEmit: true },
+            include: ["app/**/*.mjs"],
+          },
+          null,
+          2
+        )}\n`
       ),
       linkPublicIntlPackage(directory),
       writeConventionMessages(directory),

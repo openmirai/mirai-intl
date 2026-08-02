@@ -6,12 +6,14 @@ import { join } from "node:path";
 import {
   compileCatalog,
   emitArtifacts,
-  verifyArtifactSet,
-  writeArtifactSet,
 } from "@openmirai/intl-compiler/internal";
 import { expect, it, vi } from "vitest";
 
 import { catalogFixtureSource } from "../../../test/fixtures/catalog";
+import {
+  verifyArtifactSet,
+  writeArtifactSet,
+} from "./non-authoritative-writer";
 
 const injectedFailure = vi.hoisted(() => ({ nextStagingWrite: false }));
 
@@ -19,23 +21,26 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof FileSystemPromises>();
   return {
     ...original,
-    async writeFile(
-      path: Parameters<typeof original.writeFile>[0],
-      data: Parameters<typeof original.writeFile>[1],
-      options?: Parameters<typeof original.writeFile>[2]
-    ) {
+    async open(...arguments_: Parameters<typeof original.open>) {
+      const handle = await original.open(...arguments_);
+      const path = arguments_[0];
       const normalizedPath = String(path).replaceAll("\\", "/");
-      if (
-        injectedFailure.nextStagingWrite &&
-        normalizedPath.includes("/builds/.") &&
-        normalizedPath.includes(".tmp/")
-      ) {
-        injectedFailure.nextStagingWrite = false;
-        throw Object.assign(new Error("Injected staging write failure"), {
-          code: "EIO",
-        });
+      const stagingPayload =
+        normalizedPath.includes("/.catalog-publication/stage-") &&
+        normalizedPath.includes("/payload/");
+      if (stagingPayload) {
+        const writeFile = handle.writeFile.bind(handle);
+        handle.writeFile = async (...writeArguments) => {
+          if (injectedFailure.nextStagingWrite) {
+            injectedFailure.nextStagingWrite = false;
+            throw Object.assign(new Error("Injected staging write failure"), {
+              code: "EIO",
+            });
+          }
+          return writeFile(...writeArguments);
+        };
       }
-      return original.writeFile(path, data, options);
+      return handle;
     },
   };
 });

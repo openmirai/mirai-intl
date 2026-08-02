@@ -1,17 +1,29 @@
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import type { IntlCheckProjectV1 } from "@openmirai/intl-abi";
+import type {
+  IntlCheckCanonicalJsonV2,
+  IntlCheckProjectV1,
+  IntlCheckProjectV2,
+} from "@openmirai/intl-abi";
 import ts from "typescript";
+
+import { compareCanonicalStrings, sha256 } from "./canonical";
 
 export type OwnedSourceFile = Readonly<{
   absolute: string;
   file: string;
   owner: string;
+  /** @internal Exact TypeScript owner configuration for semantic batching. */
+  ownerCompilerOptions: ts.CompilerOptions;
 }>;
 
 export type ConventionSourceUniverse = Readonly<{
   files: ReadonlyArray<OwnedSourceFile>;
+  projects: ReadonlyArray<
+    Omit<IntlCheckProjectV2, "configManifestHash" | "normalizedOptionsHash">
+  >;
   workspaceRoot: string;
 }>;
 
@@ -41,7 +53,7 @@ function isWithin(root: string, path: string): boolean {
   );
 }
 
-async function findWorkspaceRoot(root: string): Promise<string> {
+export async function findWorkspaceRoot(root: string): Promise<string> {
   const canonicalRoot = await realpath(root);
   let directory = canonicalRoot;
   while (true) {
@@ -65,7 +77,16 @@ async function projectFiles(
   root: string,
   workspaceRoot: string,
   project: IntlCheckProjectV1
-): Promise<ReadonlySet<string>> {
+): Promise<
+  Readonly<{
+    evidence: Omit<
+      IntlCheckProjectV2,
+      "configManifestHash" | "normalizedOptionsHash"
+    >;
+    files: ReadonlySet<string>;
+    options: ts.CompilerOptions;
+  }>
+> {
   const configPath = resolve(root, project.path);
   if (packageRelativePath(root, configPath) !== project.path) {
     throw new Error(`Check project ${project.path} escapes its package root`);
@@ -80,22 +101,23 @@ async function projectFiles(
   if (!isWithin(workspaceRoot, canonicalConfigPath)) {
     throw new Error(`Check project ${project.path} escapes its workspace root`);
   }
-  const read = ts.readConfigFile(canonicalConfigPath, ts.sys.readFile);
-  if (read.error) {
-    throw new Error(
-      `Unable to read check project ${project.path}: ${ts.flattenDiagnosticMessageText(read.error.messageText, " ")}`
-    );
-  }
-  const parsed = ts.parseJsonConfigFileContent(
-    read.config,
-    ts.sys,
-    dirname(canonicalConfigPath),
-    undefined,
-    canonicalConfigPath
+  const configReads = new Set<string>();
+  const host: ts.ParseConfigFileHost = {
+    ...ts.sys,
+    onUnRecoverableConfigFileDiagnostic: () => undefined,
+    readFile(path) {
+      configReads.add(resolve(path));
+      return ts.sys.readFile(path);
+    },
+  };
+  const parsed = ts.getParsedCommandLineOfConfigFile(
+    canonicalConfigPath,
+    {},
+    host
   );
-  if (parsed.errors.length > 0) {
+  if (!parsed || parsed.errors.length > 0) {
     throw new Error(
-      `Unable to parse check project ${project.path}: ${ts.flattenDiagnosticMessageText(parsed.errors[0]?.messageText ?? "unknown error", " ")}`
+      `Unable to parse check project ${project.path}: ${ts.flattenDiagnosticMessageText(parsed?.errors[0]?.messageText ?? "unknown error", " ")}`
     );
   }
   const files = await Promise.all(
@@ -115,7 +137,152 @@ async function projectFiles(
       return canonical;
     })
   );
-  return new Set(files);
+  const configPaths = new Set<string>([
+    canonicalConfigPath,
+    ...[...configReads].filter((path) => path.endsWith(".json")),
+  ]);
+  const pending = [canonicalConfigPath];
+  const edges = new Map<
+    string,
+    Readonly<{
+      extends: ReadonlyArray<string>;
+      references: ReadonlyArray<string>;
+    }>
+  >();
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (!path || edges.has(path)) {
+      continue;
+    }
+    const transitiveEntry = await lstat(path).catch(() => undefined);
+    if (
+      !transitiveEntry ||
+      transitiveEntry.isSymbolicLink() ||
+      !transitiveEntry.isFile() ||
+      !isWithin(workspaceRoot, await realpath(path))
+    ) {
+      throw new Error(
+        `Check project ${project.path} transitive config must be a confined regular file`
+      );
+    }
+    const source = await readFile(path, "utf8");
+    const result = ts.parseConfigFileTextToJson(path, source);
+    if (result.error || !result.config || typeof result.config !== "object") {
+      throw new Error(`Unable to parse transitive check config ${path}`);
+    }
+    const config = result.config as {
+      extends?: unknown;
+      references?: unknown;
+    };
+    const resolveConfig = (specifier: string): string => {
+      if (!specifier.startsWith(".") && !isAbsolute(specifier)) {
+        try {
+          return resolve(createRequire(path).resolve(specifier));
+        } catch {
+          // Continue to the confined path candidates for an actionable error.
+        }
+      }
+      const direct = resolve(dirname(path), specifier);
+      const candidates = [
+        direct,
+        direct.endsWith(".json") ? direct : `${direct}.json`,
+        join(direct, "tsconfig.json"),
+      ];
+      const found = candidates.find(
+        (candidate) =>
+          configPaths.has(candidate) || ts.sys.fileExists(candidate)
+      );
+      if (!found) {
+        throw new Error(
+          `Check project ${project.path} has an unresolved transitive config ${specifier}`
+        );
+      }
+      return found;
+    };
+    let extendsSpecifiers: ReadonlyArray<string> = [];
+    if (typeof config.extends === "string") {
+      extendsSpecifiers = [config.extends];
+    } else if (Array.isArray(config.extends)) {
+      extendsSpecifiers = config.extends.filter(
+        (value): value is string => typeof value === "string"
+      );
+    }
+    const referenceSpecifiers = Array.isArray(config.references)
+      ? config.references.flatMap((entry) =>
+          entry &&
+          typeof entry === "object" &&
+          typeof Reflect.get(entry, "path") === "string"
+            ? [Reflect.get(entry, "path") as string]
+            : []
+        )
+      : [];
+    const extendsPaths = extendsSpecifiers.map(resolveConfig);
+    const referencePaths = referenceSpecifiers.map(resolveConfig);
+    edges.set(path, {
+      extends: extendsPaths,
+      references: referencePaths,
+    });
+    for (const dependency of [...extendsPaths, ...referencePaths]) {
+      configPaths.add(dependency);
+      pending.push(dependency);
+    }
+  }
+  const configManifest = await Promise.all(
+    [...edges]
+      .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
+      .map(async ([path, edge]) => ({
+        extends: edge.extends.map((entry) =>
+          receiptRelativePath(workspaceRoot, entry)
+        ),
+        hash: sha256(await readFile(path, "utf8")),
+        path: receiptRelativePath(workspaceRoot, path),
+        references: edge.references
+          .map((entry) => receiptRelativePath(workspaceRoot, entry))
+          .toSorted(),
+      }))
+  );
+  const normalizeOption = (value: unknown): IntlCheckCanonicalJsonV2 => {
+    if (
+      value === null ||
+      typeof value === "boolean" ||
+      typeof value === "number"
+    ) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const absolute = isAbsolute(value) ? resolve(value) : undefined;
+      return absolute && isWithin(workspaceRoot, absolute)
+        ? receiptRelativePath(workspaceRoot, absolute)
+        : value.replaceAll("\\", "/").normalize("NFC");
+    }
+    if (Array.isArray(value)) {
+      return value.map(normalizeOption);
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([, entry]) => entry !== undefined)
+          .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
+          .map(([key, entry]) => [key, normalizeOption(entry)])
+      );
+    }
+    throw new Error(`Check project ${project.path} has non-canonical options`);
+  };
+  return {
+    evidence: {
+      configManifest,
+      normalizedOptions: normalizeOption(parsed.options) as Readonly<
+        Record<string, IntlCheckCanonicalJsonV2>
+      >,
+      path: project.path,
+      role: project.role,
+      rootFiles: files
+        .map((file) => receiptRelativePath(workspaceRoot, file))
+        .toSorted(),
+    },
+    files: new Set(files),
+    options: parsed.options,
+  };
 }
 
 /**
@@ -142,7 +309,7 @@ export async function resolveConventionSourceUniverse(
   const generatedRoot = resolve(canonicalRoot, generatedRelative);
   const projectsWithFiles = await Promise.all(
     projects.map(async (project) => ({
-      files: await projectFiles(canonicalRoot, workspaceRoot, project),
+      ...(await projectFiles(canonicalRoot, workspaceRoot, project)),
       project,
     }))
   );
@@ -176,7 +343,7 @@ export async function resolveConventionSourceUniverse(
     )
   );
   const files = [...sourceFiles]
-    .toSorted((left, right) => left.localeCompare(right))
+    .toSorted(compareCanonicalStrings)
     .map((absolute) => {
       const matching = ownerProjects.filter((entry) =>
         entry.files.has(absolute)
@@ -194,7 +361,16 @@ export async function resolveConventionSourceUniverse(
         absolute,
         file: receiptRelativePath(workspaceRoot, absolute),
         owner,
+        ownerCompilerOptions: matching[0]?.options ?? {},
       };
     });
-  return { files, workspaceRoot };
+  return {
+    files,
+    projects: projectsWithFiles
+      .map(({ evidence }) => evidence)
+      .toSorted((left, right) =>
+        compareCanonicalStrings(left.path, right.path)
+      ),
+    workspaceRoot,
+  };
 }

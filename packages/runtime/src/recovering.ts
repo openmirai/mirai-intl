@@ -44,6 +44,8 @@ export type RecoveringIntlRuntimeOptions = Omit<
     proofIdentity?: string;
     /** A non-throwing rich fallback for non-React renderers. */
     richFallback?: () => RichRenderValue;
+    /** Safe text rendered when a terminal translation operation fails. */
+    textFallback?: (diagnostic: IntlRecoveryDiagnostic) => string;
     /** Exact-value fallback used only when a value operation cannot render. */
     valueFallback?: () => JsonValue;
   }>;
@@ -54,6 +56,7 @@ type RecoveryControls = Pick<
   | "proofIdentity"
   | "release"
   | "richFallback"
+  | "textFallback"
   | "valueFallback"
 >;
 
@@ -89,6 +92,7 @@ export class RecoveringIntlRuntime {
   readonly #runtime: runtime.StrictIntlRuntime;
   readonly #diagnosticSink: RecoveringIntlRuntimeOptions["diagnosticSink"];
   readonly #richFallback: () => RichRenderValue;
+  readonly #textFallback: (diagnostic: IntlRecoveryDiagnostic) => string;
   readonly #valueFallback: () => JsonValue;
   readonly #proofIdentity: string;
   readonly #release: string;
@@ -107,6 +111,7 @@ export class RecoveringIntlRuntime {
       proofIdentity,
       release,
       richFallback,
+      textFallback,
       valueFallback,
     } = options;
     if (strictRuntime) {
@@ -118,6 +123,7 @@ export class RecoveringIntlRuntime {
         proofIdentity: _proofIdentity,
         release: _release,
         richFallback: _richFallback,
+        textFallback: _textFallback,
         valueFallback: _valueFallback,
         ...strictOptions
       } = strictInput;
@@ -127,6 +133,7 @@ export class RecoveringIntlRuntime {
     this.#proofIdentity = proofIdentity ?? "unknown";
     this.#release = release ?? "unknown";
     this.#richFallback = richFallback ?? (() => "" as RichRenderValue);
+    this.#textFallback = textFallback ?? (() => "");
     this.#valueFallback = valueFallback ?? (() => null);
   }
 
@@ -152,8 +159,7 @@ export class RecoveringIntlRuntime {
     try {
       return this.#runtime.t(descriptor, ...values);
     } catch {
-      this.#recover("text");
-      return "";
+      return this.#terminalText(this.#recover("text"));
     }
   }
 
@@ -201,22 +207,38 @@ export class RecoveringIntlRuntime {
     try {
       return this.#runtime.renderDynamic(call);
     } catch {
-      this.#recover("dynamic");
-      return "";
+      return this.#terminalText(this.#recover("dynamic"));
     }
   }
 
   /** @internal Used by the unlowered translation-function map fallback. */
-  recoverMap(): void {
-    this.#recover("map");
+  recoverMap(): string {
+    return this.#terminalText(this.#recover("map"));
   }
 
-  #recover(operation: IntlRecoveryOperation): void {
+  #terminalText(diagnostic: IntlRecoveryDiagnostic): string {
+    try {
+      const fallback = this.#textFallback(diagnostic);
+      return typeof fallback === "string" ? fallback : "";
+    } catch {
+      return "";
+    }
+  }
+
+  #recover(operation: IntlRecoveryOperation): IntlRecoveryDiagnostic {
     const now = Date.now();
-    const key = `${operation}:${this.locale}:${this.#release}:${this.#proofIdentity}`;
+    const diagnostic = {
+      locale: this.locale,
+      operation,
+      proofIdentity: this.#proofIdentity,
+      recovery: "terminal",
+      release: this.#release,
+      stage: "runtime",
+    } as const satisfies IntlRecoveryDiagnostic;
+    const key = `${operation}:${diagnostic.locale}:${this.#release}:${this.#proofIdentity}`;
     const previous = sharedRecentRecoveries.get(key);
     if (previous !== undefined && now - previous < recoveryWindowMs) {
-      return;
+      return diagnostic;
     }
     sharedRecentRecoveries.delete(key);
     sharedRecentRecoveries.set(key, now);
@@ -226,17 +248,11 @@ export class RecoveringIntlRuntime {
       );
     }
     try {
-      this.#diagnosticSink?.({
-        locale: this.locale,
-        operation,
-        proofIdentity: this.#proofIdentity,
-        recovery: "terminal",
-        release: this.#release,
-        stage: "runtime",
-      });
+      this.#diagnosticSink?.(diagnostic);
     } catch {
       // Observability is never allowed to affect rendering.
     }
+    return diagnostic;
   }
 }
 

@@ -9,7 +9,6 @@ import {
   realpath,
   rename,
   rm,
-  writeFile,
 } from "node:fs/promises";
 import {
   basename,
@@ -22,14 +21,44 @@ import {
 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { canonicalJson, sha256 } from "./canonical";
+import { RUNTIME_ABI } from "@openmirai/intl-abi";
+import type { Sha256 } from "@openmirai/intl-abi";
+
+import { canonicalHash, canonicalJson, sha256 } from "./canonical";
 import type { EmittedArtifacts } from "./emit";
+import {
+  buildCatalogGenerationInputIdentity,
+  buildCatalogGenerationSnapshot,
+  NON_AUTHORITATIVE_ARTIFACT_ABI,
+  parseCanonicalCatalogCurrentPointer,
+  parseCanonicalCatalogGenerationReceipt,
+  parseCanonicalCatalogPublicationJournal,
+  parseCatalogGenerationSnapshot,
+} from "./generation-snapshot";
+import type {
+  CatalogCurrentPointerBaseV2,
+  CatalogCurrentPointerV2,
+  CatalogGenerationInputIdentityV1,
+  CatalogGenerationReceiptV1,
+  CatalogGenerationSnapshot,
+  CatalogPayloadManifestEntryV1,
+  CatalogPublicationJournalV1,
+  CatalogPublicationState,
+} from "./generation-snapshot";
 import { generatedSourceHeader } from "./generated-source";
+import { createIntegrityManifest } from "./integrity-identity";
 
 export type WriteResult = Readonly<{
   changed: boolean;
   contentHash: `sha256:${string}`;
   directory: string;
+}>;
+
+export type CommittedArtifactSnapshot = Readonly<{
+  contentHash: Sha256;
+  directory: string;
+  generationInputHash: Sha256;
+  generationReceiptHash: Sha256;
 }>;
 
 export type StableFacadeExport = Readonly<{
@@ -42,18 +71,29 @@ export type StableFacadeOptions = Readonly<{
 }>;
 
 export type ArtifactWriterOptions = Readonly<{
+  authority?: "non-authoritative-test-only";
+  afterPointerCommit?(
+    snapshot: CatalogGenerationSnapshot
+  ): CatalogGenerationSnapshot | Promise<CatalogGenerationSnapshot>;
+  beforePayloadInstall?(
+    snapshot: CatalogGenerationSnapshot
+  ): CatalogGenerationSnapshot | Promise<CatalogGenerationSnapshot>;
   expectedCanonicalRoot?: string;
+  generationInput?: CatalogGenerationInputIdentityV1;
+  publicationHooks?: PublicationFaultInjectionHooks;
 }>;
 
 const emptyStableFacade: StableFacadeOptions = Object.freeze({ exports: [] });
-const emptyWriterOptions: ArtifactWriterOptions = Object.freeze({});
 
-type CurrentPointer = Readonly<{
-  contentHash: string;
-  directory: string;
+export type PublicationState = CatalogPublicationState;
+
+export type PublicationFaultInjectionHooks = Readonly<{
+  afterPreviousPayloadRemoval?(): Promise<void> | void;
+  afterState?(state: PublicationState): Promise<void> | void;
 }>;
 
-type SelectorIdentity = CurrentPointer & Readonly<{ schemaVersion: 1 }>;
+type SelectorIdentity = CatalogCurrentPointerBaseV2;
+type CurrentPointer = CatalogCurrentPointerV2;
 
 type PublicationLockMetadata = Readonly<{
   acquiredAtMs: number;
@@ -243,7 +283,7 @@ async function readManagedTextFile(
 const flatArtifactName = /^[\dA-Za-z][\dA-Za-z._-]*$/u;
 
 function artifactEntries(
-  artifacts: EmittedArtifacts
+  artifacts: EmittedArtifacts | Readonly<Record<string, string>>
 ): ReadonlyArray<readonly [string, string]> {
   const prototype = Object.getPrototypeOf(artifacts);
   if (prototype !== Object.prototype && prototype !== null) {
@@ -286,7 +326,7 @@ function artifactEntries(
 }
 
 export function artifactContentHash(
-  artifacts: EmittedArtifacts
+  artifacts: EmittedArtifacts | Readonly<Record<string, string>>
 ): `sha256:${string}` {
   return sha256(canonicalJson(Object.fromEntries(artifactEntries(artifacts))));
 }
@@ -295,35 +335,21 @@ async function readCurrent(
   root: string,
   outputRoot: string
 ): Promise<CurrentPointer | undefined> {
-  try {
-    const content = await readManagedTextFile(
-      outputRoot,
-      join(root, "current.json"),
-      "Generated current pointer"
-    );
-    if (content === undefined) {
-      return undefined;
-    }
-    const value: unknown = JSON.parse(content);
-    if (
-      value &&
-      typeof value === "object" &&
-      Object.hasOwn(value, "contentHash") &&
-      typeof Reflect.get(value, "contentHash") === "string" &&
-      Object.hasOwn(value, "directory") &&
-      typeof Reflect.get(value, "directory") === "string"
-    ) {
-      return {
-        contentHash: Reflect.get(value, "contentHash") as string,
-        directory: Reflect.get(value, "directory") as string,
-      };
-    }
-  } catch (error) {
-    if (errorCode(error) !== "ENOENT") {
-      throw error;
-    }
+  const content = await readManagedTextFile(
+    outputRoot,
+    join(root, "current.json"),
+    "Generated current pointer"
+  );
+  if (content === undefined) {
+    return undefined;
   }
-  return undefined;
+  try {
+    return parseCanonicalCatalogCurrentPointer(content);
+  } catch (error) {
+    throw new Error("Generated current pointer is malformed", {
+      cause: error,
+    });
+  }
 }
 
 function parseSelectorIdentity(
@@ -352,9 +378,13 @@ function parseSelectorIdentity(
   if (
     typeof contentHash !== "string" ||
     typeof directory !== "string" ||
-    schemaVersion !== 1
+    schemaVersion !== 2
   ) {
     throw new Error(`${label} has invalid identity fields`);
+  }
+  assertSha256(contentHash, `${label}.contentHash`);
+  if (directory !== `builds/${contentHash.slice("sha256:".length)}`) {
+    throw new Error(`${label} does not identify its content-addressed payload`);
   }
   return { contentHash, directory, schemaVersion };
 }
@@ -363,35 +393,11 @@ function catalogLockContent(
   contentHash: `sha256:${string}`,
   directory: string
 ): string {
-  return `${canonicalJson({ contentHash, directory, schemaVersion: 1 })}\n`;
-}
-
-async function catalogLockMatches(
-  root: string,
-  outputRoot: string,
-  contentHash: `sha256:${string}`,
-  directory: string
-): Promise<boolean> {
-  const source = await readManagedTextFile(
-    outputRoot,
-    join(root, "catalog.lock.json"),
-    "Generated catalog lock"
-  );
-  if (source === undefined) {
-    return false;
-  }
-  let lock: unknown;
-  try {
-    lock = JSON.parse(source) as unknown;
-  } catch {
-    return false;
-  }
-  const identity = parseSelectorIdentity(lock, "Generated catalog lock");
-  return (
-    source === catalogLockContent(contentHash, directory) &&
-    identity.contentHash === contentHash &&
-    identity.directory === directory
-  );
+  return `${canonicalJson({
+    contentHash,
+    directory,
+    schemaVersion: 2,
+  })}\n`;
 }
 
 async function readSelector(
@@ -443,7 +449,11 @@ function stableFacadeModule(
 ): string {
   assertStableFacadeOptions(facade);
   return [
-    `${selectorPrefix}${canonicalJson({ contentHash, directory: relativeDirectory, schemaVersion: 1 })}`,
+    `${selectorPrefix}${canonicalJson({
+      contentHash,
+      directory: relativeDirectory,
+      schemaVersion: 2,
+    })}`,
     generatedSourceHeader,
     'import { bindFormErrorTranslator, bindFormSchema, bindRecoveringFormErrorTranslator, bindRecoveringTranslationKeyFactory, bindRecoveringTranslationKeyParser, bindTranslationKeyFactory, bindTranslationKeyParser } from "@openmirai/intl/runtime";',
     'import type { ArgumentFreeTextKeysFor, NamespacePaths } from "@openmirai/intl/types";',
@@ -463,57 +473,6 @@ function stableFacadeModule(
   ].join("\n");
 }
 
-async function stableFacadeMatches(
-  root: string,
-  outputRoot: string,
-  relativeDirectory: string,
-  facade: StableFacadeOptions,
-  contentHash: `sha256:${string}`
-): Promise<boolean> {
-  const expected = stableFacadeModule(relativeDirectory, facade, contentHash);
-  try {
-    const source = await readManagedTextFile(
-      outputRoot,
-      join(root, "index.ts"),
-      "Generated stable facade"
-    );
-    if (source === undefined) {
-      return false;
-    }
-    for (const legacyName of ["index.mjs", "index.d.mts"] as const) {
-      const legacy = await readManagedTextFile(
-        outputRoot,
-        join(root, legacyName),
-        `Legacy generated facade ${legacyName}`
-      );
-      if (legacy !== undefined) {
-        return false;
-      }
-    }
-    return source === expected;
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-}
-
-async function writeStableFacade(
-  root: string,
-  relativeDirectory: string,
-  facade: StableFacadeOptions,
-  contentHash: `sha256:${string}`
-): Promise<void> {
-  const content = stableFacadeModule(relativeDirectory, facade, contentHash);
-  await replaceTextFile(root, "index.ts", content);
-  await Promise.all(
-    ["index.mjs", "index.d.mts"].map((name) =>
-      rm(join(root, name), { force: true })
-    )
-  );
-}
-
 async function replaceTextFile(
   root: string,
   name: string,
@@ -524,7 +483,7 @@ async function replaceTextFile(
     const handle = await open(temporary, "wx");
     try {
       await handle.writeFile(content, "utf8");
-      await handle.sync();
+      await handle.datasync();
     } finally {
       await handle.close();
     }
@@ -834,7 +793,7 @@ async function installPublicationLock(
     | undefined;
   try {
     await handle.writeFile(content, "utf8");
-    await handle.sync();
+    await handle.datasync();
     const candidateStats = await handle.stat();
     candidateIdentity = {
       device: candidateStats.dev,
@@ -900,7 +859,7 @@ async function releasePublicationLock(
 async function withPublicationLock<Value>(
   root: string,
   outputRoot: string,
-  operation: () => Promise<Value>
+  operation: (ownerToken: string) => Promise<Value>
 ): Promise<Value> {
   await canonicalOutputRoot(root, outputRoot);
   await assertConfinedDirectory(outputRoot, root, "Generated output root");
@@ -952,265 +911,1155 @@ async function withPublicationLock<Value>(
     throw new Error("Unable to acquire generated catalog publication lock");
   }
   try {
-    return await operation();
+    return await operation(ownerToken);
   } finally {
     await releasePublicationLock(outputRoot, lockPath, ownerToken);
   }
 }
 
-async function pruneGeneratedState(
-  outputRoot: string,
-  buildsRoot: string,
-  selectedDirectoryName: string
-): Promise<boolean> {
-  let changed = false;
-  const buildEntries = await readdir(buildsRoot, { withFileTypes: true });
-  const canonicalBuildsRoot = join(outputRoot, "builds");
-  for (const entry of buildEntries) {
-    if (entry.name === selectedDirectoryName) {
-      continue;
-    }
-    const candidate = join(canonicalBuildsRoot, entry.name);
-    if (!isWithin(outputRoot, candidate)) {
-      throw new Error("Generated build cleanup escaped the output root");
-    }
-    await rm(candidate, { force: true, recursive: true });
-    changed = true;
-  }
+type PublicationPlan = Readonly<{
+  contentHash: Sha256;
+  destination: string;
+  directoryName: string;
+  lockContent: string;
+  manifest: ReadonlyArray<CatalogPayloadManifestEntryV1>;
+  pointerContent: string;
+  receiptContent: string;
+  receiptHash: Sha256;
+  relativeDirectory: string;
+  selectorContent: string;
+  snapshot: CatalogGenerationSnapshot;
+}>;
 
-  // Clean staging directories produced by compiler versions that staged next
-  // to the generated root. The prefix is reserved for catalog publication.
-  const parent = dirname(outputRoot);
-  const temporaryPrefix = `.${basename(outputRoot)}.`;
-  for (const entry of await readdir(parent, { withFileTypes: true })) {
-    if (
-      !entry.name.startsWith(temporaryPrefix) ||
-      !entry.name.endsWith(".tmp")
-    ) {
-      continue;
-    }
-    const candidate = join(parent, entry.name);
-    if (!isSamePath(dirname(candidate), parent)) {
-      throw new Error("Generated staging cleanup escaped its reserved parent");
-    }
-    await rm(candidate, { force: true, recursive: true });
-    changed = true;
+type PublicationJournal = CatalogPublicationJournalV1;
+
+const publicationDirectoryName = ".catalog-publication";
+const journalFileName = "journal.v1.json";
+const receiptFileName = "catalog-generation-receipt.v1.json";
+function assertSha256(value: string, label: string): asserts value is Sha256 {
+  if (!/^sha256:[\da-f]{64}$/u.test(value)) {
+    throw new Error(`${label} must be a canonical SHA-256 identity`);
   }
-  return changed;
 }
 
-async function assertSingleSelectedBuild(
-  root: string,
-  selectedDirectoryName: string
-): Promise<void> {
-  const builds = await readdir(join(root, "builds"));
-  if (builds.length !== 1 || builds[0] !== selectedDirectoryName) {
-    throw new Error(
-      `Generated builds are stale: expected only ${selectedDirectoryName}, found ${builds.join(", ")}`
+function payloadManifest(
+  artifacts: EmittedArtifacts
+): ReadonlyArray<CatalogPayloadManifestEntryV1> {
+  return artifactEntries(artifacts).map(([path, content]) =>
+    Object.freeze({
+      hash: sha256(content),
+      mode: null,
+      path,
+      size: Buffer.byteLength(content),
+    })
+  );
+}
+
+function nonAuthoritativeGenerationInput(
+  contentHash: Sha256
+): CatalogGenerationInputIdentityV1 {
+  const emptyManifest = createIntegrityManifest([]);
+  const packageEntry = {
+    hash: sha256("artifact-only:icu-entry:v1"),
+    path: "artifact-only-icu.js",
+    size: 0,
+  };
+  const packageFiles = createIntegrityManifest([packageEntry]);
+  const packageBase = {
+    entry: packageEntry,
+    name: "@formatjs/icu-messageformat-parser",
+    packageFiles,
+    packageJsonHash: sha256("artifact-only:icu-package-json:v1"),
+    version: "artifact-only",
+  };
+  const packageJsonHash = sha256("artifact-only:application-package-json:v1");
+  const lock = {
+    hash: sha256("artifact-only:application-lock:v1"),
+    name: "artifact-only.lock",
+  };
+  return buildCatalogGenerationInputIdentity({
+    application: {
+      hash: canonicalHash({ lock, packageJsonHash }),
+      lock,
+      packageJsonHash,
+    },
+    artifactAbi: NON_AUTHORITATIVE_ARTIFACT_ABI,
+    compiler: {
+      hash: canonicalHash({ modulesHash: emptyManifest.hash }),
+      modules: emptyManifest,
+    },
+    config: emptyManifest,
+    environment: { contentHash, mode: "artifact-only" },
+    generationOptions: {},
+    icu: {
+      ...packageBase,
+      hash: canonicalHash(packageBase),
+    },
+    locales: emptyManifest,
+    runtimeAbi: RUNTIME_ABI,
+  });
+}
+
+function writerGenerationInput(
+  contentHash: Sha256,
+  options: ArtifactWriterOptions
+): CatalogGenerationInputIdentityV1 {
+  if (options.generationInput !== undefined) {
+    if (options.authority !== undefined) {
+      throw new TypeError(
+        "Authoritative generationInput cannot use non-authoritative test mode"
+      );
+    }
+    return options.generationInput;
+  }
+  if (options.authority === "non-authoritative-test-only") {
+    return nonAuthoritativeGenerationInput(contentHash);
+  }
+  throw new TypeError(
+    "Artifact writer requires generationInput for authoritative publication"
+  );
+}
+
+function requiredWriterOptions(
+  options: ArtifactWriterOptions | undefined
+): ArtifactWriterOptions {
+  if (options === undefined) {
+    throw new TypeError(
+      "Artifact writer options must declare generationInput or non-authoritative test mode"
     );
   }
+  return options;
 }
 
-async function artifactSetMatches(
-  outputRoot: string,
-  destination: string,
-  artifacts: EmittedArtifacts
-): Promise<boolean> {
-  try {
-    if (
-      !(await assertConfinedDirectory(
-        outputRoot,
-        destination,
-        "Generated artifact directory",
-        true
-      ))
-    ) {
-      return false;
-    }
-    const expected = artifactEntries(artifacts);
-    const actual = (
-      await readdir(destination, { withFileTypes: true })
-    ).toSorted((left, right) => compareStrings(left.name, right.name));
-    if (actual.length !== expected.length) {
-      return false;
-    }
-    for (const [index, [name, content]] of expected.entries()) {
-      const entry = actual[index];
-      if (!entry?.isFile() || entry.name !== name) {
-        return false;
-      }
-      const actualContent = await readManagedTextFile(
-        outputRoot,
-        join(destination, name),
-        `Generated artifact ${name}`
-      );
-      if (actualContent !== content) {
-        return false;
-      }
-    }
-    return true;
-  } catch (error) {
-    const code = errorCode(error);
-    if (code === "ENOENT" || code === "ENOTDIR") {
-      return false;
-    }
-    throw error;
-  }
-}
-
-export async function verifyArtifactSet(
+function publicationPlan(
   root: string,
   artifacts: EmittedArtifacts,
-  facade: StableFacadeOptions = emptyStableFacade,
-  options: ArtifactWriterOptions = emptyWriterOptions
-): Promise<WriteResult> {
-  artifactContentHash(artifacts);
-  const expected = await expectedOutputRoot(root, options);
-  const outputRoot = await canonicalOutputRoot(root, expected);
+  facade: StableFacadeOptions,
+  options: ArtifactWriterOptions
+): PublicationPlan {
   const contentHash = artifactContentHash(artifacts);
   const directoryName = contentHash.slice(7);
   const relativeDirectory = `builds/${directoryName}`;
   const destination = join(root, relativeDirectory);
-  await assertConfinedDirectory(
-    outputRoot,
-    join(root, "builds"),
-    "Generated builds directory"
+  const manifest = payloadManifest(artifacts);
+  const selectorContent = stableFacadeModule(
+    relativeDirectory,
+    facade,
+    contentHash
   );
-  const selector = await readSelector(root, outputRoot);
-  if (
-    selector?.contentHash !== contentHash ||
-    selector.directory !== relativeDirectory
-  ) {
-    throw new Error(
-      `Generated artifacts are stale: expected ${contentHash} at ${relativeDirectory}, found ${String(selector?.contentHash)} at ${String(selector?.directory)}`
-    );
-  }
-  if (!(await artifactSetMatches(outputRoot, destination, artifacts))) {
-    throw new Error(
-      `Current artifact set ${contentHash} does not match its destination files`
-    );
-  }
-  if (
-    !(await catalogLockMatches(
-      root,
-      outputRoot,
-      contentHash,
-      relativeDirectory
-    ))
-  ) {
-    throw new Error("Generated catalog lock is stale or tampered");
-  }
-  await assertSingleSelectedBuild(root, directoryName);
-  if (
-    !(await stableFacadeMatches(
-      root,
-      outputRoot,
-      relativeDirectory,
-      facade,
-      contentHash
-    ))
-  ) {
-    throw new Error("Generated stable facade is stale or tampered");
-  }
-  const current = await readCurrent(root, outputRoot);
-  if (
-    current?.contentHash !== contentHash ||
-    current.directory !== relativeDirectory
-  ) {
-    throw new Error("Generated current pointer is stale or tampered");
-  }
-  return { changed: false, contentHash, directory: destination };
+  const lockContent = catalogLockContent(contentHash, relativeDirectory);
+  const snapshot = buildCatalogGenerationSnapshot({
+    catalogLockHash: sha256(lockContent),
+    generationInput: writerGenerationInput(contentHash, options),
+    payloadContentHash: contentHash,
+    payloadDirectory: relativeDirectory,
+    payloadEntries: manifest,
+    stableFacadeHash: sha256(selectorContent),
+  });
+  const receiptContent = `${canonicalJson(snapshot.generationReceipt)}\n`;
+  return Object.freeze({
+    contentHash,
+    destination,
+    directoryName,
+    lockContent,
+    manifest,
+    pointerContent: `${canonicalJson(snapshot.pointer)}\n`,
+    receiptContent,
+    receiptHash: snapshot.generationReceiptHash,
+    relativeDirectory,
+    selectorContent,
+    snapshot,
+  });
 }
 
-async function writeArtifactSetUnlocked(
-  root: string,
-  artifacts: EmittedArtifacts,
-  facade: StableFacadeOptions = emptyStableFacade,
-  options: ArtifactWriterOptions = emptyWriterOptions
-): Promise<WriteResult> {
-  const expected = await expectedOutputRoot(root, options);
-  await mkdir(root, { recursive: true });
-  const outputRoot = await canonicalOutputRoot(root, expected);
-  const contentHash = artifactContentHash(artifacts);
-  const directoryName = contentHash.slice(7);
-  const buildsRoot = join(root, "builds");
-  const destination = join(buildsRoot, directoryName);
-  const relativeDirectory = `builds/${directoryName}`;
-  stableFacadeModule(relativeDirectory, facade, contentHash);
-  const selector = await readSelector(root, outputRoot, false);
-  if (
-    selector?.contentHash === contentHash &&
-    selector.directory === relativeDirectory
-  ) {
-    const destinationExists = await assertConfinedDirectory(
-      outputRoot,
-      buildsRoot,
-      "Generated builds directory",
-      true
-    );
-    const artifactDirectoryExists = await assertConfinedDirectory(
-      outputRoot,
-      destination,
-      "Generated artifact directory",
-      true
-    );
+function expectedPublicationHash(
+  plan: PublicationPlan,
+  previousDirectory: string | null,
+  previousControlsHash: Sha256 | null
+): Sha256 {
+  return sha256(
+    canonicalJson({
+      contentHash: plan.contentHash,
+      generationInputHash: plan.snapshot.generationInputHash,
+      lockHash: sha256(plan.lockContent),
+      manifest: plan.manifest,
+      pointerHash: sha256(plan.pointerContent),
+      previousControlsHash,
+      receiptHash: plan.receiptHash,
+      selectorHash: sha256(plan.selectorContent),
+      previousDirectory,
+    })
+  );
+}
 
-    if (destinationExists && artifactDirectoryExists) {
-      if (!(await artifactSetMatches(outputRoot, destination, artifacts))) {
-        throw new Error(
-          `Current artifact set ${contentHash} does not match its destination files`
-        );
-      }
-      const facadeMatches = await stableFacadeMatches(
-        root,
-        outputRoot,
-        relativeDirectory,
-        facade,
-        contentHash
+async function controlSnapshot(
+  root: string,
+  outputRoot: string
+): Promise<
+  Readonly<{
+    hash: Sha256;
+    sources: Readonly<Record<string, string>>;
+  }>
+> {
+  const sources: Record<string, string> = {};
+  for (const name of [
+    "index.ts",
+    "catalog.lock.json",
+    receiptFileName,
+    "current.json",
+  ] as const) {
+    const source = await readManagedTextFile(
+      outputRoot,
+      join(root, name),
+      `Previous generated control file ${name}`
+    );
+    if (source === undefined) {
+      throw new Error(`Previous generated control file ${name} is missing`);
+    }
+    sources[name] = source;
+  }
+  return { hash: canonicalHash(sources), sources };
+}
+
+async function validatePreviousControlBackup(
+  outputRoot: string,
+  previousControlsRoot: string,
+  expectedHash: Sha256 | null
+): Promise<void> {
+  const entries = await readdir(previousControlsRoot, { withFileTypes: true });
+  if (expectedHash === null) {
+    if (entries.length !== 0) {
+      throw new Error("Unexpected previous generated control backup");
+    }
+    return;
+  }
+  const expectedNames = new Set([
+    "index.ts",
+    "catalog.lock.json",
+    receiptFileName,
+    "current.json",
+  ]);
+  if (
+    entries.length !== expectedNames.size ||
+    entries.some(
+      (entry) =>
+        !expectedNames.has(entry.name) ||
+        !entry.isFile() ||
+        entry.isSymbolicLink()
+    )
+  ) {
+    throw new Error("Previous generated control backup is incomplete");
+  }
+  const previous = await controlSnapshot(previousControlsRoot, outputRoot);
+  if (previous.hash !== expectedHash) {
+    throw new Error("Previous generated control backup identity changed");
+  }
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(directory, "r");
+    await handle.sync();
+  } catch (error) {
+    if (
+      !(["EINVAL", "ENOTSUP", "EISDIR", "EBADF"] as const).includes(
+        errorCode(error) as "EINVAL"
+      )
+    ) {
+      throw error;
+    }
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function writeDurableFile(
+  file: string,
+  content: string,
+  exclusive = true
+): Promise<void> {
+  const handle = await open(file, exclusive ? "wx" : "w", 0o600);
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.datasync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function durableReplaceTextFile(
+  root: string,
+  name: string,
+  content: string
+): Promise<void> {
+  await replaceTextFile(root, name, content);
+  await syncDirectory(root);
+}
+
+function journalContent(journal: PublicationJournal): string {
+  return `${canonicalJson(journal)}\n`;
+}
+
+function parseJournal(source: string): PublicationJournal {
+  try {
+    return parseCanonicalCatalogPublicationJournal(source);
+  } catch (error) {
+    throw new Error("Generated publication journal is malformed", {
+      cause: error,
+    });
+  }
+}
+
+async function assertPublicationArea(
+  outputRoot: string,
+  publicationRoot: string,
+  journal: PublicationJournal | undefined
+): Promise<void> {
+  if (
+    !(await assertConfinedDirectory(
+      outputRoot,
+      publicationRoot,
+      "Generated publication staging area",
+      true
+    ))
+  ) {
+    return;
+  }
+  const entries = await readdir(publicationRoot, { withFileTypes: true });
+  const allowed = new Set(
+    journal ? [journalFileName, journal.stageDirectory] : []
+  );
+  for (const entry of entries) {
+    if (!allowed.has(entry.name)) {
+      throw new Error(
+        `Generated publication staging area contains unexplained state: ${entry.name}`
       );
-      const current = await readCurrent(root, outputRoot);
-      const currentMatches =
-        current?.contentHash === contentHash &&
-        current.directory === relativeDirectory;
-      const pointer = `${canonicalJson({ contentHash, directory: relativeDirectory })}\n`;
-      const lockMatches = await catalogLockMatches(
-        root,
-        outputRoot,
-        contentHash,
-        relativeDirectory
-      );
-      if (!currentMatches) {
-        await replaceTextFile(root, "current.json", pointer);
-      }
-      if (!lockMatches) {
-        await replaceTextFile(
-          root,
-          "catalog.lock.json",
-          catalogLockContent(contentHash, relativeDirectory)
-        );
-      }
-      if (!facadeMatches) {
-        await writeStableFacade(
-          root,
-          `builds/${directoryName}`,
-          facade,
-          contentHash
-        );
-      }
-      const pruned = await pruneGeneratedState(
-        outputRoot,
-        buildsRoot,
-        directoryName
-      );
-      await assertSingleSelectedBuild(root, directoryName);
-      return {
-        changed: !facadeMatches || !currentMatches || !lockMatches || pruned,
-        contentHash,
-        directory: destination,
-      };
+    }
+    if (entry.name === journalFileName && !entry.isFile()) {
+      throw new Error("Generated publication journal must be a regular file");
+    }
+    if (entry.name === journal?.stageDirectory && !entry.isDirectory()) {
+      throw new Error("Generated publication stage must be a directory");
     }
   }
+}
 
+async function readJournal(
+  outputRoot: string,
+  publicationRoot: string
+): Promise<PublicationJournal | undefined> {
+  const source = await readManagedTextFile(
+    outputRoot,
+    join(publicationRoot, journalFileName),
+    "Generated publication journal"
+  );
+  return source === undefined ? undefined : parseJournal(source);
+}
+
+async function persistJournal(
+  publicationRoot: string,
+  journal: PublicationJournal
+): Promise<void> {
+  await durableReplaceTextFile(
+    publicationRoot,
+    journalFileName,
+    journalContent(journal)
+  );
+}
+
+async function advanceJournal(
+  publicationRoot: string,
+  journal: PublicationJournal,
+  state: PublicationState,
+  hooks: PublicationFaultInjectionHooks | undefined
+): Promise<PublicationJournal> {
+  const next = Object.freeze({ ...journal, state });
+  if (
+    state === "STAGED_DURABLE" ||
+    state === "ROLLBACK_REQUIRED" ||
+    state === "ROLLBACK_POINTER_REMOVED" ||
+    state === "ROLLBACK_CONTROLS_RESTORED"
+  ) {
+    await persistJournal(publicationRoot, next);
+  }
+  await hooks?.afterState?.(state);
+  return next;
+}
+
+function receiptFromSource(
+  source: string
+): CatalogGenerationSnapshot["generationReceipt"] {
+  try {
+    return parseCanonicalCatalogGenerationReceipt(source);
+  } catch (error) {
+    throw new Error("Catalog generation receipt is malformed", {
+      cause: error,
+    });
+  }
+}
+
+async function assertPayloadManifest(
+  outputRoot: string,
+  destination: string,
+  manifest: ReadonlyArray<CatalogPayloadManifestEntryV1>,
+  label: string
+): Promise<void> {
+  await assertConfinedDirectory(outputRoot, destination, label);
+  const entries = (
+    await readdir(destination, { withFileTypes: true })
+  ).toSorted((left, right) => compareStrings(left.name, right.name));
+  if (entries.length !== manifest.length) {
+    throw new Error(`${label} does not match its destination files`);
+  }
+  const seen = new Set<string>();
+  for (const [index, expected] of manifest.entries()) {
+    if (seen.has(expected.path)) {
+      throw new Error(`${label} manifest contains a duplicate path`);
+    }
+    seen.add(expected.path);
+    const entry = entries[index];
+    if (!entry || entry.name !== expected.path || !entry.isFile()) {
+      throw new Error(`${label} does not match its destination files`);
+    }
+    const source = await readManagedTextFile(
+      outputRoot,
+      join(destination, expected.path),
+      `${label} file ${expected.path}`
+    );
+    const fileStats = await lstat(join(destination, expected.path));
+    if (
+      source === undefined ||
+      sha256(source) !== expected.hash ||
+      Buffer.byteLength(source) !== expected.size ||
+      (expected.mode !== null && (fileStats.mode & 0o777) !== expected.mode)
+    ) {
+      throw new Error(
+        `${label} does not match its destination files: ${expected.path} is corrupt`
+      );
+    }
+  }
+}
+
+async function exactTextFile(
+  outputRoot: string,
+  file: string,
+  expected: string,
+  label: string
+): Promise<boolean> {
+  const source = await readManagedTextFile(outputRoot, file, label);
+  return source !== undefined && source === expected;
+}
+
+async function assertExactSelectors(
+  root: string,
+  outputRoot: string,
+  plan: PublicationPlan
+): Promise<void> {
+  if (
+    !(await exactTextFile(
+      outputRoot,
+      join(root, "index.ts"),
+      plan.selectorContent,
+      "Generated stable facade"
+    )) ||
+    !(await exactTextFile(
+      outputRoot,
+      join(root, "catalog.lock.json"),
+      plan.lockContent,
+      "Generated catalog lock"
+    ))
+  ) {
+    throw new Error(
+      "Generated stable facade selector or catalog lock is stale or tampered"
+    );
+  }
+  for (const legacyName of ["index.mjs", "index.d.mts"] as const) {
+    if (
+      (await readManagedTextFile(
+        outputRoot,
+        join(root, legacyName),
+        `Legacy generated facade ${legacyName}`
+      )) !== undefined
+    ) {
+      throw new Error(`Generated stable facade has unexplained ${legacyName}`);
+    }
+  }
+}
+
+async function assertKnownBuilds(
+  root: string,
+  allowedDirectories: ReadonlyArray<string>
+): Promise<void> {
+  const buildsRoot = join(root, "builds");
+  try {
+    const entries = await readdir(buildsRoot, { withFileTypes: true });
+    const allowed = new Set(allowedDirectories);
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !allowed.has(entry.name)) {
+        throw new Error(
+          `Generated builds contain duplicate or unexplained state: ${entry.name}`
+        );
+      }
+    }
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+async function assertNoLegacySiblingStages(outputRoot: string): Promise<void> {
+  const parent = dirname(outputRoot);
+  const escapedBase = basename(outputRoot).replaceAll(
+    /[.*+?^${}()|[\]\\]/gu,
+    "\\$&"
+  );
+  const reservedName = new RegExp(
+    `^\\.${escapedBase}\\.[\\da-z-]+\\.tmp$`,
+    "u"
+  );
+  for (const entry of await readdir(parent, { withFileTypes: true })) {
+    if (!reservedName.test(entry.name)) {
+      continue;
+    }
+    throw new Error(
+      `Legacy generated staging entry ${entry.name} has no journal ownership proof`
+    );
+  }
+}
+
+async function discardUninstalledPublication(
+  root: string,
+  outputRoot: string,
+  publicationRoot: string,
+  journal: PublicationJournal,
+  plan: PublicationPlan
+): Promise<void> {
+  if (journal.state !== "STAGED_DURABLE") {
+    throw new Error("Cannot discard publication after payload installation");
+  }
+  const current = await readCurrent(root, outputRoot);
+  if (current?.directory === plan.relativeDirectory) {
+    throw new Error("Cannot discard a committed generated payload");
+  }
+  if (
+    await assertConfinedDirectory(
+      outputRoot,
+      plan.destination,
+      "Uncommitted generated artifact directory",
+      true
+    )
+  ) {
+    await assertPayloadManifest(
+      outputRoot,
+      plan.destination,
+      plan.manifest,
+      "Uncommitted generated artifact directory"
+    );
+    await rm(plan.destination, { recursive: true });
+    await syncDirectory(join(root, "builds"));
+  }
+  const stageRoot = join(publicationRoot, journal.stageDirectory);
+  await rm(stageRoot, { recursive: true });
+  await rm(join(publicationRoot, journalFileName));
+  await syncDirectory(publicationRoot);
+  await rm(publicationRoot, { recursive: true });
+  await syncDirectory(root);
+}
+
+async function assertCommittedPlan(
+  root: string,
+  outputRoot: string,
+  plan: PublicationPlan,
+  previousDirectoryName?: string
+): Promise<void> {
+  const pointer = await readCurrent(root, outputRoot);
+  const expectedPointer = JSON.parse(plan.pointerContent) as CurrentPointer;
+  if (canonicalJson(pointer) !== canonicalJson(expectedPointer)) {
+    throw new Error("Generated current pointer is stale or tampered");
+  }
+  await assertExactSelectors(root, outputRoot, plan);
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
+  );
+  if (
+    receiptSource === undefined ||
+    sha256(receiptSource) !== plan.receiptHash ||
+    receiptSource !== plan.receiptContent
+  ) {
+    throw new Error("Catalog generation receipt is stale or tampered");
+  }
+  receiptFromSource(receiptSource);
+  await assertPayloadManifest(
+    outputRoot,
+    plan.destination,
+    plan.manifest,
+    "Generated artifact directory"
+  );
+  await assertKnownBuilds(
+    root,
+    [plan.directoryName, previousDirectoryName].filter(
+      (value): value is string => value !== undefined
+    )
+  );
+}
+
+async function assertPreviousCommittedState(
+  root: string,
+  outputRoot: string,
+  current: CurrentPointer,
+  allowCompletelyMissingPayload = false
+): Promise<boolean> {
+  const selector = await readSelector(root, outputRoot);
+  const currentBase: CatalogCurrentPointerBaseV2 = {
+    contentHash: current.contentHash,
+    directory: current.directory,
+    schemaVersion: 2,
+  };
+  if (canonicalJson(selector) !== canonicalJson(currentBase)) {
+    throw new Error("Generated selector and current pointer disagree");
+  }
+  const lockSource = await readManagedTextFile(
+    outputRoot,
+    join(root, "catalog.lock.json"),
+    "Generated catalog lock"
+  );
+  if (lockSource !== `${canonicalJson(currentBase)}\n`) {
+    throw new Error("Generated catalog lock and current pointer disagree");
+  }
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
+  );
+  if (
+    receiptSource === undefined ||
+    sha256(receiptSource) !== current.generationReceiptHash
+  ) {
+    throw new Error(
+      "Selected catalog generation receipt is missing or corrupt"
+    );
+  }
+  const receipt = receiptFromSource(receiptSource);
+  const facadeSource = await readManagedTextFile(
+    outputRoot,
+    join(root, "index.ts"),
+    "Generated stable facade"
+  );
+  if (
+    canonicalJson(receipt.pointerBase) !== canonicalJson(currentBase) ||
+    canonicalJson(receipt.selectorBase) !== canonicalJson(currentBase) ||
+    receipt.payload.contentHash !== current.contentHash ||
+    receipt.payload.directory !== current.directory ||
+    receipt.payload.manifestHash !== receipt.payload.manifest.hash ||
+    facadeSource === undefined ||
+    sha256(facadeSource) !== receipt.stableFacadeHash ||
+    sha256(lockSource) !== receipt.catalogLockHash
+  ) {
+    throw new Error("Selected catalog receipt identities disagree");
+  }
+  const destination = join(root, current.directory);
+  const payloadExists = await assertConfinedDirectory(
+    outputRoot,
+    destination,
+    "Selected generated artifact directory",
+    true
+  );
+  if (!payloadExists) {
+    await assertKnownBuilds(root, []);
+    if (allowCompletelyMissingPayload) {
+      return false;
+    }
+    throw new Error("Selected generated artifact directory is missing");
+  }
+  await assertPayloadManifest(
+    outputRoot,
+    destination,
+    receipt.payload.manifest.entries,
+    "Selected generated artifact directory"
+  );
+  await assertKnownBuilds(root, [basename(current.directory)]);
+  return true;
+}
+
+async function inspectInitialState(
+  root: string,
+  outputRoot: string,
+  plan: PublicationPlan
+): Promise<CurrentPointer | undefined> {
+  const current = await readCurrent(root, outputRoot);
+  const controlNames = [
+    "index.ts",
+    "catalog.lock.json",
+    receiptFileName,
+  ] as const;
+  if (!current) {
+    for (const name of controlNames) {
+      if (
+        (await readManagedTextFile(
+          outputRoot,
+          join(root, name),
+          `Generated control file ${name}`
+        )) !== undefined
+      ) {
+        throw new Error(
+          `Generated state contains unexplained control file ${name}`
+        );
+      }
+    }
+    await assertKnownBuilds(root, []);
+    return undefined;
+  }
+
+  const expected = JSON.parse(plan.pointerContent) as CurrentPointer;
+  if (canonicalJson(current) !== canonicalJson(expected)) {
+    return (await assertPreviousCommittedState(root, outputRoot, current, true))
+      ? current
+      : undefined;
+  }
+
+  await assertExactSelectors(root, outputRoot, plan);
+  const payloadExists = await assertConfinedDirectory(
+    outputRoot,
+    plan.destination,
+    "Generated artifact directory",
+    true
+  );
+  if (payloadExists) {
+    await assertPayloadManifest(
+      outputRoot,
+      plan.destination,
+      plan.manifest,
+      "Generated artifact directory"
+    );
+  }
+  await assertKnownBuilds(root, payloadExists ? [plan.directoryName] : []);
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
+  );
+  if (receiptSource !== undefined) {
+    try {
+      receiptFromSource(receiptSource);
+      if (
+        receiptSource !== plan.receiptContent ||
+        sha256(receiptSource) !== current.generationReceiptHash
+      ) {
+        throw new Error("Catalog generation receipt hash disagrees");
+      }
+    } catch (error) {
+      if (
+        current.generationReceiptHash !== plan.receiptHash ||
+        !payloadExists
+      ) {
+        throw error;
+      }
+    }
+  } else if (
+    current.generationReceiptHash !== plan.receiptHash ||
+    !payloadExists
+  ) {
+    if (!payloadExists) {
+      return current;
+    }
+    throw new Error(
+      "Catalog generation receipt is missing and cannot be reconstructed"
+    );
+  }
+  return current;
+}
+
+async function createStage(
+  root: string,
+  outputRoot: string,
+  publicationRoot: string,
+  journal: PublicationJournal,
+  artifacts: EmittedArtifacts,
+  plan: PublicationPlan
+): Promise<void> {
+  const stageRoot = join(publicationRoot, journal.stageDirectory);
+  const payloadRoot = join(stageRoot, "payload");
+  const controlsRoot = join(stageRoot, "controls");
+  const previousControlsRoot = join(stageRoot, "previous-controls");
+  if (!isWithin(outputRoot, stageRoot)) {
+    throw new Error("Generated publication stage escapes the output root");
+  }
+  await rm(stageRoot, { force: true, recursive: true });
+  await mkdir(stageRoot);
+  await Promise.all([
+    mkdir(payloadRoot),
+    mkdir(controlsRoot),
+    mkdir(previousControlsRoot),
+  ]);
+  try {
+    await Promise.all(
+      artifactEntries(artifacts).map(([name, content]) =>
+        writeDurableFile(join(payloadRoot, name), content)
+      )
+    );
+    await Promise.all([
+      writeDurableFile(join(controlsRoot, "index.ts"), plan.selectorContent),
+      writeDurableFile(
+        join(controlsRoot, "catalog.lock.json"),
+        plan.lockContent
+      ),
+      writeDurableFile(
+        join(controlsRoot, receiptFileName),
+        plan.receiptContent
+      ),
+      writeDurableFile(join(controlsRoot, "current.json"), plan.pointerContent),
+    ]);
+    if (journal.previousControlsHash !== null) {
+      const previous = await controlSnapshot(root, outputRoot);
+      if (previous.hash !== journal.previousControlsHash) {
+        throw new Error("Previous generated control identity changed");
+      }
+      await Promise.all(
+        Object.entries(previous.sources).map(([name, source]) =>
+          writeDurableFile(join(previousControlsRoot, name), source)
+        )
+      );
+    }
+    await Promise.all([
+      syncDirectory(payloadRoot),
+      syncDirectory(controlsRoot),
+      ...(journal.previousControlsHash === null
+        ? []
+        : [syncDirectory(previousControlsRoot)]),
+    ]);
+    await syncDirectory(stageRoot);
+    await assertPayloadManifest(
+      outputRoot,
+      payloadRoot,
+      plan.manifest,
+      "Staged generated artifact directory"
+    );
+    for (const [name, content] of [
+      ["index.ts", plan.selectorContent],
+      ["catalog.lock.json", plan.lockContent],
+      [receiptFileName, plan.receiptContent],
+      ["current.json", plan.pointerContent],
+    ] as const) {
+      if (
+        !(await exactTextFile(
+          outputRoot,
+          join(controlsRoot, name),
+          content,
+          `Staged control file ${name}`
+        ))
+      ) {
+        throw new Error(`Staged control file ${name} is corrupt`);
+      }
+    }
+  } catch (error) {
+    await rm(stageRoot, { force: true, recursive: true });
+    throw error;
+  }
+}
+
+async function rollbackCommittedPointer(
+  root: string,
+  outputRoot: string,
+  publicationRoot: string,
+  stageRoot: string,
+  journal: PublicationJournal,
+  hooks: PublicationFaultInjectionHooks | undefined
+): Promise<void> {
+  let currentJournal = journal;
+  const controlsRoot = join(stageRoot, "controls");
+  const previousControlsRoot = join(stageRoot, "previous-controls");
+  const stagedPointerSource = await readManagedTextFile(
+    outputRoot,
+    join(controlsRoot, "current.json"),
+    "Staged generated current pointer"
+  );
+  if (stagedPointerSource === undefined) {
+    throw new Error("Staged generated current pointer is missing");
+  }
+  const stagedPointer =
+    parseCanonicalCatalogCurrentPointer(stagedPointerSource);
+
+  if (currentJournal.state === "ROLLBACK_REQUIRED") {
+    for (const name of [
+      "index.ts",
+      "catalog.lock.json",
+      receiptFileName,
+      "current.json",
+    ] as const) {
+      const staged = await readManagedTextFile(
+        outputRoot,
+        join(controlsRoot, name),
+        `Staged generated control file ${name}`
+      );
+      const committed = await readManagedTextFile(
+        outputRoot,
+        join(root, name),
+        `Committed generated control file ${name}`
+      );
+      if (
+        staged === undefined ||
+        (name === "current.json" && committed === undefined
+          ? false
+          : committed !== staged)
+      ) {
+        throw new Error(
+          `Cannot roll back changed generated control file ${name}`
+        );
+      }
+    }
+    await validatePreviousControlBackup(
+      outputRoot,
+      previousControlsRoot,
+      currentJournal.previousControlsHash
+    );
+    await rm(join(root, "current.json"), { force: true });
+    await syncDirectory(root);
+    currentJournal = await advanceJournal(
+      publicationRoot,
+      currentJournal,
+      "ROLLBACK_POINTER_REMOVED",
+      hooks
+    );
+  }
+
+  if (currentJournal.state === "ROLLBACK_POINTER_REMOVED") {
+    await validatePreviousControlBackup(
+      outputRoot,
+      previousControlsRoot,
+      currentJournal.previousControlsHash
+    );
+    for (const name of [
+      "index.ts",
+      "catalog.lock.json",
+      receiptFileName,
+    ] as const) {
+      const previous = await readManagedTextFile(
+        outputRoot,
+        join(previousControlsRoot, name),
+        `Previous generated control file ${name}`
+      );
+      if (previous === undefined) {
+        await rm(join(root, name), { force: true });
+        await syncDirectory(root);
+      } else {
+        await durableReplaceTextFile(root, name, previous);
+      }
+    }
+    const previousPointer = await readManagedTextFile(
+      outputRoot,
+      join(previousControlsRoot, "current.json"),
+      "Previous generated current pointer"
+    );
+    if (previousPointer === undefined) {
+      await rm(join(root, "current.json"), { force: true });
+      await syncDirectory(root);
+    } else {
+      await durableReplaceTextFile(root, "current.json", previousPointer);
+    }
+    currentJournal = await advanceJournal(
+      publicationRoot,
+      currentJournal,
+      "ROLLBACK_CONTROLS_RESTORED",
+      hooks
+    );
+  }
+
+  if (currentJournal.state === "ROLLBACK_CONTROLS_RESTORED") {
+    if (stagedPointer.directory !== currentJournal.previousDirectory) {
+      const rolledBackPayload = join(root, stagedPointer.directory);
+      if (
+        await assertConfinedDirectory(
+          outputRoot,
+          rolledBackPayload,
+          "Rolled back generated artifact directory",
+          true
+        )
+      ) {
+        const entries = await readdir(rolledBackPayload, {
+          withFileTypes: true,
+        });
+        const artifacts: Record<string, string> = {};
+        for (const entry of entries) {
+          if (
+            !entry.isFile() ||
+            entry.isSymbolicLink() ||
+            !flatArtifactName.test(entry.name)
+          ) {
+            throw new Error("Rolled back generated payload identity changed");
+          }
+          const source = await readManagedTextFile(
+            outputRoot,
+            join(rolledBackPayload, entry.name),
+            `Rolled back generated artifact ${entry.name}`
+          );
+          if (source === undefined) {
+            throw new Error("Rolled back generated payload identity changed");
+          }
+          artifacts[entry.name] = source;
+        }
+        if (artifactContentHash(artifacts) !== stagedPointer.contentHash) {
+          throw new Error("Rolled back generated payload identity changed");
+        }
+        await rm(rolledBackPayload, { recursive: true });
+        await syncDirectory(join(root, "builds"));
+      }
+    }
+    if (currentJournal.previousControlsHash === null) {
+      for (const name of [
+        "index.ts",
+        "catalog.lock.json",
+        receiptFileName,
+        "current.json",
+      ] as const) {
+        if (
+          (await readManagedTextFile(
+            outputRoot,
+            join(root, name),
+            `Rolled back generated control file ${name}`
+          )) !== undefined
+        ) {
+          throw new Error(`Rolled back generated control file ${name} exists`);
+        }
+      }
+    } else {
+      const restored = await controlSnapshot(root, outputRoot);
+      if (restored.hash !== currentJournal.previousControlsHash) {
+        throw new Error("Restored generated control identity changed");
+      }
+      const previous = parseCanonicalCatalogCurrentPointer(
+        restored.sources["current.json"] ?? ""
+      );
+      if (previous.directory !== currentJournal.previousDirectory) {
+        throw new Error("Previous generated pointer backup identity changed");
+      }
+      await assertPreviousCommittedState(root, outputRoot, previous);
+    }
+
+    await rm(stageRoot, { recursive: true });
+    await rm(join(publicationRoot, journalFileName));
+    await syncDirectory(publicationRoot);
+    await rm(publicationRoot, { recursive: true });
+    await syncDirectory(root);
+  }
+}
+
+type StagedFileInstall = Readonly<{
+  destination: string;
+  expected: string;
+  label: string;
+  stagedFile: string;
+}>;
+
+async function installStagedFiles(
+  outputRoot: string,
+  installs: ReadonlyArray<StagedFileInstall>
+): Promise<void> {
+  const written = await Promise.all(
+    installs.map(async ({ destination, expected, label, stagedFile }) => {
+      const staged = await readManagedTextFile(outputRoot, stagedFile, label);
+      if (staged === undefined) {
+        if (await exactTextFile(outputRoot, destination, expected, label)) {
+          return false;
+        }
+        throw new Error(`${label} is missing from both stage and destination`);
+      }
+      if (staged !== expected) {
+        throw new Error(`${label} staged bytes are corrupt`);
+      }
+      await replaceTextFile(
+        dirname(destination),
+        basename(destination),
+        staged
+      );
+      return true;
+    })
+  );
+  const directories = [
+    ...new Set(
+      installs
+        .filter((_, index) => written[index])
+        .map(({ destination }) => dirname(destination))
+    ),
+  ];
+  await Promise.all(directories.map((directory) => syncDirectory(directory)));
+  await Promise.all(
+    installs.map(async ({ destination, expected, label }) => {
+      if (!(await exactTextFile(outputRoot, destination, expected, label))) {
+        throw new Error(`${label} installed bytes are corrupt`);
+      }
+    })
+  );
+}
+
+async function installStagedFile(
+  outputRoot: string,
+  stagedFile: string,
+  destination: string,
+  expected: string,
+  label: string
+): Promise<void> {
+  await installStagedFiles(outputRoot, [
+    {
+      destination,
+      expected,
+      label,
+      stagedFile,
+    },
+  ]);
+}
+
+async function installStagedControls(
+  root: string,
+  outputRoot: string,
+  stageRoot: string,
+  plan: PublicationPlan
+): Promise<void> {
+  const controlsRoot = join(stageRoot, "controls");
+  await installStagedFiles(outputRoot, [
+    {
+      destination: join(root, "index.ts"),
+      expected: plan.selectorContent,
+      label: "Generated stable facade",
+      stagedFile: join(controlsRoot, "index.ts"),
+    },
+    {
+      destination: join(root, "catalog.lock.json"),
+      expected: plan.lockContent,
+      label: "Generated catalog lock",
+      stagedFile: join(controlsRoot, "catalog.lock.json"),
+    },
+    {
+      destination: join(root, receiptFileName),
+      expected: plan.receiptContent,
+      label: "Catalog generation receipt",
+      stagedFile: join(controlsRoot, receiptFileName),
+    },
+  ]);
+  await assertExactSelectors(root, outputRoot, plan);
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
+  );
+  if (
+    receiptSource !== plan.receiptContent ||
+    sha256(receiptSource) !== plan.receiptHash
+  ) {
+    throw new Error("Catalog generation receipt is corrupt before commit");
+  }
+}
+
+async function installPayload(
+  root: string,
+  outputRoot: string,
+  stageRoot: string,
+  plan: PublicationPlan
+): Promise<void> {
+  const buildsRoot = join(root, "builds");
   if (
     !(await assertConfinedDirectory(
       outputRoot,
@@ -1219,98 +2068,536 @@ async function writeArtifactSetUnlocked(
       true
     ))
   ) {
-    await mkdir(buildsRoot, { recursive: true });
+    await mkdir(buildsRoot);
+    await syncDirectory(root);
   }
-  await assertConfinedDirectory(
-    outputRoot,
-    buildsRoot,
-    "Generated builds directory"
-  );
-  await assertConfinedDirectory(
-    outputRoot,
-    destination,
-    "Generated artifact directory",
-    true
-  );
-  const staging = join(
-    buildsRoot,
-    `.${directoryName}.${process.pid}.${Date.now().toString(36)}.${randomUUID()}.tmp`
-  );
-  await rm(staging, { force: true, recursive: true });
-  await mkdir(staging, { recursive: true });
-  try {
-    for (const [name, content] of artifactEntries(artifacts)) {
-      await writeFile(join(staging, name), content, "utf8");
-    }
-
+  const stagedPayload = join(stageRoot, "payload");
+  if (
+    await assertConfinedDirectory(
+      outputRoot,
+      stagedPayload,
+      "Staged generated artifact directory",
+      true
+    )
+  ) {
+    await assertPayloadManifest(
+      outputRoot,
+      stagedPayload,
+      plan.manifest,
+      "Staged generated artifact directory"
+    );
     try {
-      await assertConfinedDirectory(
-        outputRoot,
-        buildsRoot,
-        "Generated builds directory"
-      );
-      await assertConfinedDirectory(
-        outputRoot,
-        destination,
-        "Generated artifact directory",
-        true
-      );
-      await rename(staging, destination);
+      await rename(stagedPayload, plan.destination);
+      await syncDirectory(buildsRoot);
     } catch (error) {
-      const code =
-        error && typeof error === "object"
-          ? Reflect.get(error, "code")
-          : undefined;
-      if (code !== "EEXIST" && code !== "ENOTEMPTY") {
+      if (errorCode(error) !== "EEXIST" && errorCode(error) !== "ENOTEMPTY") {
         throw error;
       }
-      if (!(await artifactSetMatches(outputRoot, destination, artifacts))) {
-        throw new Error(
-          `Existing artifact set ${contentHash} does not match its destination files`,
-          { cause: error }
-        );
-      }
     }
-  } finally {
-    await rm(staging, { force: true, recursive: true });
   }
-
-  await assertConfinedDirectory(
+  await assertPayloadManifest(
     outputRoot,
-    destination,
+    plan.destination,
+    plan.manifest,
     "Generated artifact directory"
   );
+}
 
-  const pointer = `${canonicalJson({ contentHash, directory: relativeDirectory })}\n`;
-  // Option C publishes only from an exclusive predev, prebuild, or CI step.
-  // The selector replacement is atomic, but this path makes no live-reader or
-  // power-loss durability guarantee.
-  await replaceTextFile(root, "current.json", pointer);
-  await replaceTextFile(
-    root,
-    "catalog.lock.json",
-    catalogLockContent(contentHash, relativeDirectory)
+async function removePreviousPayload(
+  root: string,
+  outputRoot: string,
+  previousDirectory: string | null,
+  selectedDirectory: string
+): Promise<void> {
+  if (!previousDirectory) {
+    return;
+  }
+  if (
+    !/^builds\/[\da-f]{64}$/u.test(previousDirectory) ||
+    !/^builds\/[\da-f]{64}$/u.test(selectedDirectory)
+  ) {
+    throw new Error("Publication journal previous payload identity is invalid");
+  }
+  const previous = resolve(outputRoot, previousDirectory);
+  const selected = resolve(outputRoot, selectedDirectory);
+  if (
+    !isWithin(outputRoot, previous) ||
+    !isSamePath(previous, join(outputRoot, previousDirectory))
+  ) {
+    throw new Error("Previous generated payload escapes the output root");
+  }
+  if (isSamePath(previous, selected)) {
+    if (previousDirectory !== selectedDirectory) {
+      throw new Error("Previous generated payload aliases selected payload");
+    }
+    return;
+  }
+  if (
+    !(await assertConfinedDirectory(
+      outputRoot,
+      previous,
+      "Previous generated artifact directory",
+      true
+    ))
+  ) {
+    return;
+  }
+  const canonicalPrevious = await realpath(previous);
+  const previousEntries = (
+    await readdir(previous, { withFileTypes: true })
+  ).toSorted((left, right) => compareStrings(left.name, right.name));
+  const previousArtifacts: Record<string, string> = {};
+  for (const entry of previousEntries) {
+    if (!entry.isFile() || !flatArtifactName.test(entry.name)) {
+      throw new Error("Previous generated payload identity changed");
+    }
+    const content = await readManagedTextFile(
+      outputRoot,
+      join(previous, entry.name),
+      `Previous generated artifact ${entry.name}`
+    );
+    if (content === undefined) {
+      throw new Error("Previous generated payload identity changed");
+    }
+    previousArtifacts[entry.name] = content;
+  }
+  const expectedPreviousHash =
+    `sha256:${previousDirectory.slice("builds/".length)}` as Sha256;
+  if (
+    !isSamePath(canonicalPrevious, previous) ||
+    basename(canonicalPrevious) !== previousDirectory.slice("builds/".length) ||
+    artifactContentHash(previousArtifacts) !== expectedPreviousHash
+  ) {
+    throw new Error("Previous generated payload identity changed");
+  }
+  await rm(previous, { recursive: true });
+  await syncDirectory(join(root, "builds"));
+}
+
+async function runPublication(
+  root: string,
+  outputRoot: string,
+  ownerToken: string,
+  artifacts: EmittedArtifacts,
+  plan: PublicationPlan,
+  options: ArtifactWriterOptions
+): Promise<WriteResult> {
+  await assertNoLegacySiblingStages(outputRoot);
+  const publicationRoot = join(outputRoot, publicationDirectoryName);
+  if (
+    !(await assertConfinedDirectory(
+      outputRoot,
+      publicationRoot,
+      "Generated publication staging area",
+      true
+    ))
+  ) {
+    await mkdir(publicationRoot);
+    await syncDirectory(root);
+  }
+
+  let journal = await readJournal(outputRoot, publicationRoot);
+  await assertPublicationArea(outputRoot, publicationRoot, journal);
+  if (journal) {
+    if (
+      journal.state === "ROLLBACK_REQUIRED" ||
+      journal.state === "ROLLBACK_POINTER_REMOVED" ||
+      journal.state === "ROLLBACK_CONTROLS_RESTORED"
+    ) {
+      await rollbackCommittedPointer(
+        root,
+        outputRoot,
+        publicationRoot,
+        join(publicationRoot, journal.stageDirectory),
+        journal,
+        options.publicationHooks
+      );
+      return runPublication(
+        root,
+        outputRoot,
+        ownerToken,
+        artifacts,
+        plan,
+        options
+      );
+    }
+    if (
+      journal.expectedPublicationHash !==
+      expectedPublicationHash(
+        plan,
+        journal.previousDirectory,
+        journal.previousControlsHash
+      )
+    ) {
+      throw new Error(
+        "Interrupted publication does not match the exact expected generation"
+      );
+    }
+  } else {
+    const current = await inspectInitialState(root, outputRoot, plan);
+    const expectedPointer = JSON.parse(plan.pointerContent) as CurrentPointer;
+    let previousControlsHash: Sha256 | null = null;
+    let previousDirectory: string | null = null;
+    if (current && canonicalJson(current) !== canonicalJson(expectedPointer)) {
+      await assertPreviousCommittedState(root, outputRoot, current);
+      previousControlsHash = (await controlSnapshot(root, outputRoot)).hash;
+      previousDirectory = current.directory;
+    }
+    if (current && canonicalJson(current) === canonicalJson(expectedPointer)) {
+      let committed = false;
+      try {
+        await assertCommittedPlan(root, outputRoot, plan);
+        committed = true;
+      } catch {
+        // Only exact expected bytes may be reconstructed through the journal.
+      }
+      if (committed) {
+        await assertNoLegacySiblingStages(outputRoot);
+        await rm(publicationRoot, { recursive: true });
+        await syncDirectory(root);
+        return {
+          changed: false,
+          contentHash: plan.contentHash,
+          directory: plan.destination,
+        };
+      }
+    }
+    journal = {
+      expectedPublicationHash: expectedPublicationHash(
+        plan,
+        previousDirectory,
+        previousControlsHash
+      ),
+      ownerToken,
+      previousControlsHash,
+      previousDirectory,
+      schemaVersion: 1,
+      stageDirectory: `stage-${ownerToken}`,
+      state: "PREPARED",
+    };
+    await writeDurableFile(
+      join(publicationRoot, journalFileName),
+      journalContent(journal)
+    );
+    await syncDirectory(publicationRoot);
+    await options.publicationHooks?.afterState?.("PREPARED");
+  }
+  const stageRoot = join(publicationRoot, journal.stageDirectory);
+  if (journal.state === "PREPARED") {
+    await createStage(
+      root,
+      outputRoot,
+      publicationRoot,
+      journal,
+      artifacts,
+      plan
+    );
+    journal = await advanceJournal(
+      publicationRoot,
+      journal,
+      "STAGED_DURABLE",
+      options.publicationHooks
+    );
+  }
+  if (journal.state === "STAGED_DURABLE") {
+    const expectedPointer = JSON.parse(plan.pointerContent) as CurrentPointer;
+    const current = await readCurrent(root, outputRoot);
+    if (
+      current !== undefined &&
+      canonicalJson(current) === canonicalJson(expectedPointer)
+    ) {
+      let committed = false;
+      try {
+        await assertCommittedPlan(
+          root,
+          outputRoot,
+          plan,
+          journal.previousDirectory
+            ? basename(journal.previousDirectory)
+            : undefined
+        );
+        committed = true;
+      } catch {
+        // The staged publication owns reconstruction of exact missing bytes.
+      }
+      if (committed) {
+        journal = Object.freeze({ ...journal, state: "POINTER_COMMITTED" });
+      }
+    }
+  }
+  if (journal.state === "STAGED_DURABLE") {
+    if (
+      await assertConfinedDirectory(
+        outputRoot,
+        join(stageRoot, "payload"),
+        "Staged generated artifact directory",
+        true
+      )
+    ) {
+      await assertPayloadManifest(
+        outputRoot,
+        join(stageRoot, "payload"),
+        plan.manifest,
+        "Staged generated artifact directory"
+      );
+    } else {
+      await assertPayloadManifest(
+        outputRoot,
+        plan.destination,
+        plan.manifest,
+        "Uncommitted generated artifact directory"
+      );
+    }
+    try {
+      const reconstructed = await options.beforePayloadInstall?.(plan.snapshot);
+      if (
+        reconstructed !== undefined &&
+        canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
+          canonicalJson(plan.snapshot)
+      ) {
+        throw new Error(
+          "Catalog generation inputs changed before payload installation"
+        );
+      }
+    } catch (error) {
+      await discardUninstalledPublication(
+        root,
+        outputRoot,
+        publicationRoot,
+        journal,
+        plan
+      );
+      throw error;
+    }
+    await installPayload(root, outputRoot, stageRoot, plan);
+    journal = await advanceJournal(
+      publicationRoot,
+      journal,
+      "PAYLOAD_INSTALLED",
+      options.publicationHooks
+    );
+  }
+  if (journal.state === "PAYLOAD_INSTALLED") {
+    await assertPayloadManifest(
+      outputRoot,
+      plan.destination,
+      plan.manifest,
+      "Generated artifact directory"
+    );
+    await installStagedControls(root, outputRoot, stageRoot, plan);
+    journal = await advanceJournal(
+      publicationRoot,
+      journal,
+      "SELECTORS_INSTALLED",
+      options.publicationHooks
+    );
+    journal = await advanceJournal(
+      publicationRoot,
+      journal,
+      "RECEIPT_INSTALLED",
+      options.publicationHooks
+    );
+  }
+  if (journal.state === "RECEIPT_INSTALLED") {
+    const receiptSource = await readManagedTextFile(
+      outputRoot,
+      join(root, receiptFileName),
+      "Catalog generation receipt"
+    );
+    if (
+      receiptSource !== plan.receiptContent ||
+      sha256(receiptSource) !== plan.receiptHash
+    ) {
+      throw new Error("Catalog generation receipt is corrupt before commit");
+    }
+    await installStagedFile(
+      outputRoot,
+      join(stageRoot, "controls", "current.json"),
+      join(root, "current.json"),
+      plan.pointerContent,
+      "Generated current pointer"
+    );
+    journal = await advanceJournal(
+      publicationRoot,
+      journal,
+      "POINTER_COMMITTED",
+      options.publicationHooks
+    );
+  }
+  if (journal.state === "POINTER_COMMITTED") {
+    await assertCommittedPlan(
+      root,
+      outputRoot,
+      plan,
+      journal.previousDirectory
+        ? basename(journal.previousDirectory)
+        : undefined
+    );
+    try {
+      const reconstructed = await options.afterPointerCommit?.(plan.snapshot);
+      if (
+        reconstructed !== undefined &&
+        canonicalJson(parseCatalogGenerationSnapshot(reconstructed)) !==
+          canonicalJson(plan.snapshot)
+      ) {
+        throw new Error(
+          "Catalog generation inputs changed after pointer commit"
+        );
+      }
+    } catch (error) {
+      journal = await advanceJournal(
+        publicationRoot,
+        journal,
+        "ROLLBACK_REQUIRED",
+        options.publicationHooks
+      );
+      await rollbackCommittedPointer(
+        root,
+        outputRoot,
+        publicationRoot,
+        stageRoot,
+        journal,
+        options.publicationHooks
+      );
+      throw error;
+    }
+    journal = await advanceJournal(
+      publicationRoot,
+      journal,
+      "VALIDATED",
+      options.publicationHooks
+    );
+  }
+  if (journal.state === "VALIDATED") {
+    await assertCommittedPlan(
+      root,
+      outputRoot,
+      plan,
+      journal.previousDirectory
+        ? basename(journal.previousDirectory)
+        : undefined
+    );
+    await assertNoLegacySiblingStages(outputRoot);
+    await removePreviousPayload(
+      root,
+      outputRoot,
+      journal.previousDirectory,
+      plan.relativeDirectory
+    );
+    await options.publicationHooks?.afterPreviousPayloadRemoval?.();
+    await assertKnownBuilds(root, [plan.directoryName]);
+    await rm(stageRoot, { force: true, recursive: true });
+    await rm(join(publicationRoot, journalFileName));
+    await syncDirectory(publicationRoot);
+    await rm(publicationRoot, { recursive: true });
+    await syncDirectory(root);
+  }
+  return {
+    changed: true,
+    contentHash: plan.contentHash,
+    directory: plan.destination,
+  };
+}
+
+export async function verifyArtifactSet(
+  root: string,
+  artifacts: EmittedArtifacts,
+  facade: StableFacadeOptions = emptyStableFacade,
+  options?: ArtifactWriterOptions
+): Promise<WriteResult> {
+  const writerOptions = requiredWriterOptions(options);
+  assertStableFacadeOptions(facade);
+  const expected = await expectedOutputRoot(root, writerOptions);
+  const outputRoot = await canonicalOutputRoot(root, expected);
+  const plan = publicationPlan(root, artifacts, facade, writerOptions);
+  const publicationRoot = join(outputRoot, publicationDirectoryName);
+  const journal = await readJournal(outputRoot, publicationRoot);
+  if (journal) {
+    const current = await readCurrent(root, outputRoot);
+    if (!current) {
+      throw new Error("Generated catalog publication is interrupted");
+    }
+    await assertPreviousCommittedState(root, outputRoot, current);
+    const expectedPointer = JSON.parse(plan.pointerContent) as CurrentPointer;
+    if (canonicalJson(current) !== canonicalJson(expectedPointer)) {
+      throw new Error("Generated catalog publication is interrupted");
+    }
+    return {
+      changed: false,
+      contentHash: plan.contentHash,
+      directory: plan.destination,
+    };
+  }
+  await assertPublicationArea(outputRoot, publicationRoot, undefined);
+  await assertCommittedPlan(root, outputRoot, plan);
+  return {
+    changed: false,
+    contentHash: plan.contentHash,
+    directory: plan.destination,
+  };
+}
+
+/**
+ * Verify the selected content-addressed payload from its committed receipt,
+ * without rebuilding the expected artifacts. Callers must independently bind
+ * `generationInputHash` to a fresh input identity before trusting the result.
+ */
+export async function verifyCommittedArtifactSnapshot(
+  root: string,
+  expected: WriteResult,
+  expectedGenerationReceiptHash: Sha256
+): Promise<CommittedArtifactSnapshot> {
+  const expectedRoot = resolve(root);
+  const outputRoot = await canonicalOutputRoot(root, expectedRoot);
+  const publicationRoot = join(outputRoot, publicationDirectoryName);
+  const journal = await readJournal(outputRoot, publicationRoot);
+  if (journal) {
+    throw new Error("Generated catalog publication is interrupted");
+  }
+  await assertPublicationArea(outputRoot, publicationRoot, undefined);
+  const current = await readCurrent(root, outputRoot);
+  if (
+    !current ||
+    current.contentHash !== expected.contentHash ||
+    join(root, current.directory) !== expected.directory ||
+    current.generationReceiptHash !== expectedGenerationReceiptHash
+  ) {
+    throw new Error("Generated current pointer is stale or tampered");
+  }
+  await assertPreviousCommittedState(root, outputRoot, current);
+  const receiptSource = await readManagedTextFile(
+    outputRoot,
+    join(root, receiptFileName),
+    "Catalog generation receipt"
   );
-  await writeStableFacade(root, relativeDirectory, facade, contentHash);
-  await pruneGeneratedState(outputRoot, buildsRoot, directoryName);
-  await assertSingleSelectedBuild(root, directoryName);
-
-  return { changed: true, contentHash, directory: destination };
+  if (receiptSource === undefined) {
+    throw new Error("Catalog generation receipt is missing");
+  }
+  const receipt: CatalogGenerationReceiptV1 = receiptFromSource(receiptSource);
+  return {
+    contentHash: current.contentHash,
+    directory: current.directory,
+    generationInputHash: receipt.generationInputHash,
+    generationReceiptHash: current.generationReceiptHash,
+  };
 }
 
 export async function writeArtifactSet(
   root: string,
   artifacts: EmittedArtifacts,
   facade: StableFacadeOptions = emptyStableFacade,
-  options: ArtifactWriterOptions = emptyWriterOptions
+  options?: ArtifactWriterOptions
 ): Promise<WriteResult> {
+  const writerOptions = requiredWriterOptions(options);
   assertStableFacadeOptions(facade);
   artifactContentHash(artifacts);
-  const expected = await expectedOutputRoot(root, options);
+  const expected = await expectedOutputRoot(root, writerOptions);
   await mkdir(root, { recursive: true });
   const outputRoot = await canonicalOutputRoot(root, expected);
-  return withPublicationLock(root, outputRoot, () =>
-    writeArtifactSetUnlocked(root, artifacts, facade, {
+  const plan = publicationPlan(root, artifacts, facade, writerOptions);
+  return withPublicationLock(root, outputRoot, (ownerToken) =>
+    runPublication(root, outputRoot, ownerToken, artifacts, plan, {
+      ...writerOptions,
       expectedCanonicalRoot: outputRoot,
     })
   );

@@ -2,8 +2,15 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { emptyObjectSchema } from "@openmirai/intl-abi";
 import { describe, expect, it } from "vitest";
 
+import {
+  compileCatalog,
+  defineIntlConfig,
+  emitArtifacts,
+} from "../src/internal";
+import type { CatalogSource } from "../src/internal";
 import {
   authorizePrivateMessageSliceRequest,
   clearPrivateMessageModuleIndexCache,
@@ -14,11 +21,7 @@ import {
   privateMessageSliceSpecifier,
   slicePrivateMessagesModule,
 } from "../src/private-module";
-
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value)}\n`, "utf8");
-}
+import { writeArtifactSet } from "./non-authoritative-writer";
 
 const moduleSource = [
   'import { defineMessageDescriptor } from "@openmirai/intl-abi";',
@@ -33,6 +36,31 @@ const moduleSource = [
   "export const m1 = /* @__PURE__ */ createPrecompiledDescriptor(/* @__PURE__ */ defineMessageDescriptor({ validatorId: 1 }), p1, r1);",
   "",
 ].join("\n");
+const authorizationArtifacts = emitArtifacts(
+  compileCatalog(
+    defineIntlConfig({
+      buildId: "private-module-fixture-build",
+      catalogPackage: "@example/private-module-fixture",
+      id: "private-module-fixture",
+      locales: ["en"],
+      messages: [
+        {
+          kind: "text",
+          path: "fixture.message",
+          provenance:
+            "packages/compiler/test/private-module.test.ts:fixture.message",
+          resultSchema: { type: "string" },
+          translations: { en: "Fixture" },
+          valuesSchema: emptyObjectSchema,
+        },
+      ],
+      rendererCapabilityId: "portable-ir-v1",
+      sourceLocale: "en",
+    } satisfies CatalogSource)
+  ),
+  "constants",
+  { compact: true }
+);
 
 describe("private message virtual slices", () => {
   it("canonicalizes descriptor queries and retains only the selected closure", () => {
@@ -141,31 +169,20 @@ describe("private message virtual slices", () => {
   it("authorizes only the selected content-addressed private carrier", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-private-auth-"));
     const generated = join(root, "src/i18n/generated");
-    const hash = "c".repeat(64);
-    const directory = `builds/${hash}`;
+    const written = await writeArtifactSet(generated, authorizationArtifacts);
+    const hash = written.contentHash.slice("sha256:".length);
+    const directory = written.directory.replace(`${generated}/`, "");
     const selectedDirectory = join(generated, directory);
     const selected = join(selectedDirectory, "catalog.messages.gen.mjs");
     const carrier = join(selectedDirectory, "catalog.manifest.gen.mjs");
     const facade = join(generated, "index.ts");
-    await writeJson(join(generated, "current.json"), {
-      contentHash: `sha256:${hash}`,
-      directory,
-    });
-    await mkdir(join(selected, ".."), { recursive: true });
-    await writeFile(selected, moduleSource, "utf8");
-    await writeFile(carrier, "export const catalogManifest = {};\n", "utf8");
-    await writeFile(
-      facade,
-      `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${hash}`, directory, schemaVersion: 1 })}\n`,
-      "utf8"
-    );
-    const query = "?__mirai_intl_exports=m1";
+    const query = "?__mirai_intl_exports=m0";
 
     try {
       await expect(
         authorizePrivateMessageSliceRequest(`${carrier}${query}`, { root })
       ).resolves.toMatchObject({
-        descriptorExports: ["m1"],
+        descriptorExports: ["m0"],
         currentFile: join(generated, "current.json"),
         file: carrier,
         messageFile: selected,
@@ -192,7 +209,16 @@ describe("private message virtual slices", () => {
 
       await writeFile(
         facade,
-        `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${"d".repeat(64)}`, directory, schemaVersion: 1 })}\n`,
+        `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${hash}`, directory, schemaVersion: 1 })}\n`,
+        "utf8"
+      );
+      await expect(
+        authorizePrivateMessageSliceRequest(`${carrier}${query}`, { root })
+      ).rejects.toThrowError(/selector/u);
+
+      await writeFile(
+        facade,
+        `// @mirai-intl-selector ${JSON.stringify({ contentHash: `sha256:${"d".repeat(64)}`, directory, schemaVersion: 2 })}\n`,
         "utf8"
       );
       await expect(
