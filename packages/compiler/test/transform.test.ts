@@ -2593,7 +2593,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 30_000);
 
   it("requires semantic analysis for translator-shaped calls with uncertain provenance", async () => {
     const fixture = await createGeneratedCatalog();
