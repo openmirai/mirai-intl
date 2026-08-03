@@ -350,18 +350,15 @@ jobs:
       - run: pnpm verify
 ```
 
-Applications can install the public packages without registry credentials. Only
-the publishing workflow needs an npm token. `actions/setup-node` creates the
-registry configuration; pass the repository secret through `NODE_AUTH_TOKEN`
-and never commit a token:
+Applications can install the public packages without registry credentials.
+`actions/setup-node` can create the registry configuration explicitly:
 
 ```yaml
-- uses: actions/setup-node@v5
+- uses: actions/setup-node@v6
   with:
     node-version: 24.18.0
     registry-url: https://registry.npmjs.org
 - run: pnpm install --frozen-lockfile
-  # NODE_AUTH_TOKEN is only needed when publishing.
 ```
 
 The verification job uses workspace dependencies, so it does not need
@@ -369,21 +366,44 @@ publishing credentials.
 
 ## Publishing
 
-Publishing is CI-only. Add an `NPM_TOKEN` Actions secret with publish access to
-the `@openmirai` npm organization. Because the organization requires 2FA, this
-must be a granular npm access token with **Bypass two-factor authentication**
-enabled; a token can authenticate with `npm whoami` and still be rejected for
-publishing without that setting. See npm's
-[2FA publishing requirements](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/).
+Publishing is CI-only through npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
+The workflow uses GitHub OIDC and does not require an `NPM_TOKEN` secret.
+
+Configure a trusted publisher for **each** package in its npm settings:
+
+- GitHub organization: `openmirai`
+- Repository: `mirai-intl`
+- Workflow filename: `publish.yml`
+- Environment: leave empty
+- Allowed action: `npm publish`
+
+The same setup can be performed with npm CLI 11.15+ after each package exists:
+
+```sh
+npm trust github @openmirai/intl-abi --repo openmirai/mirai-intl --file publish.yml --allow-publish
+npm trust github @openmirai/intl-compiler --repo openmirai/mirai-intl --file publish.yml --allow-publish
+npm trust github @openmirai/intl-runtime --repo openmirai/mirai-intl --file publish.yml --allow-publish
+npm trust github @openmirai/intl --repo openmirai/mirai-intl --file publish.yml --allow-publish
+npm trust github @openmirai/intl-i18next --repo openmirai/mirai-intl --file publish.yml --allow-publish
+```
+
+Trusted publisher configuration is package-scoped and npm requires the package
+to exist before the relationship can be created. Bootstrap a new package once
+with an interactive maintainer publish, then configure its trusted publisher;
+all subsequent releases use CI-only OIDC. See npm's
+[trusted publisher configuration](https://docs.npmjs.com/trusted-publishers/) and
+[npm trust CLI](https://docs.npmjs.com/cli/v11/commands/npm-trust/) documentation.
 
 The dedicated
 `.github/workflows/publish.yml` workflow:
 
 1. Runs the complete `pnpm verify` gate.
-2. Authenticates with `NPM_TOKEN` through `NODE_AUTH_TOKEN`.
-3. Performs an authenticated dry run for every package.
-4. Publishes the five packages to `https://registry.npmjs.org` in dependency
-   order.
+2. Requests the GitHub OIDC identity token required by npm Trusted Publishing.
+3. Packs each workspace package with pnpm so `workspace:*` dependencies are
+   resolved to release versions.
+4. Publishes the five tarballs with npm CLI to
+   `https://registry.npmjs.org` in dependency order, with provenance generated
+   automatically by npm.
 
 Push a version tag such as `v0.4.0` to publish automatically:
 
@@ -392,13 +412,13 @@ corepack pnpm release
 git push origin main --follow-tags
 ```
 
-For the initial publication of a version whose tag predates this workflow, use
-**Actions → Publish npm packages → Run workflow** with `release_ref=main` and
-the exact `release_version` (currently `0.3.12`). For a recovery publication,
-use the corresponding version tag instead. The workflow verifies that the
-source ref and all package manifests agree, and npm refuses an existing version
-if it has already been published. A dry run can be inspected locally without
-publishing:
+For the initial CI publication of an already bootstrapped version whose tag
+predates this workflow, use **Actions → Publish npm packages → Run workflow**
+with `release_ref=main` and the exact `release_version` (currently `0.3.12`).
+For a recovery publication, use the corresponding version tag instead. The
+workflow verifies that the source ref and all package manifests agree, and npm
+refuses an existing version if it has already been published. A dry run can be
+inspected locally without publishing:
 
 ```sh
 corepack pnpm run release:packages:npm:dry-run

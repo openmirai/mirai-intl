@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageDirectories = [
@@ -74,31 +75,53 @@ function runPnpm(arguments_, cwd = root) {
     stdio: "inherit",
   });
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    throw new Error(`pnpm exited with status ${result.status ?? "unknown"}`);
   }
 }
 
-if (preflight) {
-  runPnpm(["whoami", "--registry", registry]);
+function runNpm(arguments_) {
+  const result = spawnSync("npm", arguments_, {
+    cwd: root,
+    env: process.env,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    throw new Error(`npm exited with status ${result.status ?? "unknown"}`);
+  }
 }
 
-for (const { directory, manifest } of manifests) {
-  const publishArguments = [
-    "--dir",
-    directory,
-    "publish",
-    "--access",
-    "public",
-    "--registry",
-    registry,
-    "--tag",
-    tag,
-    "--no-git-checks",
-    ...(dryRun || preflight ? ["--dry-run"] : []),
-  ];
+const publishDirectory = await mkdtemp(
+  resolve(tmpdir(), "mirai-intl-publish-")
+);
 
-  console.log(
-    `${dryRun || preflight ? "Validating" : "Publishing"} ${manifest.name}@${version} with npm tag ${tag}`
-  );
-  runPnpm(publishArguments);
+try {
+  for (const { directory, manifest } of manifests) {
+    runPnpm([
+      "--dir",
+      directory,
+      "pack",
+      "--pack-destination",
+      publishDirectory,
+    ]);
+
+    const tarballName = `${manifest.name.replace("@", "").replace("/", "-")}-${version}.tgz`;
+    const publishArguments = [
+      "publish",
+      resolve(publishDirectory, tarballName),
+      "--access",
+      "public",
+      "--registry",
+      registry,
+      "--tag",
+      tag,
+      ...(dryRun || preflight ? ["--dry-run"] : []),
+    ];
+
+    console.log(
+      `${dryRun || preflight ? "Validating" : "Publishing"} ${manifest.name}@${version} with npm tag ${tag}`
+    );
+    runNpm(publishArguments);
+  }
+} finally {
+  await rm(publishDirectory, { recursive: true, force: true });
 }
