@@ -64,12 +64,6 @@ registry, or keep the following explicit mapping:
 @openmirai:registry=https://registry.npmjs.org
 ```
 
-Install Mirai Intl in a React application:
-
-```sh
-pnpm add @openmirai/intl @openmirai/intl-i18next
-```
-
 `@openmirai/intl-i18next` brings the compatible i18next and
 react-i18next dependencies. React remains a peer dependency supplied by Next,
 Vite, or the application. Install `i18next-icu` only when ICU formatting is
@@ -389,11 +383,9 @@ npm trust github @openmirai/intl-i18next --repo openmirai/mirai-intl --file publ
 
 Trusted publisher configuration is package-scoped and npm requires the package
 to exist before the relationship can be created. Bootstrap a new package once
-with an interactive maintainer publish, then configure its trusted publisher;
-if that bootstrap consumes the repository's current version, bump the package
-versions before the first OIDC release. If the packages already exist at an
-earlier version, the workflow dispatch below can publish the current version.
-All subsequent releases use CI-only OIDC. See npm's
+with an interactive maintainer publish, then configure its trusted publisher.
+After that one-time bootstrap, all releases use CI-only OIDC; do not add an
+`NPM_TOKEN` secret to GitHub Actions. See npm's
 [trusted publisher configuration](https://docs.npmjs.com/trusted-publishers/) and
 [npm trust CLI](https://docs.npmjs.com/cli/v11/commands/npm-trust/) documentation.
 
@@ -412,24 +404,29 @@ Push a version tag such as `v0.4.0` to publish automatically:
 
 ```sh
 corepack pnpm release
-git push origin main --follow-tags
 ```
 
-For the initial CI publication of an already bootstrapped version whose tag
-predates this workflow, use **Actions → Publish npm packages → Run workflow**
-with `release_ref=main` and the exact `release_version` (currently `0.3.12`).
-For a recovery publication, use the corresponding version tag instead. The
-workflow verifies that the source ref and all package manifests agree, and npm
-refuses an existing version if it has already been published. A dry run can be
-inspected locally without publishing:
+`release-it` runs the verification gate, synchronizes the root and workspace
+versions, creates the release commit and `v*` tag, and pushes them. The tag then
+starts `Publish npm packages`; npm authenticates the job through GitHub OIDC.
+The release command never publishes from the developer machine.
+
+The initial `0.3.12` bootstrap for this repository is complete. Do not dispatch
+`0.3.12` again: npm rejects a version that already exists. The next release
+must bump the root package and all five publishable workspaces together (for
+example, to `0.3.13`).
+
+Use **Actions → Publish npm packages → Run workflow** only for an unpublished
+version when recovering a tag or publishing from a specific ref. Set
+`release_ref` to the ref containing the matching package manifests and set
+`release_version` to that exact version. The workflow rejects mismatched
+manifests and already-published versions. A dry run can be inspected locally:
 
 ```sh
 corepack pnpm run release:packages:npm:dry-run
 ```
 
-The release command creates the version commit and tag; it does not publish
-from the developer machine. Never commit registry tokens or generated
-credentials.
+Never commit registry tokens or generated credentials.
 
 ## License
 
