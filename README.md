@@ -370,7 +370,13 @@ publishing credentials.
 ## Publishing
 
 Publishing is CI-only. Add an `NPM_TOKEN` Actions secret with publish access to
-the `@openmirai` npm organization. The dedicated
+the `@openmirai` npm organization. Because the organization requires 2FA, this
+must be a granular npm access token with **Bypass two-factor authentication**
+enabled; a token can authenticate with `npm whoami` and still be rejected for
+publishing without that setting. See npm's
+[2FA publishing requirements](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/).
+
+The dedicated
 `.github/workflows/publish.yml` workflow:
 
 1. Runs the complete `pnpm verify` gate.
