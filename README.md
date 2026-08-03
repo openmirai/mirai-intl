@@ -386,10 +386,13 @@ corepack pnpm release
 git push origin main --follow-tags
 ```
 
-For the initial or a recovery publication, use **Actions → Publish npm
-packages → Run workflow** and enter an existing version tag in `release_ref`.
-The workflow refuses non-version refs and refuses to republish an existing npm
-version. A dry run can be inspected locally without publishing:
+For the initial publication of a version whose tag predates this workflow, use
+**Actions → Publish npm packages → Run workflow** with `release_ref=main` and
+the exact `release_version` (currently `0.3.12`). For a recovery publication,
+use the corresponding version tag instead. The workflow verifies that the
+source ref and all package manifests agree, and npm refuses an existing version
+if it has already been published. A dry run can be inspected locally without
+publishing:
 
 ```sh
 corepack pnpm run release:packages:npm:dry-run

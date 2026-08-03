@@ -7,7 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       release_ref:
-        description: Existing version tag to publish, for example v0.3.12
+        description: Ref containing the package version (use a tag for normal releases)
+        required: true
+        default: main
+        type: string
+      release_version:
+        description: Exact package version to publish, for example 0.3.12
         required: true
         type: string
 
@@ -26,6 +31,7 @@ jobs:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       RELEASE_REF: ${{ inputs.release_ref || github.ref }}
+      RELEASE_VERSION_INPUT: ${{ inputs.release_version || '' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -43,16 +49,31 @@ jobs:
       - name: Validate npm credentials and package contents
         run: |
           set -euo pipefail
-          version="${RELEASE_REF#refs/tags/}"
-          version="${version#v}"
+          version="$RELEASE_VERSION_INPUT"
+          if [[ -z "$version" ]]; then
+            version="${RELEASE_REF#refs/tags/}"
+            version="${version#v}"
+          fi
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release ref must be a version tag, received: $RELEASE_REF" >&2
+            echo "Release version must be semver, received: $version" >&2
             exit 1
           fi
+          manifest_version="$(node -p 'JSON.parse(require("fs").readFileSync("packages/intl/package.json", "utf8")).version')"
+          if [[ "$manifest_version" != "$version" ]]; then
+            echo "Release version $version does not match package version $manifest_version" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_REF" == refs/tags/* || "$RELEASE_REF" == v* ]]; then
+            tag_version="${RELEASE_REF#refs/tags/}"
+            tag_version="${tag_version#v}"
+            if [[ "$tag_version" != "$version" ]]; then
+              echo "Release ref $RELEASE_REF does not match release version $version" >&2
+              exit 1
+            fi
+          fi
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
           corepack pnpm run release:packages:npm:preflight -- "$version"
       - name: Publish packages to npm
         run: |
           set -euo pipefail
-          version="${RELEASE_REF#refs/tags/}"
-          version="${version#v}"
-          corepack pnpm run release:packages:npm -- "$version"
+          corepack pnpm run release:packages:npm -- "$RELEASE_VERSION"
