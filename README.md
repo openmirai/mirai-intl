@@ -341,7 +341,6 @@ jobs:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
         with:
-          version: 11.11.0
           run_install: false
       - uses: actions/setup-node@v5
         with:
