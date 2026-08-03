@@ -17,7 +17,7 @@ point is `@openmirai/intl-abi`.
 ## Documentation
 
 See the [Mirai Intl repository](https://github.com/openmirai/mirai-intl) for
-the compiler, runtime, Next.js, Vite, and release documentation.
+the compiler, runtime, Next.js, Vite, and setup documentation.
 
 ## License
 

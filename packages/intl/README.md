@@ -41,7 +41,7 @@ for the typed React provider and hooks.
 ## Documentation
 
 Read the complete [Mirai Intl repository guide](https://github.com/openmirai/mirai-intl)
-for locale files, generated catalogs, CI, and Trusted Publishing.
+for locale files, configuration, generated catalogs, and CI.
 
 ## License
 

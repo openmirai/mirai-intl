@@ -101,10 +101,48 @@ arguments:
 
 Nested namespaces, rich messages, structured `.value.json` resources, and
 explicitly mounted dependency catalogs are supported. Use
-`mirai-intl.config.json` or the `miraiIntl` key in `package.json` only for real
-convention exceptions. Do not use both configuration locations in one app.
+`mirai-intl.config.json` or the `miraiIntl` key in `package.json` only when the
+defaults are not enough. Do not use both configuration locations in one app.
 
-### 2. Add lifecycle scripts
+### 2. Configure locale discovery (optional)
+
+Most applications need no configuration. Add `mirai-intl.config.json` at the
+application package root when you want to make the locale contract explicit:
+
+```json
+{
+  "requiredLocales": ["en", "th"],
+  "sourceLocale": "en"
+}
+```
+
+`requiredLocales` makes the locale set fail closed. `sourceLocale` identifies
+the source language; set it when the locale set does not include `en` or has
+more than one possible source locale. If the application is in a pnpm
+workspace, put the same two fields in `mirai-intl.workspace.json` beside
+`pnpm-workspace.yaml` to share the defaults across packages. A package-level
+configuration may widen the workspace locale set, but it cannot remove a
+workspace-required locale.
+
+Use the `miraiIntl` key in `package.json` instead of a separate file when that
+fits the application better:
+
+```json
+{
+  "miraiIntl": {
+    "requiredLocales": ["en", "th"],
+    "sourceLocale": "en"
+  }
+}
+```
+
+Advanced applications can also configure `sources` to mount locale files from
+an installed dependency, `checkProjects` to name explicit TypeScript projects,
+and `values` for structured value schemas. Keep `checkExceptions` limited to
+reviewed, exact source exceptions; globs and inline suppressions are not
+supported. The complete supported shape is validated by `mirai-intl check`.
+
+### 3. Add lifecycle scripts
 
 ```json
 {
@@ -122,12 +160,12 @@ convention exceptions. Do not use both configuration locations in one app.
 ensure the catalog at build boundaries, but explicit lifecycle scripts keep
 development, standalone checks, and CI deterministic.
 
-### 3. Configure the framework adapter
+### 4. Configure the framework adapter
 
 Use the [Next.js adapter](#nextjs-adapter) or [Vite adapter](#vite-adapter)
 below. Both lower eligible named-key calls to the selected generated catalog.
 
-### 4. Create the typed runtime
+### 5. Create the typed runtime
 
 ```tsx
 import { createMiraiI18next } from "@openmirai/intl-i18next";
