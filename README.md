@@ -390,7 +390,10 @@ npm trust github @openmirai/intl-i18next --repo openmirai/mirai-intl --file publ
 Trusted publisher configuration is package-scoped and npm requires the package
 to exist before the relationship can be created. Bootstrap a new package once
 with an interactive maintainer publish, then configure its trusted publisher;
-all subsequent releases use CI-only OIDC. See npm's
+if that bootstrap consumes the repository's current version, bump the package
+versions before the first OIDC release. If the packages already exist at an
+earlier version, the workflow dispatch below can publish the current version.
+All subsequent releases use CI-only OIDC. See npm's
 [trusted publisher configuration](https://docs.npmjs.com/trusted-publishers/) and
 [npm trust CLI](https://docs.npmjs.com/cli/v11/commands/npm-trust/) documentation.
 
