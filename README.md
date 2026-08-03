@@ -303,130 +303,20 @@ fixtures, tests, performance tests, generated drift, benchmarks, packed
 installation, browser recovery, and diagnostic smoke checks.
 
 Use `pnpm clean` to remove build output, TypeScript build state, coverage, and
-temporary files. Do not commit `dist` output unless a release procedure
-explicitly requires it.
+temporary files. Do not commit `dist` output.
 
 ## Continuous integration
 
-GitHub Actions is configured in `.github/workflows/ci.yml`. Pull requests and
-pushes to `main` run the same authoritative `pnpm verify` gate. The workflow
-uses Node `24.18.0`, pnpm `11.11.0`, a frozen lockfile install, and read-only
-repository permissions.
-
-```yaml
-name: CI
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24.18.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
-```
-
-Applications can install the public packages without registry credentials.
-`actions/setup-node` can create the registry configuration explicitly:
-
-```yaml
-- uses: actions/setup-node@v6
-  with:
-    node-version: 24.18.0
-    registry-url: https://registry.npmjs.org
-- run: pnpm install --frozen-lockfile
-```
-
-The verification job uses workspace dependencies, so it does not need
-publishing credentials.
-
-## Publishing
-
-Publishing is CI-only through npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).
-The workflow uses GitHub OIDC and does not require an `NPM_TOKEN` secret.
-
-Configure a trusted publisher for **each** package in its npm settings:
-
-- GitHub organization: `openmirai`
-- Repository: `mirai-intl`
-- Workflow filename: `publish.yml`
-- Environment: leave empty
-- Allowed action: `npm publish`
-
-The same setup can be performed with npm CLI 11.15+ after each package exists:
+GitHub Actions is configured in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Pull requests and pushes to `main` run the same repository check used locally:
 
 ```sh
-npm trust github @openmirai/intl-abi --repo openmirai/mirai-intl --file publish.yml --allow-publish
-npm trust github @openmirai/intl-compiler --repo openmirai/mirai-intl --file publish.yml --allow-publish
-npm trust github @openmirai/intl-runtime --repo openmirai/mirai-intl --file publish.yml --allow-publish
-npm trust github @openmirai/intl --repo openmirai/mirai-intl --file publish.yml --allow-publish
-npm trust github @openmirai/intl-i18next --repo openmirai/mirai-intl --file publish.yml --allow-publish
+corepack pnpm verify
 ```
 
-Trusted publisher configuration is package-scoped and npm requires the package
-to exist before the relationship can be created. Bootstrap a new package once
-with an interactive maintainer publish, then configure its trusted publisher.
-After that one-time bootstrap, all releases use CI-only OIDC; do not add an
-`NPM_TOKEN` secret to GitHub Actions. See npm's
-[trusted publisher configuration](https://docs.npmjs.com/trusted-publishers/) and
-[npm trust CLI](https://docs.npmjs.com/cli/v11/commands/npm-trust/) documentation.
-
-The dedicated
-`.github/workflows/publish.yml` workflow:
-
-1. Runs the complete `pnpm verify` gate.
-2. Requests the GitHub OIDC identity token required by npm Trusted Publishing.
-3. Packs each workspace package with pnpm so `workspace:*` dependencies are
-   resolved to release versions.
-4. Publishes the five tarballs with npm CLI to
-   `https://registry.npmjs.org` in dependency order, with provenance generated
-   automatically by npm.
-
-Push a version tag such as `v0.4.0` to publish automatically:
-
-```sh
-corepack pnpm release
-```
-
-`release-it` runs the verification gate, synchronizes the root and workspace
-versions, creates the release commit and `v*` tag, and pushes them. The tag then
-starts `Publish npm packages`; npm authenticates the job through GitHub OIDC.
-The release command never publishes from the developer machine.
-
-The initial `0.3.12` bootstrap for this repository is complete. Do not dispatch
-`0.3.12` again: npm rejects a version that already exists. The next release
-must bump the root package and all five publishable workspaces together (for
-example, to `0.3.13`).
-
-Use **Actions → Publish npm packages → Run workflow** only for an unpublished
-version when recovering a tag or publishing from a specific ref. Set
-`release_ref` to the ref containing the matching package manifests and set
-`release_version` to that exact version. The workflow rejects mismatched
-manifests and already-published versions. A dry run can be inspected locally:
-
-```sh
-corepack pnpm run release:packages:npm:dry-run
-```
-
-Never commit registry tokens or generated credentials.
+The check installs with the frozen lockfile on Node `24.18.0` and pnpm
+`11.11.0`. Run it before opening a pull request; it covers formatting, lint,
+type checks, tests, generated-file drift, benchmarks, and package smoke tests.
 
 ## License
 
