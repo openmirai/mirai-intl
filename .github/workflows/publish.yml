@@ -1,0 +1,59 @@
+name: Publish npm packages
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Existing version tag to publish, for example v0.3.12
+        required: true
+        type: string
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      NPM_REGISTRY: https://registry.npmjs.org
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      RELEASE_REF: ${{ inputs.release_ref || github.ref }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.11.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      - name: Validate npm credentials and package contents
+        run: |
+          set -euo pipefail
+          version="${RELEASE_REF#refs/tags/}"
+          version="${version#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release ref must be a version tag, received: $RELEASE_REF" >&2
+            exit 1
+          fi
+          corepack pnpm run release:packages:npm:preflight -- "$version"
+      - name: Publish packages to npm
+        run: |
+          set -euo pipefail
+          version="${RELEASE_REF#refs/tags/}"
+          version="${version#v}"
+          corepack pnpm run release:packages:npm -- "$version"

@@ -2,6 +2,7 @@
   "name": "@openmirai/mirai-intl",
   "version": "0.3.12",
   "private": true,
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/openmirai/mirai-intl.git"
@@ -33,6 +34,9 @@
     "release": "release-it",
     "release:prerelease": "release-it --preRelease=beta",
     "release:packages:dry-run": "node scripts/publish-packages.mjs --dry-run",
+    "release:packages:npm": "node scripts/publish-packages.mjs",
+    "release:packages:npm:dry-run": "node scripts/publish-packages.mjs --dry-run",
+    "release:packages:npm:preflight": "node scripts/publish-packages.mjs --preflight",
     "test": "vitest run --exclude packages/runtime/test/perf.test.ts",
     "typecheck": "tsc -b --force --pretty false && tsc -p tsconfig.tools.json --pretty false",
     "typecheck:fixtures": "tsx scripts/type-fixtures.ts",

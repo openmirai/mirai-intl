@@ -24,6 +24,7 @@ const preflight = cliArguments.includes("--preflight");
 const requestedVersion = cliArguments.find(
   (argument) => !argument.startsWith("--")
 );
+const registry = process.env.NPM_REGISTRY ?? "https://registry.npmjs.org";
 
 const manifests = await Promise.all(
   packageDirectories.map(async (directory) => {
@@ -78,7 +79,7 @@ function runPnpm(arguments_, cwd = root) {
 }
 
 if (preflight) {
-  runPnpm(["whoami", "--registry", "https://npm.pkg.github.com"]);
+  runPnpm(["whoami", "--registry", registry]);
 }
 
 for (const { directory, manifest } of manifests) {
@@ -88,6 +89,8 @@ for (const { directory, manifest } of manifests) {
     "publish",
     "--access",
     "public",
+    "--registry",
+    registry,
     "--tag",
     tag,
     "--no-git-checks",

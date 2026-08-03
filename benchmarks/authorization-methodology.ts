@@ -81,7 +81,7 @@ export const FROZEN_PRODUCTION_CANDIDATE = {
     "sha256:b3b8c41512bbabdf6dda03ee6cfc4de6b62617f2fa0e87577859b588a5c38de8",
   source: {
     fileCount: 93,
-    hash: "sha256:79923ab711c588c467ab265c7379412a411b000744871caddca28c8bdc1b4f86",
+    hash: "sha256:a28656340e4fea7fe646fc430c4041245c97aa5dd850a3606ff5c5d8be7d5bb9",
   },
 } as const;
 

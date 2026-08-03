@@ -1,9 +1,12 @@
 # Mirai Intl
 
-Compiler-first, convention-based internationalization for OpenMirai. Application
-source keeps ordinary namespace and named-key calls while the compiler infers
-contracts from ICU message syntax and lowers eligible calls to private compact
-descriptors.
+[![CI](https://github.com/openmirai/mirai-intl/actions/workflows/ci.yml/badge.svg)](https://github.com/openmirai/mirai-intl/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Compiler-first, convention-based internationalization for OpenMirai. Mirai Intl
+keeps ordinary namespace and named-key calls in application code while the
+compiler infers contracts from ICU message syntax, validates the full source
+tree, and lowers eligible calls to compact private descriptors.
 
 ```tsx
 const { t } = useTranslations("pages.{-$locale}.short-links");
@@ -12,147 +15,129 @@ t("title");
 t("page.resultsCount", { count: 2 });
 ```
 
-Landing and Internal Dashboard currently consume the sibling packages through
-`link:` dependencies. Their lifecycle scripts run
-`scripts/prepare-local-link.mjs` so missing local package artifacts are rebuilt
-without publishing.
+The framework adapters transform application source. The i18next adapter owns
+resource loading, browser/request controllers, and typed React hooks. Your app
+still owns route or cookie locale policy and provider placement.
 
-## Convention-first catalogs
+## Packages
 
-From a standard Next or Vite application:
+Most applications need the two public consumer packages:
+
+| Package | Use it for | Important exports |
+| --- | --- | --- |
+| `@openmirai/intl` | CLI, compiler, runtime, Next.js/Vite adapters, and public types | `.`, `./next`, `./vite`, `./runtime`, `./types`, `./server`, `./react`, `./react-i18next` |
+| `@openmirai/intl-i18next` | Typed React/i18next provider, hooks, and browser/request controllers | `.` |
+
+The lower-level packages are published for advanced integrations and are used
+by the consumer packages:
+
+- `@openmirai/intl-abi` — catalog, descriptor, diagnostic, and wire contracts.
+- `@openmirai/intl-compiler` — compiler and framework implementation.
+- `@openmirai/intl-runtime` — runtime validation and i18next primitives.
+
+Normal application code should not pin the lower-level packages directly.
+
+## Requirements
+
+- Node.js **24** (CI uses `24.18.0`).
+- pnpm **11**.
+- Next.js or Vite for the corresponding source adapter.
+- React for the React/i18next adapter.
+
+The package manager is pinned in `package.json`; the repository's `.nvmrc`
+contains the supported Node major version.
+
+## Installation
+
+The public packages are published to the npm registry under the `@openmirai`
+organization. No registry configuration or token is required to install them:
 
 ```sh
-mirai-intl ensure
-mirai-intl generate
-mirai-intl check
+pnpm add @openmirai/intl @openmirai/intl-i18next
 ```
 
-`check` verifies selected catalog artifacts and runs a full-tree source analysis
-(same diagnostics as the Vite/Next transform) so unknown keys, widened strings,
-and translator escapes fail in CI/build without visiting every lazy route.
-Commands emit concise, human-readable diagnostics by default; use
-`--format=json` (or the compatible `--json`) for one bounded, versioned
-machine-readable envelope:
+The repository keeps the scope mapping in `.npmrc` so local and CI commands use
+the same registry. Applications can omit that file and use npm's default public
+registry, or keep the following explicit mapping:
+
+```ini
+@openmirai:registry=https://registry.npmjs.org
+```
+
+Install Mirai Intl in a React application:
+
+```sh
+pnpm add @openmirai/intl @openmirai/intl-i18next
+```
+
+`@openmirai/intl-i18next` brings the compatible i18next and
+react-i18next dependencies. React remains a peer dependency supplied by Next,
+Vite, or the application. Install `i18next-icu` only when ICU formatting is
+enabled:
+
+```sh
+pnpm add i18next-icu
+```
+
+## Quick start
+
+### 1. Add conventional locale files
+
+The compiler discovers `locales` or `src/locales` automatically:
+
+```text
+src/
+  locales/
+    global/
+      en.json
+      th.json
+  i18n/
+    generated/       # generated; do not edit
+```
+
+Each locale must have the same message shape. ICU placeholders become typed
+arguments:
 
 ```json
 {
-  "command": "check",
-  "diagnostics": [],
-  "schemaVersion": 1,
-  "success": true,
-  "summary": {
-    "semanticAuthorizationRuns": 1,
-    "semanticFilesAnalyzed": 613,
-    "valid": true
+  "welcome": "Welcome, {name}!",
+  "items": "{count, plural, =0 {No items} one {# item} other {# items}}"
+}
+```
+
+Nested namespaces, rich messages, structured `.value.json` resources, and
+explicitly mounted dependency catalogs are supported. Use
+`mirai-intl.config.json` or the `miraiIntl` key in `package.json` only for real
+convention exceptions. Do not use both configuration locations in one app.
+
+### 2. Add lifecycle scripts
+
+```json
+{
+  "scripts": {
+    "predev": "mirai-intl ensure",
+    "prebuild": "mirai-intl ensure",
+    "intl:check": "mirai-intl check",
+    "dev": "<your-framework> dev",
+    "build": "<your-framework> build"
   }
 }
 ```
 
-Normal JSON never contains receipts, proofs, manifests, source inventories, or
-translation values. `mirai-intl contract` is the explicit raw compiler-contract
-command and remains JSON-first. `--report-file` atomically writes the
-ANSI-free diagnostic report; it is not a dump of command internals.
+`ensure` creates or refreshes the selected generated catalog. The adapters also
+ensure the catalog at build boundaries, but explicit lifecycle scripts keep
+development, standalone checks, and CI deterministic.
 
-The compiler derives the locale root, paired locales, source locale, framework,
-package/catalog identity, generated output, and semantic paths. ICU ASTs infer
-required arguments, safe scalar roles, finite plural/number roles, selects,
-date/time/custom formatters, and rich tags across every locale.
+### 3. Configure the framework adapter
 
-`mirai-intl.config.json` is optional. It is limited to genuine exceptions:
-custom formatter versions, structured `value()` result schemas, and a source
-locale only when multiple non-English locales make the convention ambiguous.
-Deployable apps may also mount translation sources from declared dependencies
-when a standard app-local locale tree is not enough:
+Use the [Next.js adapter](#nextjs-adapter) or [Vite adapter](#vite-adapter)
+below. Both lower eligible named-key calls to the selected generated catalog.
 
-```json
-{
-  "sources": [
-    {
-      "from": "@mirai/i18n",
-      "path": "locales/components/ui",
-      "mount": "components.ui"
-    }
-  ]
-}
-```
+### 4. Create the typed runtime
 
-The app-local `locales` or `src/locales` source remains implicit. Mounted
-dependencies must be declared and installed through the app package context;
-their paths are confined to the canonical dependency package root. Every
-source must provide the app locale set, and exact/object-leaf collisions fail
-instead of using source order as precedence. It does not duplicate ordinary
-text/rich message contracts.
-
-Structured values normally need no authored schema config. Put the complete
-value in paired `<locale>.value.json` files beneath its message-path directory:
-
-```text
-locales/components/ui/percentage/select/items/en.value.json
-locales/components/ui/percentage/select/items/th.value.json
-```
-
-The directory becomes the message key
-`components.ui.percentage.select.items`. The source locale infers one exact,
-recursive value schema for strings, booleans, finite numbers, non-empty
-homogeneous arrays, and fixed-shape objects; every other locale must match it.
-This keeps structured translation data beside the locale content instead of in
-per-key `values` blocks.
-
-Generation is atomic and content-addressed. `src/i18n/generated` retains one
-selected build plus a stable facade that publicly exposes only:
-
-- `CatalogContract`
-- `CatalogLocale`
-- `catalogManifest`
-- `createTranslationKey`
-- `isCatalogLocale`
-- `loadCatalogResource`
-- `parseTranslationKey`
-
-Each locale resource is emitted as a separate lazy module, so importing the
-stable facade does not retain every locale payload in the initial bundle. All
-private compiled messages share one pure `catalog.messages.gen.mjs` module per
-selected build. Adapters import only the exact named exports selected by source
-calls, so unused messages remain tree-shakeable without producing thousands of
-files. Compact descriptor and renderer details never enter application source.
-Vite and Next/Turbopack adapters lower finite named-key calls to exact
-descriptors. Normal `t(...)` calls accept only catalog literals, finite literal
-or template unions, and compiler-generated branded keys. Widened `string`,
-`unknown`, and arbitrary runtime input are rejected by both the public type
-contract and the compiler transform.
-
-`createTranslationKey("schema.contact")("nameRequired")` produces a generated,
-catalog-bound key for statically declared application configuration. The
-compiler accepts only literal argument-free text messages imported directly
-from the generated facade, lowers them to a dotted string, and fails closed if
-the marker reaches an untransformed runtime.
-
-Genuinely open boundaries such as Zod/TanStack error messages must first call
-`parseTranslationKey("schema", input)`. The compiler lowers that parser to a
-namespace-bounded registry of argument-free text messages. It returns a
-branded named key or `undefined`; only a successful result may be passed to
-`t(...)`. The translator itself never accepts the raw boundary string. Dynamic
-namespaces, root-level runtime keys, extra arguments, rich messages, structured
-values, and parameterized text remain rejected.
-
-Catalog generation runs before Vite starts or before Next compiles. Locale
-edits during an active Vite session emit a restart-required diagnostic rather
-than publishing and pruning underneath live module readers. Do not run another
-generator against an application while its dev server or production build is
-active. Lifecycle scripts should call `mirai-intl ensure`; it regenerates a
-missing or stale selected build and returns a concise unchanged result when the
-catalog is current. `generate` retains the full diagnostic report for explicit
-release/debug work.
-
-## Runtime
-
-Install `@openmirai/intl` for the CLI/compiler/runtime entrypoints and
-`@openmirai/intl-i18next` for the supported React/i18next integration. The
-adapter owns its compatible i18next and react-i18next versions; React remains a
-peer and `i18next-icu` is an optional peer enabled once per adapter instance.
-
-```ts
+```tsx
 import { createMiraiI18next } from "@openmirai/intl-i18next";
+
 import {
   catalogManifest,
   isCatalogLocale,
@@ -168,75 +153,253 @@ export const intl = createMiraiI18next({
 });
 ```
 
-`intl.Provider`, `intl.useTranslations`, `intl.getBrowserController`, and
-`intl.createRequestController` are the supported integration surface. The app
-keeps only route/cookie locale policy and provider placement. For Vite, add
-`miraiIntlVite()` from `@openmirai/intl/vite`; generated code imports only
-`@openmirai/intl/runtime` and `@openmirai/intl/types`.
+Mount the provider at the application boundary:
 
-In development and test, the strict boundary rejects missing, extra, inherited,
-accessor-backed, nullish, non-scalar, and otherwise unsafe translation inputs
-before rendering. In production (`NODE_ENV === "production"`, or
-`strictValidation: false`), exact value-schema and descriptor hash re-checks are
-skipped for performance after build-time lowering; brand/kind/catalog identity
-checks remain so unlowered markers still fail closed. Recoverable missing
-resources soft-fail via `missingMessageFallback` (default `""`) and emit
-`INTL_MISSING_RESOURCE` — they never return dotted message paths.
+```tsx
+export function AppProviders({ children }: { children: React.ReactNode }) {
+  return <intl.Provider initialLocale="en">{children}</intl.Provider>;
+}
+```
 
-`mirai-intl check` also fails closed on high-confidence hardcoded JSX text,
-user-facing string props (`label`, `placeholder`, `title`, …), and Zod
-validation message literals. Production UI prose must come from the catalog.
+Use `intl.useTranslations("namespace")` inside that provider. For server
+requests, create a request-scoped controller with
+`intl.createRequestController(locale)`; do not share request controllers across
+requests.
 
-## Packages
+## Next.js adapter
 
-- `@openmirai/intl`: normal consumer package: CLI, compiler, Vite/Next
-  adapters, runtime, and public type entrypoints.
-- `@openmirai/intl-i18next`: React/i18next adapter with typed hooks and
-  isolated browser/request controllers.
-- `@openmirai/intl-abi`, `@openmirai/intl-compiler`, and
-  `@openmirai/intl-runtime`: implementation packages for advanced/internal
-  integrations; normal application packages do not pin them directly.
+Import `withMiraiIntl` from the public umbrella package and wrap the existing
+Next configuration. The adapter adds the transform to Turbopack and Webpack
+while preserving existing Webpack callbacks and rules.
 
-## Verification
+`next.config.ts`:
+
+```ts
+import type { NextConfig } from "next";
+
+import { withMiraiIntl } from "@openmirai/intl/next";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+};
+
+export default withMiraiIntl(nextConfig);
+```
+
+The default root is `process.cwd()` and the generated directory is
+`src/i18n/generated`. Override them for a nested monorepo app:
+
+```ts
+export default withMiraiIntl(nextConfig, {
+  generatedDirectory: "src/i18n/generated",
+  root: process.cwd(),
+});
+```
+
+Keep `predev` and `prebuild` scripts even when using the adapter. They make
+catalog generation explicit for Turbopack, standalone checks, and CI.
+
+## Vite adapter
+
+Add `miraiIntlVite()` to `vite.config.ts`. The plugin runs before normal source
+transforms, loads generated private message slices, watches catalog roots, and
+requires a restart after locale JSON changes.
+
+`vite.config.ts`:
+
+```ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+import { miraiIntlVite } from "@openmirai/intl/vite";
+
+export default defineConfig({
+  plugins: [miraiIntlVite(), react()],
+});
+```
+
+For an app whose Vite root is resolved elsewhere, pass the adapter options:
+
+```ts
+miraiIntlVite({
+  generatedDirectory: "src/i18n/generated",
+  root: process.cwd(),
+});
+```
+
+When a locale file changes during `vite dev`, stop and restart Vite before
+checking the new translation. The plugin intentionally does not rotate the
+selected catalog underneath active module readers.
+
+## CLI and catalog checks
+
+The `mirai-intl` binary is included in `@openmirai/intl`:
 
 ```sh
+pnpm exec mirai-intl ensure
+pnpm exec mirai-intl generate
+pnpm exec mirai-intl check
+```
+
+- `ensure` performs the normal idempotent lifecycle generation.
+- `generate` performs a full generation and retains detailed diagnostics.
+- `check` verifies catalog artifacts and authorizes the complete source tree.
+  It catches unknown keys, widened dynamic strings, translator escapes, and
+  high-confidence hardcoded user-facing text.
+- `catalog-check` validates catalog artifacts without replacing full source
+  authorization.
+- `contract` prints the explicit compiler contract for tooling integrations.
+
+Use `--format=json` or the compatible `--json` for a bounded machine-readable
+summary. Use `--report-file` when a CI job needs an ANSI-free diagnostic report.
+Normal JSON does not contain receipts, proofs, manifests, source inventories,
+or translation values.
+
+Generated output is atomic and content-addressed. Import only the stable facade
+from `src/i18n/generated`; never import private generated modules or edit the
+generated directory by hand.
+
+Do not run another generator against an application while its dev server or
+production build is active. Vite reports a restart-required diagnostic after a
+locale edit so readers never observe a partially rotated catalog.
+
+## Runtime behavior
+
+`@openmirai/intl-i18next` exposes:
+
+- `intl.Provider` for browser or request-scoped rendering.
+- `intl.useTranslations` for typed React translations.
+- `intl.getBrowserController()` for the singleton browser lifecycle.
+- `intl.createRequestController()` for isolated server requests.
+
+Development and test mode strictly validate missing, extra, inherited,
+accessor-backed, nullish, non-scalar, and unsafe translation inputs. Production
+recovery can render safe fallbacks for missing resources while emitting
+`INTL_MISSING_RESOURCE`; it never returns dotted message paths as UI text.
+
+## Building and verifying the repository
+
+From a clean checkout:
+
+```sh
+nvm install
 nvm use
+corepack enable
 corepack pnpm install --frozen-lockfile
+```
+
+Run the root scripts:
+
+```sh
+corepack pnpm build
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm test:perf
+corepack pnpm check:generated
+corepack pnpm pack:smoke
+corepack pnpm pack:browser-smoke
+corepack pnpm diagnostic:smoke
 corepack pnpm verify
 ```
 
-The verification chain covers formatting, lint, type checking, TypeScript
-5.9/6/7 fixtures, runtime/compiler tests, production builds, generated drift,
-benchmarks, packed-package installation, named-key lowering, and referenced
-renderer inclusion/unrelated renderer exclusion.
+`pnpm build` uses `tsdown` to emit ESM, declarations, and source maps into
+`packages/*/dist`. `pnpm test` builds first through its `pretest` lifecycle.
+`pnpm verify` is the complete local gate: formatting, lint, type checks,
+fixtures, tests, performance tests, generated drift, benchmarks, packed
+installation, browser recovery, and diagnostic smoke checks.
 
-The accepted renderer investigation is historical evidence under
-`docs/phase0/archive/`; it is not an active migration or release gate.
+Use `pnpm clean` to remove build output, TypeScript build state, coverage, and
+temporary files. Do not commit `dist` output unless a release procedure
+explicitly requires it.
 
-## Prerelease publishing
+## Continuous integration
 
-The committed `.npmrc` only routes `@openmirai` to GitHub Packages. Credentials
-stay in trusted user/CI state and are never interpolated into the project file.
-Before releasing, verify that external authentication is available:
+GitHub Actions is configured in `.github/workflows/ci.yml`. Pull requests and
+pushes to `main` run the same authoritative `pnpm verify` gate. The workflow
+uses Node `24.18.0`, pnpm `11.11.0`, a frozen lockfile install, and read-only
+repository permissions.
 
-```sh
-corepack pnpm whoami --registry https://npm.pkg.github.com
+```yaml
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.11.0
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
 ```
 
-Release-it also performs this preflight and dry-runs all three package publishes
-before creating the Git release. Actual package publishing runs only after the
-release commit, tag, and push succeed. Its version-bump hook regenerates and
-verifies the committed compiler fixture catalog so compiler-version metadata
-cannot leave CI with a stale content-addressed build.
+Applications can install the public packages without registry credentials. Only
+the publishing workflow needs an npm token. `actions/setup-node` creates the
+registry configuration; pass the repository secret through `NODE_AUTH_TOKEN`
+and never commit a token:
 
-After this repository has an initial commit, an `origin` upstream, and a clean
-working tree, the first beta prerelease command is:
-
-```sh
-corepack pnpm run release:prerelease
+```yaml
+- uses: actions/setup-node@v5
+  with:
+    node-version: 24.18.0
+    registry-url: https://registry.npmjs.org
+- run: pnpm install --frozen-lockfile
+  # NODE_AUTH_TOKEN is only needed when publishing.
 ```
 
-Starting from root version `0.0.0`, that targets `0.1.0-beta.0` and publishes
-the public ABI, compiler, and runtime packages under the `beta` distribution
-tag. The packages are linked to the public `openmirai/mirai-intl` repository so
-GitHub Packages can inherit its public access permissions.
+The verification job uses workspace dependencies, so it does not need
+publishing credentials.
+
+## Publishing
+
+Publishing is CI-only. Add an `NPM_TOKEN` Actions secret with publish access to
+the `@openmirai` npm organization. The dedicated
+`.github/workflows/publish.yml` workflow:
+
+1. Runs the complete `pnpm verify` gate.
+2. Authenticates with `NPM_TOKEN` through `NODE_AUTH_TOKEN`.
+3. Performs an authenticated dry run for every package.
+4. Publishes the five packages to `https://registry.npmjs.org` in dependency
+   order.
+
+Push a version tag such as `v0.4.0` to publish automatically:
+
+```sh
+corepack pnpm release
+git push origin main --follow-tags
+```
+
+For the initial or a recovery publication, use **Actions → Publish npm
+packages → Run workflow** and enter an existing version tag in `release_ref`.
+The workflow refuses non-version refs and refuses to republish an existing npm
+version. A dry run can be inspected locally without publishing:
+
+```sh
+corepack pnpm run release:packages:npm:dry-run
+```
+
+The release command creates the version commit and tag; it does not publish
+from the developer machine. Never commit registry tokens or generated
+credentials.
+
+## License
+
+Mirai Intl is released under the [MIT License](LICENSE).
