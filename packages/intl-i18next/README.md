@@ -23,6 +23,8 @@ The compiler generates `catalogManifest`, `isCatalogLocale`, and
 `loadCatalogResource` in the selected generated catalog directory:
 
 ```tsx
+import type { ReactNode } from "react";
+
 import { createMiraiI18next } from "@openmirai/intl-i18next";
 
 import {
@@ -39,7 +41,7 @@ export const intl = createMiraiI18next({
   icu: false,
 });
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
+export function AppProviders({ children }: { children: ReactNode }) {
   return <intl.Provider initialLocale="en">{children}</intl.Provider>;
 }
 ```
