@@ -14,7 +14,10 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
 const script = join(root, "scripts/publish-packages.mjs");
-const version = "0.3.16";
+const packageManifest = JSON.parse(
+  await readFile(join(root, "packages/abi/package.json"), "utf8")
+) as { version: string };
+const version = packageManifest.version;
 const packageNames = [
   "@openmirai/intl-abi",
   "@openmirai/intl-compiler",
@@ -149,8 +152,8 @@ describe("publish package idempotence", () => {
     expect(publishLines).toHaveLength(missing.length);
     expect(publishLines.every((line) => line.includes("--dry-run"))).toBe(true);
     expect(publishLines).toEqual([
-      expect.stringContaining("openmirai-intl-compiler-0.3.16.tgz"),
-      expect.stringContaining("openmirai-intl-0.3.16.tgz"),
+      expect.stringContaining(`openmirai-intl-compiler-${version}.tgz`),
+      expect.stringContaining(`openmirai-intl-${version}.tgz`),
     ]);
     expect(result.stdout).toContain(
       "Resuming partial release; publishing only missing packages"
