@@ -23,12 +23,13 @@ concurrency:
 permissions:
   id-token: write
   contents: read
+  packages: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      NPM_REGISTRY: https://registry.npmjs.org
+      NPM_REGISTRY: https://npm.pkg.github.com
       RELEASE_REF: ${{ inputs.release_ref || github.ref }}
       RELEASE_VERSION_INPUT: ${{ inputs.release_version || '' }}
     steps:
@@ -41,11 +42,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.18.0
-          registry-url: https://registry.npmjs.org
+          registry-url: https://npm.pkg.github.com
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
       - run: pnpm build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Validate trusted publish package contents
         run: |
           set -euo pipefail
@@ -77,3 +80,5 @@ jobs:
         run: |
           set -euo pipefail
           corepack pnpm run release:packages:npm -- "$RELEASE_VERSION"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
