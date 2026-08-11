@@ -70,10 +70,6 @@ export class MissingResourceError extends Error {
   readonly code = MISSING_RESOURCE_CODE;
 
   override readonly name = "MissingResourceError";
-
-  constructor(message: string) {
-    super(message);
-  }
 }
 
 export function isMissingResourceError(

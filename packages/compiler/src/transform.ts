@@ -8436,12 +8436,15 @@ export async function transformMiraiIntlOwnerBatch(
         finiteModuleGroups: Object.fromEntries(
           [...sourcePlans]
             .filter(({ finiteModules }) => finiteModules.size > 0)
-            .reduce((groups, { finiteModules }) => {
+            .reduce((finiteModuleGroups, { finiteModules }) => {
               const key = [...finiteModules]
                 .toSorted(compareCanonicalStrings)
                 .join("\u0000");
-              groups.set(key, (groups.get(key) ?? 0) + 1);
-              return groups;
+              finiteModuleGroups.set(
+                key,
+                (finiteModuleGroups.get(key) ?? 0) + 1
+              );
+              return finiteModuleGroups;
             }, new Map<string, number>())
         ),
         mappedNonliteralSources: sourcePlans.filter(

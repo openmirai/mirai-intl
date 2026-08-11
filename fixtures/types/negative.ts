@@ -182,14 +182,17 @@ const parameterizedTranslationKey: ArgumentFreeTextKeysFor<
   FixtureCatalog,
   "app"
 > = "greeting";
+void parameterizedTranslationKey;
 
 // @ts-expect-error Rich messages are not argument-free text keys.
 const richTranslationKey: ArgumentFreeTextKeysFor<FixtureCatalog, "app"> =
   "staticRich";
+void richTranslationKey;
 
 // @ts-expect-error Structured values are not argument-free text keys.
 const valueTranslationKey: ArgumentFreeTextKeysFor<FixtureCatalog, "app"> =
   "staticValue";
+void valueTranslationKey;
 
 // @ts-expect-error A conventional key retains its inferred required values.
 t("greeting");

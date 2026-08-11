@@ -24,6 +24,14 @@ function hash(label: string): Sha256 {
   return sha256(label);
 }
 
+function packageAt<T>(packages: ReadonlyArray<T>, index: number): T {
+  const packageEntry = packages[index];
+  if (!packageEntry) {
+    throw new Error(`Missing package at index ${index}`);
+  }
+  return packageEntry;
+}
+
 function packageAuthoritySet(
   root: string,
   index: number,
@@ -168,14 +176,16 @@ describe("workspace authority V1", () => {
     [
       "package evidence",
       (value: Mutable<WorkspaceAuthorityV1>) =>
-        (value.packages[0]!.catalogContentHash = hash("changed")),
+        (packageAt(value.packages, 0).catalogContentHash = hash("changed")),
     ],
   ] as const)("rejects %s tampering", (_name, mutate) => {
     const authority = mutableClone(buildWorkspaceAuthorityV1(input()));
     mutate(authority);
     if (_name === "git tree" || _name === "snapshot" || _name === "toolchain") {
+      // oxlint-disable-next-line vitest/no-conditional-expect
       expect(validateWorkspaceAuthorityV1(authority)).toEqual(authority);
     } else {
+      // oxlint-disable-next-line vitest/no-conditional-expect
       expect(() => validateWorkspaceAuthorityV1(authority)).toThrow(
         /sourceEvidenceRoot|package evidence/u
       );
@@ -191,7 +201,7 @@ describe("workspace authority V1", () => {
         packages: [
           ...base.packages.slice(0, 4),
           {
-            ...base.packages[4]!,
+            ...packageAt(base.packages, 4),
             authoritySet: v2Set,
             authoritySetHash: authoritySetHash(v2Set),
           },
@@ -200,15 +210,20 @@ describe("workspace authority V1", () => {
     ).toThrow(/V2 is forbidden|classifierAuthority/u);
 
     const stale = mutableClone(base);
-    stale.packages[0]!.authoritySetHash = hash("stale");
+    packageAt(stale.packages, 0).authoritySetHash = hash("stale");
     expect(() => buildWorkspaceAuthorityV1(stale)).toThrow(
       /does not bind canonical package authority-set bytes/u
     );
 
     const duplicate = mutableClone(base);
-    duplicate.packages[1]!.authoritySet = duplicate.packages[0]!.authoritySet;
-    duplicate.packages[1]!.authoritySetHash =
-      duplicate.packages[0]!.authoritySetHash;
+    packageAt(duplicate.packages, 1).authoritySet = packageAt(
+      duplicate.packages,
+      0
+    ).authoritySet;
+    packageAt(duplicate.packages, 1).authoritySetHash = packageAt(
+      duplicate.packages,
+      0
+    ).authoritySetHash;
     expect(() => buildWorkspaceAuthorityV1(duplicate)).toThrow(
       /unique canonically sorted package roots/u
     );
@@ -238,7 +253,7 @@ describe("workspace authority V1", () => {
     const value = mutableClone(input());
     const authoritySet = packageAuthoritySet(root, 99);
     value.packages[0] = {
-      ...value.packages[0]!,
+      ...packageAt(value.packages, 0),
       authoritySet,
       authoritySetHash: authoritySetHash(authoritySet),
     };

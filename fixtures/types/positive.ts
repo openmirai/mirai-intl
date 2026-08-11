@@ -287,8 +287,12 @@ storedTranslationConfig.titleKey satisfies DeferredTranslationKeyFor<
   "app"
 >;
 t(storedTranslationConfig.titleKey) satisfies string;
-t(storedTranslationConfig.items[0]!.labelKey) satisfies string;
-storedTranslationConfig.items[0]!.route satisfies string;
+const firstItem = storedTranslationConfig.items.at(0);
+if (!firstItem) {
+  throw new Error("Expected a stored translation item");
+}
+t(firstItem.labelKey) satisfies string;
+firstItem.route satisfies string;
 appKey("status.active") satisfies "app.status.active";
 createTranslationKey("app.status")("inactive") satisfies "app.status.inactive";
 declare const boundaryInput: unknown;

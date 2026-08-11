@@ -953,12 +953,12 @@ async function verifyGeneration(
   await Promise.all(
     generation.payload.manifest.entries.map(async (entry) => {
       const path = resolve(payloadRoot, entry.path);
-      const stat = await lstat(path).catch(() => undefined);
+      const payloadStat = await lstat(path).catch(() => undefined);
       if (
-        !stat ||
-        stat.isSymbolicLink() ||
-        !stat.isFile() ||
-        stat.size !== entry.size ||
+        !payloadStat ||
+        payloadStat.isSymbolicLink() ||
+        !payloadStat.isFile() ||
+        payloadStat.size !== entry.size ||
         (await hashRegular(path)) !== entry.hash
       ) {
         throw new Error(
