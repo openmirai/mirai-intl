@@ -1914,6 +1914,115 @@ describe("private named-key lowering", () => {
     }
   });
 
+  it("seals generated .d.mts evidence for a consumer facade batch", async () => {
+    const fixture = await createGeneratedCatalog();
+    const intlPackage = join(fixture.root, "node_modules/@openmirai/intl");
+    await writeJson(join(intlPackage, "package.json"), {
+      exports: {
+        "./runtime": { types: "./runtime.d.ts" },
+        "./types": { types: "./types.d.ts" },
+      },
+      name: "@openmirai/intl",
+      types: "./types.d.ts",
+    });
+    await writeFile(
+      join(intlPackage, "types.d.ts"),
+      [
+        "export type JsonObject = Record<string, unknown>;",
+        "export type TypedCatalogManifest<Contract, Locales extends readonly string[], SourceLocale extends Locales[number]> = { readonly locales: Locales; readonly sourceLocale: SourceLocale; };",
+        "export type NamespacePaths<Contract> = string;",
+        "export type ArgumentFreeTextKeysFor<Contract, Namespace> = string;",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(intlPackage, "runtime.d.ts"),
+      [
+        "export declare function bindFormErrorTranslator<Contract>(): unknown;",
+        "export declare function bindFormSchema<Contract>(): unknown;",
+        "export declare function bindRecoveringFormErrorTranslator<Contract>(): unknown;",
+        "export declare function bindRecoveringTranslationKeyFactory<Contract>(): unknown;",
+        "export declare function bindRecoveringTranslationKeyParser<Contract>(): unknown;",
+        "export declare function bindTranslationKeyFactory<Contract>(): unknown;",
+        "export declare function bindTranslationKeyParser<Contract>(): unknown;",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    const sources = Array.from({ length: 17 }, (_, index) => ({
+      id: join(fixture.root, "src", `consumer-${index}.tsx`),
+      source: [
+        'import { useTranslations } from "x";',
+        'import { catalogManifest, isCatalogLocale, loadCatalogResource } from "@/i18n/generated";',
+        'import type { CatalogContract, TranslationNamespace } from "@/i18n/generated";',
+        'const { t } = useTranslations("pages.home");',
+        `export const title${index} = t("title");`,
+        `export const locale${index} = catalogManifest.sourceLocale;`,
+        `export type Contract${index} = CatalogContract;`,
+        `export type Namespace${index} = TranslationNamespace;`,
+        `export const isLocale${index} = isCatalogLocale;`,
+        `export const loadLocale${index} = loadCatalogResource;`,
+        "",
+      ].join("\n"),
+    }));
+    let recordedEvidence: MiraiIntlSemanticEvidence | undefined;
+
+    try {
+      const results = await transformMiraiIntlOwnerBatch(
+        sources.map(({ id, source }) => ({
+          authorizationEvidence: {
+            record(value) {
+              recordedEvidence ??= value;
+            },
+            workspaceRoot: fixture.root,
+          },
+          id,
+          source,
+        })),
+        {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        },
+        undefined,
+        false,
+        {
+          compilerOptions: {
+            allowImportingTsExtensions: true,
+            allowJs: false,
+            esModuleInterop: true,
+            forceConsistentCasingInFileNames: true,
+            incremental: false,
+            module: ts.ModuleKind.ESNext,
+            moduleResolution: ts.ModuleResolutionKind.Bundler,
+            isolatedModules: true,
+            jsx: ts.JsxEmit.ReactJSX,
+            lib: ["lib.dom.d.ts", "lib.dom.iterable.d.ts", "lib.es2024.d.ts"],
+            noEmit: true,
+            paths: { "@/*": ["./src/*"] },
+            pathsBasePath: fixture.root,
+            resolveJsonModule: true,
+            skipLibCheck: true,
+            strict: true,
+            target: ts.ScriptTarget.ES2024,
+          },
+        }
+      );
+
+      expect(results).toHaveLength(17);
+      expect(results.map(({ error }) => error)).toEqual(
+        Array.from({ length: 17 }, () => undefined)
+      );
+      expect(
+        recordedEvidence?.declarations.some(({ path }) =>
+          path.endsWith("catalog.manifest.gen.d.mts")
+        )
+      ).toBe(true);
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("matches reference evidence and diagnostics for every static facade import form", async () => {
     const fixture = await createGeneratedCatalog();
     const cases = [

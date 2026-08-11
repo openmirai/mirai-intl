@@ -5360,7 +5360,8 @@ function createSealedSemanticGroup(
       if (
         /\.d\.[cm]?ts$/u.test(file.path) &&
         (closure.tripleSlashControls > 0 ||
-          isSemanticInterferenceDeclaration(file, cache))
+          isSemanticInterferenceDeclaration(file, cache) ||
+          isWithin(catalog.selectedCanonicalDirectory, file.path))
       ) {
         rootNameSet.add(file.path);
       }
