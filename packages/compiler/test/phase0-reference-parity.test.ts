@@ -884,6 +884,75 @@ describe("Phase 0 reference-engine parity", () => {
     }
   });
 
+  it("seals TypeScript 6 lib aliases referenced by next-env declarations", async () => {
+    const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
+    const root = join(container, "app");
+    try {
+      await createConventionApp(root, 1);
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["next-env.d.ts", "src/**/*.ts"],
+      });
+      await mkdir(join(root, ".next/types"), { recursive: true });
+      await writeFile(
+        join(root, ".next/types/routes.d.ts"),
+        "export {};\n",
+        "utf8"
+      );
+      await writeFile(
+        join(root, "next-env.d.ts"),
+        [
+          '/// <reference types="next" />',
+          '/// <reference types="next/image-types/global" />',
+          'import "./.next/types/routes.d.ts";',
+          "",
+        ].join("\n"),
+        "utf8"
+      );
+      const nextTypes = join(
+        root,
+        "node_modules/.pnpm/@types+next@1.0.0/node_modules/@types/next"
+      );
+      await writeJson(join(nextTypes, "package.json"), {
+        name: "@types/next",
+        types: "index.d.ts",
+        version: "1.0.0",
+      });
+      await writeFile(
+        join(nextTypes, "index.d.ts"),
+        ['/// <reference lib="esnext.float16" />', "export {};", ""].join("\n"),
+        "utf8"
+      );
+      await mkdir(join(nextTypes, "image-types"), { recursive: true });
+      await writeFile(
+        join(nextTypes, "image-types/global.d.ts"),
+        "export {};\n",
+        "utf8"
+      );
+      await mkdir(join(root, "node_modules/@types"), { recursive: true });
+      await symlink(
+        "../.pnpm/@types+next@1.0.0/node_modules/@types/next",
+        join(root, "node_modules/@types/next")
+      );
+      await generateConventionCatalog(root, { collectEnvironment: false });
+
+      const analysis = await analyzeConventionSources(root);
+      expect(analysis.diagnostics).toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining(
+            "Triple-slash reference controls are not supported"
+          ),
+        }),
+      ]);
+      expect(
+        analysis.evidence
+          .find((entry) => entry.source.endsWith("next-env.d.ts"))
+          ?.libs.some((entry) => entry.path.endsWith("lib.es2025.float16.d.ts"))
+      ).toBe(true);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
+
   it("seals pnpm-style @types package aliases and package-scope probes", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
     const workspace = join(container, "workspace");

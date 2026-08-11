@@ -27,6 +27,12 @@ import { mergeSemanticProviders } from "./semantic-providers";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import { privateMessageSliceSpecifier } from "./private-module";
 
+type TypeScriptLibReferenceApi = typeof ts & {
+  getLibFileNameFromLibReference?: (reference: {
+    fileName: string;
+  }) => string | undefined;
+};
+
 export type MiraiIntlTransformOptions = Readonly<{
   /** @internal Authorization-only evidence sink; does not alter transforms. */
   authorizationEvidence?: Readonly<{
@@ -3654,7 +3660,9 @@ function standardLibPath(
   const libraryDirectory = dirname(ts.getDefaultLibFilePath(compilerOptions));
   const name = reference.startsWith("lib.")
     ? reference
-    : `lib.${reference}.d.ts`;
+    : ((ts as TypeScriptLibReferenceApi).getLibFileNameFromLibReference?.({
+        fileName: reference,
+      }) ?? `lib.${reference}.d.ts`);
   return resolve(libraryDirectory, name);
 }
 
