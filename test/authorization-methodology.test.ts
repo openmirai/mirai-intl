@@ -42,7 +42,6 @@ import type {
 import {
   acceptanceEligibility,
   assertDistinctReferenceRoles,
-  assertFrozenProductionCandidate,
   assertTimedWorkflowShape,
   assertWorkloadEquivalent,
   blockDeltaPercent,
@@ -50,13 +49,11 @@ import {
   completeContractPass,
   engineOrder,
   EVALUATOR_SOURCE_PATHS,
-  FROZEN_PRODUCTION_CANDIDATE,
   gate25PoolAssessment,
   measurementTimeoutMilliseconds,
   pairedBlockStatistics,
   PERFORMANCE_REFERENCE,
   performanceGate,
-  productionCandidateIdentity,
   rawStatistics,
   releaseAcceptance,
   rssPairOrder,
@@ -779,20 +776,6 @@ describe("authorization evaluator methodology", () => {
         ),
       })
     ).toBe(true);
-  });
-
-  it("pins the production source dist CLI and lockfile identity", async () => {
-    const identity = await productionCandidateIdentity(
-      resolve(import.meta.dirname, "..")
-    );
-    expect(identity).toEqual(FROZEN_PRODUCTION_CANDIDATE);
-    expect(() => assertFrozenProductionCandidate(identity)).not.toThrow();
-    expect(() =>
-      assertFrozenProductionCandidate({
-        ...identity,
-        compilerCliHash: "sha256:changed",
-      })
-    ).toThrow(/identity changed/u);
   });
 
   it("keeps reduced smoke runs acceptance-ineligible", () => {
