@@ -23,13 +23,12 @@ concurrency:
 permissions:
   id-token: write
   contents: read
-  packages: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      NPM_REGISTRY: https://npm.pkg.github.com
+      NPM_REGISTRY: https://registry.npmjs.org
       RELEASE_REF: ${{ inputs.release_ref || github.ref }}
       RELEASE_VERSION_INPUT: ${{ inputs.release_version || '' }}
     steps:
@@ -42,13 +41,23 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24.18.0
-          registry-url: https://npm.pkg.github.com
+          registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Verify npm Trusted Publishing runtime
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v24.18.0"
+          npm_version="$(npm --version)"
+          node -e '
+            const [major, minor, patch] = process.argv[1].split(".").map(Number);
+            const supported = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!supported) {
+              throw new Error(`npm ${process.argv[1]} is too old for Trusted Publishing; require npm >= 11.5.1`);
+            }
+          ' "$npm_version"
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
       - run: pnpm build
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Validate trusted publish package contents
         run: |
           set -euo pipefail
@@ -80,5 +89,3 @@ jobs:
         run: |
           set -euo pipefail
           corepack pnpm run release:packages:npm -- "$RELEASE_VERSION"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

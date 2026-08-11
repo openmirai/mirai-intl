@@ -74,54 +74,150 @@ function runPnpm(arguments_, cwd = root) {
     env: process.env,
     stdio: "inherit",
   });
+  if (result.error) {
+    throw new Error(`Failed to run corepack pnpm: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     throw new Error(`pnpm exited with status ${result.status ?? "unknown"}`);
   }
 }
 
-function runNpm(arguments_) {
+function runNpm(
+  arguments_,
+  { allowFailure = false, captureOutput = false } = {}
+) {
   const result = spawnSync("npm", arguments_, {
     cwd: root,
     env: process.env,
-    stdio: "inherit",
+    encoding: "utf8",
+    stdio: captureOutput ? ["ignore", "pipe", "pipe"] : "inherit",
   });
-  if (result.status !== 0) {
+  if (result.error) {
+    throw new Error(`Failed to run npm: ${result.error.message}`);
+  }
+  if (!allowFailure && result.status !== 0) {
     throw new Error(`npm exited with status ${result.status ?? "unknown"}`);
   }
+  return result;
 }
 
-const publishDirectory = await mkdtemp(
-  resolve(tmpdir(), "mirai-intl-publish-")
-);
+function commandOutput(result) {
+  return [result.stdout, result.stderr]
+    .filter((value) => typeof value === "string" && value.trim() !== "")
+    .join("\n")
+    .trim();
+}
 
-try {
-  for (const { directory, manifest } of manifests) {
-    runPnpm([
-      "--dir",
-      directory,
-      "pack",
-      "--pack-destination",
-      publishDirectory,
-    ]);
+function isMissingPackageVersion(result) {
+  return /\bE404\b|\b404\b/iu.test(commandOutput(result));
+}
 
-    const tarballName = `${manifest.name.replace("@", "").replace("/", "-")}-${version}.tgz`;
-    const publishArguments = [
-      "publish",
-      resolve(publishDirectory, tarballName),
-      "--access",
-      "public",
+function isPublished(name, releaseVersion) {
+  const result = runNpm(
+    [
+      "view",
+      `${name}@${releaseVersion}`,
+      "version",
       "--registry",
       registry,
-      "--tag",
-      tag,
-      ...(dryRun || preflight ? ["--dry-run"] : []),
-    ];
+      "--json",
+    ],
+    { allowFailure: true, captureOutput: true }
+  );
 
-    console.log(
-      `${dryRun || preflight ? "Validating" : "Publishing"} ${manifest.name}@${version} with npm tag ${tag}`
+  if (result.status !== 0) {
+    if (isMissingPackageVersion(result)) {
+      return false;
+    }
+
+    const details = commandOutput(result);
+    throw new Error(
+      `Unable to determine whether ${name}@${releaseVersion} is published in ${registry}. Verify registry access and npm Trusted Publisher configuration: ${details || `npm exited with status ${result.status ?? "unknown"}`}`
     );
-    runNpm(publishArguments);
   }
-} finally {
-  await rm(publishDirectory, { recursive: true, force: true });
+
+  const output = result.stdout?.trim() ?? "";
+  let publishedVersion;
+  try {
+    publishedVersion = JSON.parse(output);
+  } catch (error) {
+    throw new Error(
+      `Unable to parse the registry version for ${name}@${releaseVersion} in ${registry}: ${output || "npm returned no output"}`,
+      { cause: error }
+    );
+  }
+
+  if (publishedVersion !== releaseVersion) {
+    throw new Error(
+      `Registry returned ${String(publishedVersion)} for ${name}@${releaseVersion} in ${registry}; refusing to treat it as published`
+    );
+  }
+
+  return true;
+}
+
+const publicationStates = manifests.map(({ directory, manifest }) => ({
+  directory,
+  manifest,
+  published: isPublished(manifest.name, version),
+}));
+
+for (const { manifest, published } of publicationStates) {
+  console.log(
+    `${published ? "Already published" : "Pending publication"} ${manifest.name}@${version} in ${registry}`
+  );
+}
+
+const pendingPublications = publicationStates.filter(
+  ({ published }) => !published
+);
+
+if (pendingPublications.length === 0) {
+  console.log(
+    `All ${publicationStates.length} packages at ${version} are already published in ${registry}`
+  );
+} else {
+  if (pendingPublications.length < publicationStates.length) {
+    console.log(
+      `Resuming partial release; publishing only missing packages: ${pendingPublications
+        .map(({ manifest }) => manifest.name)
+        .join(", ")}`
+    );
+  }
+
+  const publishDirectory = await mkdtemp(
+    resolve(tmpdir(), "mirai-intl-publish-")
+  );
+
+  try {
+    for (const { directory, manifest } of pendingPublications) {
+      runPnpm([
+        "--dir",
+        directory,
+        "pack",
+        "--pack-destination",
+        publishDirectory,
+      ]);
+
+      const tarballName = `${manifest.name.replace("@", "").replace("/", "-")}-${version}.tgz`;
+      const publishArguments = [
+        "publish",
+        resolve(publishDirectory, tarballName),
+        "--access",
+        "public",
+        "--registry",
+        registry,
+        "--tag",
+        tag,
+        ...(dryRun || preflight ? ["--dry-run"] : []),
+      ];
+
+      console.log(
+        `${dryRun || preflight ? "Validating" : "Publishing"} ${manifest.name}@${version} with npm tag ${tag}`
+      );
+      runNpm(publishArguments);
+    }
+  } finally {
+    await rm(publishDirectory, { recursive: true, force: true });
+  }
 }
