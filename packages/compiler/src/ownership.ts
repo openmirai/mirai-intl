@@ -39,10 +39,13 @@ function packageRelativePath(root: string, file: string): string {
 
 function receiptRelativePath(root: string, file: string): string {
   const path = relative(root, file).split(sep).join("/");
-  if (!path || isAbsolute(path)) {
+  if (isAbsolute(path)) {
     throw new Error("Check-project source path must be relative");
   }
-  return path;
+  // TypeScript's pathsBasePath can be the workspace root itself. Keep that
+  // valid relative boundary explicit instead of serializing it as an empty
+  // path, which is not a canonical receipt value.
+  return path || ".";
 }
 
 function isWithin(root: string, path: string): boolean {
