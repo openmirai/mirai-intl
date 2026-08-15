@@ -39,5 +39,6 @@ export default defineConfig({
       provider: "v8",
     },
     include: ["packages/*/test/**/*.test.ts", "test/**/*.test.ts"],
+    maxWorkers: 4,
   },
 });

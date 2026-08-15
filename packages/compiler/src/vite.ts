@@ -28,6 +28,10 @@ export type MiraiIntlVitePlugin = Readonly<{
   configureServer(server: MiraiIntlViteServer): () => void;
   enforce: "pre";
   handleHotUpdate(context: MiraiIntlHotUpdateContext): Promise<[] | undefined>;
+  hotUpdate(
+    this: MiraiIntlViteHotUpdateHookContext,
+    context: MiraiIntlViteHotUpdateOptions
+  ): Promise<[] | undefined>;
   load(
     this: Readonly<{ addWatchFile(file: string): void }>,
     id: string
@@ -64,6 +68,13 @@ type MiraiIntlHotUpdateContext = Readonly<{
   file: string;
   server: MiraiIntlViteServer;
 }>;
+
+type MiraiIntlViteHotUpdateHookContext = Readonly<{
+  environment: Readonly<{ name: string }>;
+}>;
+
+type MiraiIntlViteHotUpdateOptions = MiraiIntlHotUpdateContext &
+  Readonly<{ type: "create" | "delete" | "update" }>;
 
 type WatchRegistrar = Readonly<{ addWatchFile(file: string): void }>;
 
@@ -218,6 +229,35 @@ export function miraiIntlVite(
     }
     return restartPromise;
   };
+  const filterHotUpdate = async (
+    context: MiraiIntlHotUpdateContext,
+    primaryEnvironment: boolean
+  ): Promise<[] | undefined> => {
+    if (await isCurrentPointer(context.file)) {
+      if (primaryEnvironment) {
+        await restartForCatalogRotation(context.server);
+      }
+      return [];
+    }
+    // The writer installs the stable facade before committing current.json
+    // and removes the previous build afterward. Suppress create, update, and
+    // delete HMR for every generated output so no page reload can race either
+    // side of the pointer rotation.
+    if (await isGeneratedOutput(context.file)) {
+      return [];
+    }
+    await ensureDiscovery();
+    if (
+      !(await isLocaleJson(context.file)) &&
+      !(await isIdentityInput(context.file))
+    ) {
+      return undefined;
+    }
+    if (primaryEnvironment) {
+      context.server.config.logger.error(restartMessage);
+    }
+    return [];
+  };
   const ensureDiscovery = (): Promise<void> => {
     if (localeRoots.length > 0) {
       return Promise.resolve();
@@ -309,25 +349,10 @@ export function miraiIntlVite(
     },
     enforce: "pre",
     async handleHotUpdate(context) {
-      if (await isCurrentPointer(context.file)) {
-        await restartForCatalogRotation(context.server);
-        return [];
-      }
-      // The writer installs the stable facade before committing current.json.
-      // Suppress HMR for every generated output so an index.ts page reload
-      // cannot start an old-catalog SSR request while the pointer rotates.
-      if (await isGeneratedOutput(context.file)) {
-        return [];
-      }
-      await ensureDiscovery();
-      if (
-        !(await isLocaleJson(context.file)) &&
-        !(await isIdentityInput(context.file))
-      ) {
-        return undefined;
-      }
-      context.server.config.logger.error(restartMessage);
-      return [];
+      return filterHotUpdate(context, true);
+    },
+    async hotUpdate(context) {
+      return filterHotUpdate(context, this.environment.name === "client");
     },
     async load(id) {
       const request = await authorizePrivateMessageSliceRequest(

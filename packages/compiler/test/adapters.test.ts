@@ -573,16 +573,44 @@ describe("Vite adapter", () => {
       expect(watcher.on).toHaveBeenCalledWith("unlink", expect.any(Function));
 
       await expect(
-        plugin.handleHotUpdate({
-          file: join(root, "src/i18n/generated/index.ts"),
-          server,
-        })
+        plugin.hotUpdate.call(
+          { environment: { name: "client" } },
+          {
+            file: join(root, "src/i18n/generated/index.ts"),
+            server,
+            type: "update",
+          }
+        )
+      ).resolves.toEqual([]);
+      await expect(
+        plugin.hotUpdate.call(
+          { environment: { name: "client" } },
+          {
+            file: join(
+              root,
+              "src/i18n/generated",
+              current.directory,
+              "catalog.manifest.gen.mjs"
+            ),
+            server,
+            type: "delete",
+          }
+        )
       ).resolves.toEqual([]);
       expect(restart).not.toHaveBeenCalled();
       expect(logger.error).not.toHaveBeenCalled();
 
       await expect(
-        plugin.handleHotUpdate({ file: currentPath, server })
+        plugin.hotUpdate.call(
+          { environment: { name: "client" } },
+          { file: currentPath, server, type: "update" }
+        )
+      ).resolves.toEqual([]);
+      await expect(
+        plugin.hotUpdate.call(
+          { environment: { name: "ssr" } },
+          { file: currentPath, server, type: "update" }
+        )
       ).resolves.toEqual([]);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringMatching(/Restarting Vite/u)
