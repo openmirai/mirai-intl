@@ -573,6 +573,15 @@ describe("Vite adapter", () => {
       expect(watcher.on).toHaveBeenCalledWith("unlink", expect.any(Function));
 
       await expect(
+        plugin.handleHotUpdate({
+          file: join(root, "src/i18n/generated/index.ts"),
+          server,
+        })
+      ).resolves.toEqual([]);
+      expect(restart).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+
+      await expect(
         plugin.handleHotUpdate({ file: currentPath, server })
       ).resolves.toEqual([]);
       expect(logger.error).toHaveBeenCalledWith(

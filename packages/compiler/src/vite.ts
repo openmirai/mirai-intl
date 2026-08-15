@@ -122,12 +122,13 @@ export function miraiIntlVite(
     resolvedRoot ? { ...options, root: resolvedRoot } : options;
   const packageRoot = (): string =>
     resolve(resolvedRoot ?? options.root ?? process.cwd());
-  const currentPointerPath = (): string =>
+  const generatedRootPath = (): string =>
     resolve(
       packageRoot(),
-      options.generatedDirectory ?? defaultGeneratedDirectory,
-      "current.json"
+      options.generatedDirectory ?? defaultGeneratedDirectory
     );
+  const currentPointerPath = (): string =>
+    resolve(generatedRootPath(), "current.json");
   const workspaceRoot = (): Promise<string> => {
     workspaceRootPromise ??= findWorkspaceRoot(packageRoot());
     return workspaceRootPromise;
@@ -192,6 +193,16 @@ export function miraiIntlVite(
   };
   const isCurrentPointer = async (file: string): Promise<boolean> =>
     (await canonicalPath(file)) === (await canonicalPath(currentPointerPath()));
+  const isGeneratedOutput = async (file: string): Promise<boolean> => {
+    const [generatedRoot, generatedFile] = await Promise.all([
+      canonicalPath(generatedRootPath()),
+      canonicalPath(file),
+    ]);
+    return (
+      generatedFile === generatedRoot ||
+      isPathInside(generatedRoot, generatedFile)
+    );
+  };
   const restartForCatalogRotation = (
     server: MiraiIntlViteServer
   ): Promise<void> => {
@@ -300,6 +311,12 @@ export function miraiIntlVite(
     async handleHotUpdate(context) {
       if (await isCurrentPointer(context.file)) {
         await restartForCatalogRotation(context.server);
+        return [];
+      }
+      // The writer installs the stable facade before committing current.json.
+      // Suppress HMR for every generated output so an index.ts page reload
+      // cannot start an old-catalog SSR request while the pointer rotates.
+      if (await isGeneratedOutput(context.file)) {
         return [];
       }
       await ensureDiscovery();
