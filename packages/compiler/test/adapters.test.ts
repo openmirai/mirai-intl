@@ -479,6 +479,7 @@ describe("Vite adapter", () => {
         file: localeFile,
         server: {
           config: { logger },
+          restart: vi.fn(async () => {}),
           watcher: {
             add: vi.fn(),
             off: vi.fn(),
@@ -511,7 +512,7 @@ describe("Vite adapter", () => {
     }
   }, 30_000);
 
-  it("generates before readers, watches locale JSON, and requires restart instead of live rotation", async () => {
+  it("restarts after catalog rotation and requires restart for live locale edits", async () => {
     const root = await createConventionViteFixture();
     const watched: Array<string> = [];
     const logger = { error: vi.fn() };
@@ -520,8 +521,10 @@ describe("Vite adapter", () => {
       off: vi.fn(),
       on: vi.fn(),
     };
+    const restart = vi.fn(async () => {});
     const server = {
       config: { logger },
+      restart,
       watcher,
     };
     try {
@@ -564,8 +567,19 @@ describe("Vite adapter", () => {
       expect(watcher.add).toHaveBeenCalledWith(
         join(canonicalRoot, "src/locales")
       );
+      const currentPath = join(root, "src/i18n/generated/current.json");
+      expect(watcher.add).toHaveBeenCalledWith(currentPath);
       expect(watcher.on).toHaveBeenCalledWith("add", expect.any(Function));
       expect(watcher.on).toHaveBeenCalledWith("unlink", expect.any(Function));
+
+      await expect(
+        plugin.handleHotUpdate({ file: currentPath, server })
+      ).resolves.toEqual([]);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Restarting Vite/u)
+      );
+      expect(restart).toHaveBeenCalledOnce();
+      logger.error.mockClear();
 
       await writeJson(join(root, "src/locales/global/en.json"), {
         before: "Before",
@@ -614,6 +628,7 @@ describe("Vite adapter", () => {
       off: vi.fn(),
       on: vi.fn(),
     };
+    const restart = vi.fn(async () => {});
     try {
       await writeFile(
         join(root, "pnpm-workspace.yaml"),
@@ -639,13 +654,13 @@ describe("Vite adapter", () => {
       await expect(
         plugin.handleHotUpdate({
           file: preset,
-          server: { config: { logger }, watcher },
+          server: { config: { logger }, restart, watcher },
         })
       ).resolves.toEqual([]);
       await expect(
         plugin.handleHotUpdate({
           file: project,
-          server: { config: { logger }, watcher },
+          server: { config: { logger }, restart, watcher },
         })
       ).resolves.toEqual([]);
       expect(logger.error).toHaveBeenCalledTimes(2);
@@ -665,6 +680,7 @@ describe("Vite adapter", () => {
       off: vi.fn(),
       on: vi.fn(),
     };
+    const restart = vi.fn(async () => {});
     try {
       await writeFile(
         join(root, "pnpm-workspace.yaml"),
@@ -679,6 +695,7 @@ describe("Vite adapter", () => {
       await plugin.buildStart.call({ addWatchFile: vi.fn() });
       const cleanup = plugin.configureServer({
         config: { logger },
+        restart,
         watcher,
       });
       const canonicalRoot = await realpath(root);
@@ -703,7 +720,7 @@ describe("Vite adapter", () => {
         await expect(
           plugin.handleHotUpdate({
             file,
-            server: { config: { logger }, watcher },
+            server: { config: { logger }, restart, watcher },
           })
         ).resolves.toEqual([]);
       }
@@ -781,6 +798,7 @@ describe("Vite adapter", () => {
       off: vi.fn(),
       on: vi.fn(),
     };
+    const restart = vi.fn(async () => {});
     try {
       const plugin = miraiIntlVite({ root });
       await plugin.buildStart.call({ addWatchFile: vi.fn() });
@@ -788,7 +806,7 @@ describe("Vite adapter", () => {
       await expect(
         plugin.handleHotUpdate({
           file: join(root, "src/component.tsx"),
-          server: { config: { logger }, watcher },
+          server: { config: { logger }, restart, watcher },
         })
       ).resolves.toBeUndefined();
       expect(logger.error).not.toHaveBeenCalled();

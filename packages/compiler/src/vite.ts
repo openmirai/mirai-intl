@@ -56,6 +56,7 @@ type MiraiIntlViteServer = Readonly<{
   config: Readonly<{
     logger: Readonly<{ error(message: string): void }>;
   }>;
+  restart(): Promise<void>;
   watcher: MiraiIntlViteWatcher;
 }>;
 
@@ -90,6 +91,8 @@ function isPathInside(parent: string, file: string): boolean {
 
 const restartMessage =
   "Translation configuration or sources changed. Restart Vite so mirai-intl can publish one reader-safe catalog before compilation.";
+const catalogRestartMessage =
+  "Generated catalog selection changed. Restarting Vite so mirai-intl can compile against one reader-safe catalog.";
 
 const defaultGeneratedDirectory = "src/i18n/generated";
 
@@ -113,11 +116,18 @@ export function miraiIntlVite(
   let identityFiles: ReadonlyArray<string> = [];
   let configuredLocaleRoot: string | undefined;
   let discoveryReady: Promise<void> = Promise.resolve();
+  let restartPromise: Promise<void> | undefined;
   let workspaceRootPromise: Promise<string> | undefined;
   const currentOptions = (): MiraiIntlTransformOptions =>
     resolvedRoot ? { ...options, root: resolvedRoot } : options;
   const packageRoot = (): string =>
     resolve(resolvedRoot ?? options.root ?? process.cwd());
+  const currentPointerPath = (): string =>
+    resolve(
+      packageRoot(),
+      options.generatedDirectory ?? defaultGeneratedDirectory,
+      "current.json"
+    );
   const workspaceRoot = (): Promise<string> => {
     workspaceRootPromise ??= findWorkspaceRoot(packageRoot());
     return workspaceRootPromise;
@@ -180,6 +190,23 @@ export function miraiIntlVite(
       (normalized.includes("/locales/") || normalized.includes("/src/locales/"))
     );
   };
+  const isCurrentPointer = async (file: string): Promise<boolean> =>
+    (await canonicalPath(file)) === (await canonicalPath(currentPointerPath()));
+  const restartForCatalogRotation = (
+    server: MiraiIntlViteServer
+  ): Promise<void> => {
+    // Transforms embed the selected content-addressed carrier path. Restart
+    // before serving more modules so transform() and load() cannot observe
+    // different current.json generations.
+    if (!restartPromise) {
+      server.config.logger.error(catalogRestartMessage);
+      invalidateMiraiIntlCatalogCache(currentOptions());
+      restartPromise = server.restart().finally(() => {
+        restartPromise = undefined;
+      });
+    }
+    return restartPromise;
+  };
   const ensureDiscovery = (): Promise<void> => {
     if (localeRoots.length > 0) {
       return Promise.resolve();
@@ -235,6 +262,7 @@ export function miraiIntlVite(
       resolvedRoot ??= config.root;
     },
     configureServer(server) {
+      server.watcher.add(currentPointerPath());
       const requireRestart = (file: string): void => {
         void Promise.all([isLocaleJson(file), isIdentityInput(file)]).then(
           ([locale, identity]) => {
@@ -270,6 +298,10 @@ export function miraiIntlVite(
     },
     enforce: "pre",
     async handleHotUpdate(context) {
+      if (await isCurrentPointer(context.file)) {
+        await restartForCatalogRotation(context.server);
+        return [];
+      }
       await ensureDiscovery();
       if (
         !(await isLocaleJson(context.file)) &&
