@@ -6259,6 +6259,20 @@ function analyzeSource(
       const symbol = symbolAt(value);
       return symbol ? objectSymbols.get(symbol) : undefined;
     }
+    if (ts.isConditionalExpression(value)) {
+      const whenTrue = objectNamespace(value.whenTrue);
+      const whenFalse = objectNamespace(value.whenFalse);
+      if (whenTrue === undefined && whenFalse === undefined) {
+        return undefined;
+      }
+      if (whenTrue !== whenFalse) {
+        return diagnostic(
+          value,
+          "Conditional translation results must use the same namespace"
+        );
+      }
+      return whenTrue;
+    }
     return undefined;
   };
 
