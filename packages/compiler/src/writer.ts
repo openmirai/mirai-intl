@@ -1159,7 +1159,7 @@ async function validatePreviousControlBackup(
 async function syncDirectory(directory: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    handle = await open(directory, "r");
+    handle = await open(directory, process.platform === "win32" ? "r+" : "r");
     await handle.sync();
   } catch (error) {
     if (
