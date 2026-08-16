@@ -514,7 +514,7 @@ type ImmutableAuthorizationObject = Readonly<{
 }>;
 
 async function syncDirectory(path: string): Promise<void> {
-  const directory = await open(path, "r");
+  const directory = await open(path, process.platform === "win32" ? "r+" : "r");
   try {
     await directory.sync();
   } finally {

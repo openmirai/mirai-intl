@@ -118,7 +118,10 @@ async function assertRoot(root: string): Promise<string> {
 }
 
 async function syncDirectory(path: string): Promise<void> {
-  const handle = await open(path, constants.O_RDONLY);
+  const handle = await open(
+    path,
+    process.platform === "win32" ? constants.O_RDWR : constants.O_RDONLY
+  );
   try {
     await handle.sync();
   } finally {
@@ -224,7 +227,10 @@ function commitPointerSync(
 const defaultCommitIo = Object.freeze({
   rename: renameSync,
   syncDirectory(directoryPath: string): void {
-    const directory = openSync(directoryPath, constants.O_RDONLY);
+    const directory = openSync(
+      directoryPath,
+      process.platform === "win32" ? constants.O_RDWR : constants.O_RDONLY
+    );
     try {
       fsyncSync(directory);
     } finally {
