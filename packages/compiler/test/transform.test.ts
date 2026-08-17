@@ -3586,6 +3586,11 @@ describe("private named-key lowering", () => {
           'import { useTranslations } from "x"; declare const condition: boolean; const home = useTranslations("pages.home"); const about = useTranslations("pages.about"); const { t } = condition ? home : about; t("title");',
       },
       {
+        error: /Translation wrapper hooks cannot be statically lowered/u,
+        source:
+          'import { useTranslations } from "x"; const useDocumentViewerTranslations = () => useTranslations("pages.home"); const { t } = useDocumentViewerTranslations(); t("title");',
+      },
+      {
         error:
           /Translation call must use a useTranslations\(\)\/getServerTranslations\(\) binding in this module/u,
         source:

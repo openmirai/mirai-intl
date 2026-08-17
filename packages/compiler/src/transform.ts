@@ -6468,6 +6468,39 @@ function analyzeSource(
     }
   }
 
+  for (const declaration of declarations) {
+    if (
+      !declaration.initializer ||
+      !ts.isObjectBindingPattern(declaration.name) ||
+      !declaration.name.elements.some((element) => {
+        let property: string | undefined;
+        if (element.propertyName) {
+          property = propertyNameText(element.propertyName);
+        } else if (ts.isIdentifier(element.name)) {
+          property = element.name.text;
+        }
+        return property === "t";
+      })
+    ) {
+      continue;
+    }
+    const initializer = unwrapExpression(declaration.initializer);
+    const callee = ts.isCallExpression(initializer)
+      ? unwrapExpression(initializer.expression)
+      : undefined;
+    if (
+      callee &&
+      ts.isIdentifier(callee) &&
+      callee.text.endsWith("Translations") &&
+      factoryNamespace(initializer) === undefined
+    ) {
+      diagnostic(
+        callee,
+        "Translation wrapper hooks cannot be statically lowered; call useTranslations()/getServerTranslations() directly in this module"
+      );
+    }
+  }
+
   const operationTarget = (
     expression: ts.Expression
   ): TranslationTarget | undefined => {
