@@ -20,7 +20,7 @@ Useful entry points include:
 - `@openmirai/intl-compiler/next` — Next.js integration.
 - `@openmirai/intl-compiler/vite` — Vite integration.
 
-The package is ESM-only and supports Node.js 24 (`>=24 <25`).
+The package is ESM-only and supports Node.js 24 and later (`>=24`).
 
 ## Documentation
 

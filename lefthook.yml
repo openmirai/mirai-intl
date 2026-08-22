@@ -1,0 +1,44 @@
+pre-commit:
+  piped: true
+  jobs:
+    - name: staged-fixes
+      group:
+        piped: true
+        jobs:
+          - name: oxlint-staged
+            glob: "*.{cjs,js,mjs,ts,tsx}"
+            exclude:
+              - "**/test/generated/**"
+              - "**/dist/**"
+              - "**/*.gen.mjs"
+              - "**/*.gen.d.mts"
+              - "**/*.gen.d.ts"
+              - "**/*.gen.json"
+            run: pnpm exec oxlint --fix --quiet {staged_files}
+            stage_fixed: true
+          - name: oxfmt-staged
+            glob: "*.{cjs,js,json,jsonc,mjs,ts,tsx}"
+            exclude:
+              - "**/test/generated/**"
+              - "**/dist/**"
+              - "**/*.gen.mjs"
+              - "**/*.gen.d.mts"
+              - "**/*.gen.d.ts"
+              - "**/*.gen.json"
+            run: pnpm exec oxfmt --write {staged_files}
+            stage_fixed: true
+    - name: checks
+      group:
+        parallel: true
+        jobs:
+          - name: format
+            run: pnpm format
+          - name: lint
+            run: pnpm lint
+          - name: typecheck
+            run: pnpm typecheck
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}

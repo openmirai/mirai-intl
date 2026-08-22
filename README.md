@@ -39,7 +39,7 @@ Normal application code should not pin the lower-level packages directly.
 
 ## Requirements
 
-- Node.js **24** (CI uses `24.18.0`).
+- Node.js **24 LTS** (the repository's `.nvmrc` tracks `lts/*`).
 - pnpm **11**, enabled through Corepack.
 - A TypeScript project with `tsconfig.json` or `tsconfig.intl.json`.
 - Next.js or Vite for the corresponding source adapter.
@@ -436,8 +436,8 @@ to `main` run the same repository check used locally:
 corepack pnpm verify
 ```
 
-The repository check installs with the frozen lockfile on Node `24.18.0` and
-pnpm `11.11.0`. Run it before opening a pull request; it covers formatting,
+The repository check installs with the frozen lockfile on the current Node 24
+LTS release and pnpm `11.11.0`. Run it before opening a pull request; it covers formatting,
 lint, type checks, tests, generated-file drift, benchmarks, and package smoke
 tests.
 

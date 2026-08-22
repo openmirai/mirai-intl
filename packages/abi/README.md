@@ -11,7 +11,7 @@ instead.
 npm install @openmirai/intl-abi
 ```
 
-The package is ESM-only and supports Node.js 24 (`>=24 <25`). Its public entry
+The package is ESM-only and supports Node.js 24 and later (`>=24`). Its public entry
 point is `@openmirai/intl-abi`.
 
 ## Documentation

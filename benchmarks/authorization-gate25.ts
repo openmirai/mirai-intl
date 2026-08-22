@@ -493,9 +493,10 @@ function sameCandidate(
 }
 
 export async function runGate25(args: ReadonlyArray<string>): Promise<void> {
-  if (process.versions.node !== "24.18.0") {
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  if (nodeMajor < 24) {
     throw new Error(
-      `Gate 2.5 requires Node 24.18.0; received ${process.version}`
+      `Gate 2.5 requires Node >= 24; received ${process.version}`
     );
   }
   const turboRoot = resolve(
