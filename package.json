@@ -29,7 +29,7 @@
     "pack:browser-smoke": "tsx scripts/browser-recovery-smoke.ts",
     "pack:smoke": "tsx scripts/pack-smoke.ts",
     "prediagnostic:smoke": "corepack pnpm build",
-    "prepare": "husky",
+    "hooks:install": "git config --local core.hooksPath \"$(git rev-parse --absolute-git-dir)/hooks\" && lefthook install --force",
     "pretest": "corepack pnpm build",
     "release": "release-it",
     "release:prerelease": "release-it --preRelease=beta",
@@ -57,11 +57,10 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/react-test-renderer": "19.1.0",
-    "husky": "9.1.7",
     "i18next": "26.3.6",
     "i18next-icu": "2.4.4",
     "intl-messageformat": "11.2.11",
-    "lint-staged": "17.0.8",
+    "lefthook": "2.1.10",
     "next": "16.2.9",
     "oxfmt": "0.59.0",
     "oxlint": "1.74.0",
@@ -81,7 +80,7 @@
     "vitest": "4.1.10"
   },
   "engines": {
-    "node": ">=24 <25",
+    "node": ">=24",
     "pnpm": ">=11"
   },
   "packageManager": "pnpm@11.11.0+sha512.4463f65fd80ed80d69bc1d4bf163ee94f605c7380fc318bb5b2ebe15f8cd12d49c51a4d59e951b401e764d3b6ca751cbf51bc50ed7001a6bcb4935e684c34882"

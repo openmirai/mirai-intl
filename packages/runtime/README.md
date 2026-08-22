@@ -17,7 +17,7 @@ Public entry points include:
 - `@openmirai/intl-runtime/react` — React bindings.
 - `@openmirai/intl-runtime/react-i18next` — typed i18next bindings.
 
-The package is ESM-only and supports Node.js 24 (`>=24 <25`).
+The package is ESM-only and supports Node.js 24 and later (`>=24`).
 
 ## Documentation
 

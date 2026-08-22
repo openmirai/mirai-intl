@@ -91,6 +91,6 @@
     "@openmirai/intl-runtime": "workspace:*"
   },
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24"
   }
 }

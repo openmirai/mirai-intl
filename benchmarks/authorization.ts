@@ -2381,9 +2381,10 @@ async function evaluatorIdentity(): Promise<JsonObject> {
 }
 
 async function main(args: ReadonlyArray<string>): Promise<void> {
-  if (process.versions.node !== "24.18.0") {
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  if (nodeMajor < 24) {
     throw new Error(
-      `Performance benchmarks require Node 24.18.0; received ${process.version}`
+      `Performance benchmarks require Node >= 24; received ${process.version}`
     );
   }
   const configured = options(args);
