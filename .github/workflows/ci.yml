@@ -15,7 +15,7 @@ permissions:
 jobs:
   check:
     name: Check repository
-    runs-on: ubuntu-latest
+    runs-on: codebuild-fe-mirai-arm-builder-sm-${{ github.run_id }}-${{ github.run_attempt }}
     timeout-minutes: 15
     steps:
       - name: Check out repository
