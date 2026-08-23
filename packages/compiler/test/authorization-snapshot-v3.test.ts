@@ -1538,6 +1538,38 @@ describe("authorization snapshot V3", () => {
     expect(canonicalIntlCheckReceiptV2Bytes(receiptV2)).toBe(before);
   });
 
+  it("canonically sorts portable candidate projections before persisting V3", () => {
+    const fixtureReceipt = fixture();
+    const receiptV2 = v2FixtureFromV3(fixtureReceipt);
+    const authority = mutateRehashedAuthority(
+      classifierAuthorityFixture(fixtureReceipt),
+      (value) => {
+        const indexBinding = value.indexBinding as {
+          projections: Array<unknown>;
+        };
+        indexBinding.projections.reverse();
+      }
+    );
+    const evidence = classifierProjectionFixture(fixtureReceipt, authority);
+
+    const result = buildIntlCheckReceiptV3FromClassifierProjections(receiptV2, [
+      evidence,
+    ]);
+
+    expect(first(result.receipt.candidateIndexes).projections).toEqual(
+      first(fixtureReceipt.candidateIndexes).projections.map((projection) => ({
+        ...projection,
+        lstats: [],
+        packageScopes: [],
+        probes: [],
+        realpaths: [],
+      }))
+    );
+    expect(parseCanonicalIntlCheckReceiptV3(result.receiptBytes)).toEqual(
+      result.receipt
+    );
+  });
+
   it("preserves canonical ABI across independently allocated projection graphs", () => {
     const fixtureReceipt = fixture();
     const receiptV2 = v2FixtureFromV3(fixtureReceipt);
