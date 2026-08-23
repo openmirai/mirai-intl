@@ -680,7 +680,7 @@ function preparedCandidateSourceBinding(
     binding.impliedNodeFormat !== impliedNodeFormat ||
     binding.scriptKind !== candidateScriptKind(cleanId) ||
     binding.sourceHash !== sha256(source.source) ||
-    sourceFile.fileName !== cleanId ||
+    resolve(sourceFile.fileName) !== cleanId ||
     sourceFile.text !== source.source ||
     sourceFile.impliedNodeFormat !== impliedNodeFormat
   ) {

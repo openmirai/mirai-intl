@@ -7196,35 +7196,46 @@ function buildIntlCheckReceiptV3FromProjectionLedger(
       ),
       packageScopes: scopeReferences,
       probes: probeReferences,
-      projections: owner.index.projections.map((entry) => ({
-        boundary: projectionReference(
-          boundaries,
-          owner.boundaryByReference.get(entry.boundary) ??
-            fail("V3 candidate projection", "references an unknown boundary"),
-          "V3 candidate projection boundary"
-        ),
-        canonicalRoot: projectionPortablePath(
-          owner.projection,
-          entry.canonicalRoot,
-          "V3 candidate projection canonicalRoot"
-        ),
-        control: controlReference,
-        lexicalRoot: projectionPortablePath(
-          owner.projection,
-          entry.lexicalRoot,
-          "V3 candidate projection lexicalRoot"
-        ),
-        // Classifier V3 proves these families for the sealed owner index, not
-        // for individual boundaries. Keep the exact union on the index/facade
-        // and avoid copying the same large reference vectors into every
-        // projection. Empty per-boundary vectors are the truthful projection.
-        lstats: [],
-        packageScopes: [],
-        probes: [],
-        proofKind: entry.proofKind,
-        realpaths: [],
-        status: entry.status,
-      })),
+      projections: sortBy(
+        owner.index.projections.map((entry) => ({
+          boundary: projectionReference(
+            boundaries,
+            owner.boundaryByReference.get(entry.boundary) ??
+              fail("V3 candidate projection", "references an unknown boundary"),
+            "V3 candidate projection boundary"
+          ),
+          canonicalRoot: projectionPortablePath(
+            owner.projection,
+            entry.canonicalRoot,
+            "V3 candidate projection canonicalRoot"
+          ),
+          control: controlReference,
+          lexicalRoot: projectionPortablePath(
+            owner.projection,
+            entry.lexicalRoot,
+            "V3 candidate projection lexicalRoot"
+          ),
+          // Classifier V3 proves these families for the sealed owner index,
+          // not for individual boundaries. Keep the exact union on the
+          // index/facade and avoid copying the same large reference vectors
+          // into every projection. Empty per-boundary vectors are the
+          // truthful projection.
+          lstats: [],
+          packageScopes: [],
+          probes: [],
+          proofKind: entry.proofKind,
+          realpaths: [],
+          status: entry.status,
+        })),
+        (projection) =>
+          `${boundaryIdentityV3(
+            boundaries[projection.boundary] as IntlCheckModuleBoundaryV3
+          )}${canonicalSortText(projection.lexicalRoot)}${canonicalSortText(
+            projection.canonicalRoot
+          )}${canonicalSortText(projection.status)}${canonicalSortText(
+            projection.proofKind
+          )}`
+      ),
       realpaths: realpathReferences,
       reasons: owner.index.reasons,
     } satisfies GeneratedFacadeCandidateIndexV3;

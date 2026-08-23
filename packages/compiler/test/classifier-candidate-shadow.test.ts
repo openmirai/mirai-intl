@@ -39,6 +39,9 @@ describe("classifier V3 candidate-index shadow", () => {
       source,
       options
     );
+    Object.assign(preparedSourceFile, {
+      fileName: `${join(root, "generated")}/../source.ts`,
+    });
     const preparedObservations: Array<string> = [];
     const prepared = await buildMiraiIntlCandidateCheckpointShadow({
       executionMode: "production-proof",
