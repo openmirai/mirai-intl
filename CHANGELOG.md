@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.26](https://github.com/openmirai/mirai-intl/compare/v0.3.25...v0.3.26) (2026-08-24)
+
+
+### Bug Fixes
+
+* **vite:** skip generated TanStack build modules ([#9](https://github.com/openmirai/mirai-intl/issues/9)) ([381d35d](https://github.com/openmirai/mirai-intl/commit/381d35dd6314df10601ef4c5a110a7dff901eb67))
+
 ## [0.3.25](https://github.com/openmirai/mirai-intl/compare/v0.3.24...v0.3.25) (2026-08-24)
 
 
