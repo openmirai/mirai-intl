@@ -193,8 +193,8 @@ describe("generated named-key contract", () => {
         runtimeExport: "r6",
       });
       expect(titleModule).toMatch(/^\/\* eslint-disable \*\//u);
-      expect(titleModule).not.toContain("export const m6 =");
-      expect(titleModule).not.toContain("Short links");
+      expect(titleModule).toContain("export const m6 =");
+      expect(titleModule).toContain("Short links");
       expect(titleModule).not.toContain("catalogTree");
       expect(titleModule).not.toContain("namespace_");
       await expect(

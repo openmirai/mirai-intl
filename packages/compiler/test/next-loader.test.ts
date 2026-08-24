@@ -248,8 +248,9 @@ describe("mirai intl Next loader", () => {
         join(firstDirectory, messageModule),
         "utf8"
       );
-      expect(firstPrivateModule).not.toContain("Short links");
-      expect(firstPrivateModule).not.toContain("Manage");
+      expect(firstPrivateModule).toContain("Short links");
+      expect(firstPrivateModule).toContain("Manage");
+      expect(firstPrivateModule).toMatch(/export const m\d+ =/u);
       expect(firstPrivateModule.length).toBeGreaterThan(1_000);
 
       await writeFile(

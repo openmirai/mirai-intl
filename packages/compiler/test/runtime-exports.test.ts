@@ -187,8 +187,8 @@ describe("tree-shakeable runtime exports", () => {
     });
     const module = artifacts[greeting?.module ?? ""];
     expect(module).toMatch(/^\/\* eslint-disable \*\//u);
-    expect(module).not.toContain("Good morning");
-    expect(module).not.toContain("export const m7 =");
+    expect(module).toContain("Good morning");
+    expect(module).toContain("export const m7 =");
     expect(module).not.toContain("catalogTree");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.mjs");
     expect(

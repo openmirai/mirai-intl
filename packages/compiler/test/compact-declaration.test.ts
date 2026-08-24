@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { inflateRawSync } from "node:zlib";
 
 import { emptyObjectSchema } from "@openmirai/intl-abi";
 import {
@@ -187,12 +186,10 @@ describe("compact catalog contracts", () => {
     expect(Buffer.byteLength(compact, "utf8")).toBeLessThan(
       Buffer.byteLength(legacyContract, "utf8") / 2
     );
-    const privateSource = inflateRawSync(
-      Buffer.from(
-        privateModule.slice(`${generatedSourceHeader}\n`.length),
-        "base64"
-      )
-    ).toString("utf8");
+    const privateSource = privateModule.slice(
+      `${generatedSourceHeader}\n`.length
+    );
+    expect(privateSource).toMatch(/^import /u);
     expect(privateSource.match(/export const m\d+ =/gu)).toHaveLength(700);
     expect(privateSource.match(/export const r\d+ =/gu)).toHaveLength(700);
     expect(privateSource).not.toContain("catalogTree");
