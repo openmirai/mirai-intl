@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.25](https://github.com/openmirai/mirai-intl/compare/v0.3.24...v0.3.25) (2026-08-24)
+
+
+### Bug Fixes
+
+* canonicalize Windows classifier paths ([#7](https://github.com/openmirai/mirai-intl/issues/7)) ([9a21f61](https://github.com/openmirai/mirai-intl/commit/9a21f617f9c4791fab427666fe4c574f9790f980))
+
+
+### Performance Improvements
+
+* **compiler:** cache module resolution options ([3d6407c](https://github.com/openmirai/mirai-intl/commit/3d6407c8263d992715887cec09ea277b28df77c9))
+
 ## [0.3.24](https://github.com/openmirai/mirai-intl/compare/v0.3.23...v0.3.24) (2026-08-17)
 
 ## [0.3.23](https://github.com/openmirai/mirai-intl/compare/v0.3.22...v0.3.23) (2026-08-16)
