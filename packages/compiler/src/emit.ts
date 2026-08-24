@@ -6,8 +6,6 @@ import type {
   RuntimeMessage,
   ValueSchema,
 } from "@openmirai/intl-abi";
-import { deflateRawSync } from "node:zlib";
-
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
 import type { CompileOutput } from "./compile";
 import { withGeneratedSourceHeader } from "./generated-source";
@@ -459,12 +457,6 @@ function emitPrivateMessagesModule(
   ].join("\n");
 }
 
-function compactPrivateMessagesModule(source: string): string {
-  return deflateRawSync(Buffer.from(source, "utf8"), { level: 9 }).toString(
-    "base64"
-  );
-}
-
 function emitDescriptorModule(
   output: CompileOutput,
   representation: DescriptorRepresentation,
@@ -903,8 +895,9 @@ export function emitArtifacts(
       `export const catalogResource = ${canonicalJson(catalogResource(output, locale))};\n`;
   });
   if (compact) {
-    artifacts[privateMessagesModuleName] = compactPrivateMessagesModule(
-      emitPrivateMessagesModule(output, representation)
+    artifacts[privateMessagesModuleName] = emitPrivateMessagesModule(
+      output,
+      representation
     );
   } else {
     artifacts["catalog.descriptors.gen.d.mts"] = emitDescriptorDeclaration(
