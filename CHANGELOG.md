@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.27](https://github.com/openmirai/mirai-intl/compare/v0.3.26...v0.3.27) (2026-08-24)
+
+
+### Bug Fixes
+
+* **compiler:** make catalog output cross-platform ([#10](https://github.com/openmirai/mirai-intl/issues/10)) ([7ad9f09](https://github.com/openmirai/mirai-intl/commit/7ad9f0991571caef5cfa33012c07578b44b101d9))
+
 ## [0.3.26](https://github.com/openmirai/mirai-intl/compare/v0.3.25...v0.3.26) (2026-08-24)
 
 
