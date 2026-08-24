@@ -334,6 +334,7 @@ export function invalidateMiraiIntlCatalogCache(
   catalogCache.delete(
     resolve(root, options.generatedDirectory ?? defaultGeneratedDirectory)
   );
+  moduleResolutionOptionsCache.delete(root);
 }
 
 type MessageKind = "rich" | "text" | "value";
@@ -422,6 +423,7 @@ const reactDependencyHooks = new Set([
   "useMemo",
 ]);
 const catalogCache = new Map<string, CatalogCacheEntry>();
+const moduleResolutionOptionsCache = new Map<string, ts.CompilerOptions>();
 const miraiIntlImportedOperations = new Set([
   "createFormErrorTranslator",
   "createFormSchema",
@@ -948,14 +950,20 @@ function requiresMiraiIntlAnalysis(
 }
 
 function moduleResolutionOptions(root: string): ts.CompilerOptions {
+  const cached = moduleResolutionOptionsCache.get(root);
+  if (cached) {
+    return cached;
+  }
   const configPath = ts.findConfigFile(root, ts.sys.fileExists);
   if (!configPath) {
-    return {
+    const options = {
       allowJs: true,
       module: ts.ModuleKind.ESNext,
       moduleResolution: ts.ModuleResolutionKind.Bundler,
       target: ts.ScriptTarget.Latest,
     } satisfies ts.CompilerOptions;
+    moduleResolutionOptionsCache.set(root, options);
+    return options;
   }
   const read = ts.readConfigFile(configPath, ts.sys.readFile);
   if (read.error) {
@@ -979,6 +987,7 @@ function moduleResolutionOptions(root: string): ts.CompilerOptions {
         .join("\n")
     );
   }
+  moduleResolutionOptionsCache.set(root, parsed.options);
   return parsed.options;
 }
 
