@@ -155,6 +155,35 @@ function lowerHomeTitle(
 }
 
 describe("private named-key lowering", () => {
+  it("parses compiler options once per build epoch", async () => {
+    const fixture = await createGeneratedCatalog();
+    const tsconfigPath = join(fixture.root, "tsconfig.json");
+    const readFileImplementation = ts.sys.readFile;
+    let tsconfigReads = 0;
+    const readFile = vi.spyOn(ts.sys, "readFile").mockImplementation((path) => {
+      if (path === tsconfigPath) {
+        tsconfigReads += 1;
+      }
+      return readFileImplementation(path);
+    });
+
+    try {
+      await lowerHomeTitle(fixture);
+      await lowerHomeTitle(fixture);
+      expect(tsconfigReads).toBe(1);
+
+      invalidateMiraiIntlCatalogCache({
+        generatedDirectory: fixture.generatedDirectory,
+        root: fixture.root,
+      });
+      await lowerHomeTitle(fixture);
+      expect(tsconfigReads).toBe(2);
+    } finally {
+      readFile.mockRestore();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("selects every eligible first-party source without source-text authority", () => {
     expect(
       isMiraiIntlTransformCandidate(
