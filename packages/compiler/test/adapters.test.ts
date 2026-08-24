@@ -178,6 +178,27 @@ describe("Vite adapter", () => {
     }
   });
 
+  it("skips generated TanStack build modules but keeps authored sources strict", async () => {
+    const root = await createAdapterFixture();
+    const source =
+      'import { useTranslations } from "x"; const usePageTranslations = () => useTranslations("pages.home"); const { t } = usePageTranslations(); t("title");';
+    try {
+      const plugin = miraiIntlVite({ root });
+
+      await expect(
+        plugin.transform(
+          source,
+          join(root, ".tanstack/nitro/vite/services/ssr/_build/generated.js")
+        )
+      ).resolves.toBeNull();
+      await expect(
+        plugin.transform(source, join(root, "src/component.tsx"))
+      ).rejects.toThrowError(/Translation wrapper hooks/u);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("confines shared workspace providers to the workspace instead of the app root", async () => {
     const workspace = await mkdtemp(
       join(tmpdir(), "mirai-intl-vite-workspace-")

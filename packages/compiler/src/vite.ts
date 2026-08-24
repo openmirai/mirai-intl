@@ -107,6 +107,11 @@ const catalogRestartMessage =
 
 const defaultGeneratedDirectory = "src/i18n/generated";
 
+function isGeneratedBuildArtifact(root: string, id: string): boolean {
+  const file = resolve(id.replace(/[?#].*$/u, ""));
+  return isPathInside(resolve(root, ".tanstack"), file);
+}
+
 async function hasPublishedCatalogPointer(
   root: string,
   generatedDirectory: string
@@ -369,6 +374,9 @@ export function miraiIntlVite(
     },
     name: "mirai-intl",
     async transform(code, id) {
+      if (isGeneratedBuildArtifact(packageRoot(), id)) {
+        return null;
+      }
       return transformMiraiIntlSource(code, id, {
         ...currentOptions(),
         workspaceRoot: await workspaceRoot(),
