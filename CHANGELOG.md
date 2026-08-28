@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.3.28](https://github.com/openmirai/mirai-intl/compare/v0.3.27...v0.3.28) (2026-08-28)
+
 ## [0.3.27](https://github.com/openmirai/mirai-intl/compare/v0.3.26...v0.3.27) (2026-08-24)
 
 
