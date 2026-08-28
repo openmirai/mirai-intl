@@ -1006,6 +1006,58 @@ describe("convention-only CLI", () => {
     }
   }, 60_000);
 
+  it("uses the project document of a pnpm 12 workspace lockfile", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "mirai-intl-pnpm12-"));
+    const packageRoot = join(workspaceRoot, "packages/i18n");
+    const lockfile = [
+      "---",
+      "lockfileVersion: '9.0'",
+      "",
+      "importers:",
+      "",
+      "  .:",
+      "    configDependencies: {}",
+      "    packageManagerDependencies:",
+      "      pnpm:",
+      "        specifier: 12.0.0",
+      "        version: 12.0.0",
+      "",
+      "packages: {}",
+      "",
+      "---",
+      "lockfileVersion: '9.0'",
+      "",
+      "importers:",
+      "",
+      "  packages/i18n:",
+      "    dependencies: {}",
+      "",
+    ].join("\n");
+    try {
+      await writeFile(
+        join(workspaceRoot, "pnpm-workspace.yaml"),
+        "packages:\n  - packages/*\n"
+      );
+      await writeFile(join(workspaceRoot, "pnpm-lock.yaml"), lockfile);
+      await writeConventionApp(packageRoot);
+
+      const generated = runCli(packageRoot, "generate", "--json");
+      expect(generated.error).toBeUndefined();
+      expect(generated.signal).toBeNull();
+      expect(generated.stderr).toBe("");
+      expect(generated.status, `${generated.stdout}${generated.stderr}`).toBe(
+        0
+      );
+      expect(JSON.parse(generated.stdout)).toMatchObject({
+        command: "generate",
+        success: true,
+        summary: { catalogId: "@example/cli-app", valid: true },
+      });
+    } finally {
+      await rm(workspaceRoot, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("keeps installed versions scoped to the target when a sibling conflicts", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "mirai-intl-versions-"));
     const binRoot = join(workspaceRoot, "bin");

@@ -1606,14 +1606,26 @@ async function regularFileExists(
   }
 }
 
-function lockfileHasImporter(lockfile: string, importer: string): boolean {
+function pnpmProjectLockfileDocument(lockfile: string): string {
+  const normalized = lockfile.replace(/^\uFEFF/u, "").replaceAll("\r\n", "\n");
+  const documents = normalized.startsWith("---\n")
+    ? normalized.slice("---\n".length).split("\n---\n")
+    : normalized.split("\n---\n");
+  return documents.at(-1) ?? lockfile;
+}
+
+/** @internal Preserve fail-closed pnpm lockfile importer membership checks. */
+export function lockfileHasImporter(
+  lockfile: string,
+  importer: string
+): boolean {
   const importerKeys = [
     importer,
     `'${importer.replaceAll("'", "''")}'`,
     JSON.stringify(importer),
   ];
   let inImporters = false;
-  for (const rawLine of lockfile.split("\n")) {
+  for (const rawLine of pnpmProjectLockfileDocument(lockfile).split("\n")) {
     const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
     if (!inImporters) {
       inImporters = line === "importers:";
