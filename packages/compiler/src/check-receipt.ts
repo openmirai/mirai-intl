@@ -583,11 +583,12 @@ async function readPackageAuthoritySetReceipt(
   root: string,
   workspace: string,
   selector: IntlCheckReceiptSelectorV2,
-  dependencies = defaultCheckReceiptReaderDependencies
+  dependencies = defaultCheckReceiptReaderDependencies,
+  authorityRoot = root
 ): Promise<SelectedIntlCheckReceipt> {
   const setDigest = authorityDigest(selector.authoritySetHash);
   const setBytes = await readImmutableAuthorityBytes(
-    root,
+    authorityRoot,
     [INTL_PACKAGE_AUTHORITY_SETS_DIRECTORY, "v1"],
     `${setDigest}.json`,
     "Mirai Intl selected package authority set",
@@ -609,7 +610,7 @@ async function readPackageAuthoritySetReceipt(
   );
   const receiptDigest = authorityDigest(authoritySet.receipt.hash);
   const receiptBytes = await readImmutableAuthorityBytes(
-    root,
+    authorityRoot,
     [
       INTL_PACKAGE_AUTHORITY_RECEIPTS_DIRECTORY,
       `v${String(authoritySet.receipt.schemaVersion)}`,
@@ -646,7 +647,7 @@ async function readPackageAuthoritySetReceipt(
     }
     const classifierDigest = authorityDigest(classifier.hash);
     const classifierBytes = await readImmutableAuthorityBytes(
-      root,
+      authorityRoot,
       [INTL_PACKAGE_AUTHORITY_CLASSIFIERS_DIRECTORY, "v3"],
       `${classifierDigest}.json`,
       "Mirai Intl selected immutable classifier authority V3",
@@ -703,11 +704,12 @@ async function readPackageAuthoritySetReceipt(
  */
 export async function readConventionCheckReceipt(
   packageRoot: string,
-  dependencies = defaultCheckReceiptReaderDependencies
+  dependencies = defaultCheckReceiptReaderDependencies,
+  authorityRoot?: string
 ): Promise<SelectedIntlCheckReceipt> {
   const root = await realpath(resolve(packageRoot));
   const workspace = await workspaceRoot(root);
-  const directory = join(root, INTL_CHECK_RECEIPT_DIRECTORY);
+  const directory = join(authorityRoot ?? root, INTL_CHECK_RECEIPT_DIRECTORY);
   const selectorPath = join(directory, INTL_CHECK_RECEIPT_SELECTOR_NAME);
   const selectorEntry = await lstatOptional(
     selectorPath,
@@ -770,7 +772,8 @@ export async function readConventionCheckReceipt(
       root,
       workspace,
       selector,
-      dependencies
+      dependencies,
+      authorityRoot
     );
   }
   const selectedPath = join(directory, selector.receiptName);
@@ -1089,9 +1092,14 @@ async function verifyClassifierFilesystemV3(
 async function verifyConventionBuildReceiptV3(
   root: string,
   workspace: string,
-  receipt: IntlCheckReceiptV3
+  receipt: IntlCheckReceiptV3,
+  transferredGeneratedRoot?: string
 ): Promise<IntlBuildReceiptVerification> {
-  const loaded = await loadConventionCatalog(root);
+  const original = await loadConventionCatalog(root);
+  const loaded =
+    transferredGeneratedRoot === undefined
+      ? original
+      : { ...original, outputRoot: transferredGeneratedRoot };
   const compilerFiles = new Set(receipt.compilerManifest);
   const nonRawApplicationFiles = new Set([
     receipt.application.packageManifest,
@@ -1110,7 +1118,7 @@ async function verifyConventionBuildReceiptV3(
     verifyClassifierFilesystemV3(workspace, receipt),
   ]);
   await verifyGeneration(
-    resolve(root, loaded.discovery.output),
+    loaded.outputRoot,
     receipt.generationReceiptHash,
     receipt
   );
@@ -1244,7 +1252,33 @@ async function verifyConventionBuildReceiptV3(
   };
 }
 
-/** Verify exact receipt-bound bytes without importing TypeScript or semantic code. */
+/** @internal Verify staged authority against the receiving checkout before publication. */
+export async function verifyTransferredConventionBuildReceipt(
+  packageRoot: string,
+  transferredPackageRoot: string,
+  generatedRoot = join(transferredPackageRoot, "src/i18n/generated")
+): Promise<IntlBuildReceiptVerification> {
+  const root = await realpath(resolve(packageRoot));
+  const workspace = await workspaceRoot(root);
+  const { receipt, selection } = await readConventionCheckReceipt(
+    root,
+    undefined,
+    transferredPackageRoot
+  );
+  if (receipt.schemaVersion !== 3 || selection !== "authority-set") {
+    throw new Error(
+      "Authority transfer requires selected immutable V3 authority"
+    );
+  }
+  return verifyConventionBuildReceiptV3(
+    root,
+    workspace,
+    receipt,
+    await realpath(generatedRoot)
+  );
+}
+
+/** Verify exact receipt-bound bytes without running TypeScript semantic analysis. */
 export async function verifyConventionBuildReceipt(
   packageRoot: string
 ): Promise<IntlBuildReceiptVerification> {

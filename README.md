@@ -362,6 +362,12 @@ Generated output is atomic and content-addressed. Import only the stable facade
 from `src/i18n/generated`; never import private generated modules or edit the
 generated directory by hand.
 
+For separate CI preparation/build jobs, use `mirai-intl authority export` and
+`authority import` to transfer the complete selected validation state. See
+[strict CI authority transfer](docs/ci-authority-transfer.md) for commands,
+artifact integrity, trust boundaries and recovery. Do not manually copy private
+receipt paths.
+
 Do not run another generator against an application while its dev server or
 production build is active. Vite reports a restart-required diagnostic after a
 locale edit so readers never observe a partially rotated catalog.

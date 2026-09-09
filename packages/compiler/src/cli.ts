@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { readFile, readdir, realpath } from "node:fs/promises";
 import { availableParallelism, totalmem } from "node:os";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { compileCatalog } from "./compile";
+import {
+  discoverWorkspaceCatalogs,
+  nearestWorkspaceRoot,
+} from "./workspace-catalogs";
 import {
   CatalogValidationError,
   generateConventionCatalog,
@@ -48,6 +45,7 @@ import {
 } from "./workspace-resources";
 
 type Command =
+  | "authority"
   | "catalog-check"
   | "check"
   | "contract"
@@ -60,6 +58,7 @@ type Command =
   | "verify";
 
 const commands = [
+  "authority",
   "generate",
   "ensure",
   "check",
@@ -182,7 +181,11 @@ function hasFlag(name: string): boolean {
 }
 
 function assertConventionOnly(): void {
-  const legacy = removedOptions.find((name) => process.argv.includes(name));
+  const legacy = removedOptions.find(
+    (name) =>
+      process.argv.includes(name) &&
+      !(activeCommand === "authority" && name === "--out")
+  );
   if (legacy) {
     throw new CliUsageError(
       `${legacy} is not supported; mirai-intl uses convention discovery and compact production generation`
@@ -231,10 +234,11 @@ function reporterOptions(command: Command): ReporterOptions {
     hasFlag("--workspace") &&
     command !== "check" &&
     command !== "catalog-check" &&
-    command !== "verify"
+    command !== "verify" &&
+    command !== "authority"
   ) {
     throw new CliUsageError(
-      "--workspace is only supported by check, catalog-check, and verify"
+      "--workspace is only supported by check, catalog-check, verify, and authority"
     );
   }
   const formats = optionValues("--format");
@@ -320,66 +324,6 @@ function catalogSummary(payload: unknown): {
     locales: catalog?.locales?.join("+") ?? "unknown",
     messageCount,
   };
-}
-
-async function nearestWorkspaceRoot(start: string): Promise<string> {
-  let directory = resolve(start);
-  while (true) {
-    const marker = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
-      () => undefined
-    );
-    if (marker?.isFile() && !marker.isSymbolicLink()) {
-      return directory;
-    }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      throw new CliUsageError(
-        "--workspace requires a parent pnpm-workspace.yaml"
-      );
-    }
-    directory = parent;
-  }
-}
-
-async function hasConventionCatalog(directory: string): Promise<boolean> {
-  const config = await lstat(join(directory, "mirai-intl.config.json")).catch(
-    () => undefined
-  );
-  if (config?.isFile() && !config.isSymbolicLink()) {
-    return true;
-  }
-  const locales = await lstat(join(directory, "src/locales")).catch(
-    () => undefined
-  );
-  return locales?.isDirectory() === true && !locales.isSymbolicLink();
-}
-
-async function discoverWorkspaceCatalogs(root: string): Promise<Array<string>> {
-  const catalogs: Array<string> = [];
-  const visit = async (directory: string): Promise<void> => {
-    if (directory !== root && (await hasConventionCatalog(directory))) {
-      catalogs.push(directory);
-      return;
-    }
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (
-        !entry.isDirectory() ||
-        entry.isSymbolicLink() ||
-        entry.name.startsWith(".") ||
-        workspaceSkipDirectories.has(entry.name)
-      ) {
-        continue;
-      }
-      await visit(join(directory, entry.name));
-    }
-  };
-  await visit(root);
-  if (catalogs.length === 0) {
-    throw new CliUsageError(
-      "No Mirai Intl catalogs were discovered in the pnpm workspace"
-    );
-  }
-  return catalogs.toSorted((left, right) => left.localeCompare(right));
 }
 
 function catalogRepairHint(
@@ -1005,7 +949,7 @@ async function main(): Promise<void> {
   const command = process.argv[2] as Command | undefined;
   if (!command || !commands.includes(command)) {
     throw new CliUsageError(
-      "Usage: mirai-intl <generate|ensure|check|catalog-check|prove|verify|prove-artifact|finalize-proof|contract|explain> [--format <stylish|json>] [--json]"
+      "Usage: mirai-intl <generate|ensure|check|catalog-check|prove|verify|authority|prove-artifact|finalize-proof|contract|explain> [--format <stylish|json>] [--json]"
     );
   }
   activeCommand = command;
@@ -1014,6 +958,49 @@ async function main(): Promise<void> {
   assertNoSourceBypass();
   const reporter = reporterOptions(command);
   activeReporter = reporter;
+  if (command === "authority") {
+    const operation = process.argv[3];
+    if (
+      !hasFlag("--workspace") ||
+      (operation !== "export" && operation !== "import")
+    ) {
+      throw new CliUsageError(
+        "Use authority export --workspace --out <archive> or authority import --workspace --from <archive>"
+      );
+    }
+    const archive = singleOption(operation === "export" ? "--out" : "--from");
+    if (
+      !archive ||
+      singleOption(operation === "export" ? "--from" : "--out") !== undefined
+    ) {
+      throw new CliUsageError(
+        "Authority transfer requires exactly one operation-specific archive path"
+      );
+    }
+    const { exportAuthorityBundle, importAuthorityBundle } =
+      await import("./authority-bundle");
+    const options = {
+      root: await nearestWorkspaceRoot(process.cwd()),
+      archive,
+    };
+    const result = await (operation === "export"
+      ? exportAuthorityBundle(options)
+      : importAuthorityBundle(options));
+    await report(
+      command,
+      result,
+      reporter,
+      `${operation} · ${result.catalogs.length} catalogs · ${result.files} files`,
+      [],
+      {
+        operation,
+        catalogCount: result.catalogs.length,
+        files: result.files,
+        bytes: result.bytes,
+      }
+    );
+    return;
+  }
   if (command === "check" && hasFlag("--workspace")) {
     await checkWorkspace(reporter);
     return;
