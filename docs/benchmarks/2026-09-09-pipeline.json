@@ -1,0 +1,1359 @@
+{
+  "node": "v24.18.0",
+  "platform": "darwin",
+  "scope": "20 fresh-process samples per engine; five synthetic catalogs, 1000 keys, two locales, one source file each. Module loading and authored fixture setup excluded. Includes native resourceUsage (maxRSS) and artifact byte sizes. Not frontend bundling or complete CI.",
+  "revisions": [
+    {
+      "name": "reference",
+      "repository": "/private/tmp/mirai-intl-authority-transfer",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6"
+    },
+    {
+      "name": "candidate",
+      "repository": "/private/tmp/mirai-intl-strict-verify-speed",
+      "commit": "7eec6f9f3c9e988438fc41f3daf181b1e9fb7732"
+    }
+  ],
+  "summary": [
+    {
+      "engine": "reference",
+      "metrics": {
+        "generationMs": {
+          "median": 1514.962375,
+          "p95": 1557.127083
+        },
+        "authorizationMs": {
+          "median": 1156.9718750000002,
+          "p95": 1212.8272910000003
+        },
+        "exportMs": {
+          "median": 831.3737920000003,
+          "p95": 848.7524590000003
+        },
+        "importMs": {
+          "median": 1478.4355,
+          "p95": 1507.0515410000003
+        },
+        "verificationMs": {
+          "median": 561.3145000000004,
+          "p95": 573.1405410000007
+        },
+        "totalMs": {
+          "median": 5567.85575,
+          "p95": 5643.696833
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "metrics": {
+        "generationMs": {
+          "median": 1521.6056250000001,
+          "p95": 1554.3692919999999
+        },
+        "authorizationMs": {
+          "median": 1160.502709,
+          "p95": 1184.9978330000001
+        },
+        "exportMs": {
+          "median": 806.0830000000001,
+          "p95": 855.7762910000001
+        },
+        "importMs": {
+          "median": 1452.567708,
+          "p95": 1526.3411250000004
+        },
+        "verificationMs": {
+          "median": 436.4217090000002,
+          "p95": 511.35433400000056
+        },
+        "totalMs": {
+          "median": 5408.762417,
+          "p95": 5500.418167
+        }
+      }
+    }
+  ],
+  "observations": [
+    {
+      "engine": "reference",
+      "sample": 0,
+      "values": {
+        "generationMs": 1489.326583,
+        "authorizationMs": 1049.3446659999997,
+        "exportMs": 751.4248750000002,
+        "importMs": 1379.0582500000005,
+        "verificationMs": 559.507584,
+        "totalMs": 5228.731666,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5106342,
+          "systemCPUTime": 918257,
+          "maxRSS": 585040,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124964,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1174,
+          "involuntaryContextSwitches": 89169
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 0,
+      "values": {
+        "generationMs": 1499.790333,
+        "authorizationMs": 1055.7436249999998,
+        "exportMs": 711.944958,
+        "importMs": 1307.6481249999997,
+        "verificationMs": 396.03270800000064,
+        "totalMs": 4971.221917,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 4883943,
+          "systemCPUTime": 1679668,
+          "maxRSS": 477648,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 84048,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1085,
+          "involuntaryContextSwitches": 180122
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 1,
+      "values": {
+        "generationMs": 1435.3417909999998,
+        "authorizationMs": 1079.630083,
+        "exportMs": 806.0830000000001,
+        "importMs": 1295.2802079999997,
+        "verificationMs": 397.79854199999954,
+        "totalMs": 5014.195041,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 4809637,
+          "systemCPUTime": 1736330,
+          "maxRSS": 507312,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87840,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1032,
+          "involuntaryContextSwitches": 180009
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 1,
+      "values": {
+        "generationMs": 1411.58525,
+        "authorizationMs": 1049.8540420000002,
+        "exportMs": 760.1719579999999,
+        "importMs": 1387.5714579999994,
+        "verificationMs": 522.0669160000007,
+        "totalMs": 5131.301667,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5050507,
+          "systemCPUTime": 888084,
+          "maxRSS": 548192,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 121810,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1050,
+          "involuntaryContextSwitches": 88905
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 2,
+      "values": {
+        "generationMs": 1450.7184579999998,
+        "authorizationMs": 1081.225375,
+        "exportMs": 778.3256250000004,
+        "importMs": 1428.5392080000001,
+        "verificationMs": 535.6582920000001,
+        "totalMs": 5274.534875,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5180571,
+          "systemCPUTime": 972325,
+          "maxRSS": 550480,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 123450,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1045,
+          "involuntaryContextSwitches": 89491
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 2,
+      "values": {
+        "generationMs": 1525.1095,
+        "authorizationMs": 1167.302084,
+        "exportMs": 846.3474999999999,
+        "importMs": 1415.2796669999998,
+        "verificationMs": 442.61820799999987,
+        "totalMs": 5396.73225,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5224819,
+          "systemCPUTime": 2020805,
+          "maxRSS": 523184,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87764,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1021,
+          "involuntaryContextSwitches": 184060
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 3,
+      "values": {
+        "generationMs": 1535.3063339999999,
+        "authorizationMs": 1184.9978330000001,
+        "exportMs": 855.7762910000001,
+        "importMs": 1406.5108330000003,
+        "verificationMs": 454.6023749999995,
+        "totalMs": 5437.262167,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5335652,
+          "systemCPUTime": 2005624,
+          "maxRSS": 521232,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87754,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 988,
+          "involuntaryContextSwitches": 185768
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 3,
+      "values": {
+        "generationMs": 1539.640542,
+        "authorizationMs": 1171.0415419999997,
+        "exportMs": 835.515875,
+        "importMs": 1491.4099160000005,
+        "verificationMs": 561.5702919999994,
+        "totalMs": 5599.2495,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5487988,
+          "systemCPUTime": 1059779,
+          "maxRSS": 580032,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124166,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1043,
+          "involuntaryContextSwitches": 90478
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 4,
+      "values": {
+        "generationMs": 1557.041458,
+        "authorizationMs": 1203.568875,
+        "exportMs": 830.7243330000001,
+        "importMs": 1491.3733750000001,
+        "verificationMs": 560.1879170000002,
+        "totalMs": 5642.980375,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5508636,
+          "systemCPUTime": 1078513,
+          "maxRSS": 580704,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124177,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1057,
+          "involuntaryContextSwitches": 89784
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 4,
+      "values": {
+        "generationMs": 1516.6097909999999,
+        "authorizationMs": 1158.029458,
+        "exportMs": 848.8415829999999,
+        "importMs": 1526.3411250000004,
+        "verificationMs": 435.91412500000024,
+        "totalMs": 5485.828958,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5268312,
+          "systemCPUTime": 2036201,
+          "maxRSS": 515808,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 88311,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1017,
+          "involuntaryContextSwitches": 183524
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 5,
+      "values": {
+        "generationMs": 1509.540458,
+        "authorizationMs": 1182.348542,
+        "exportMs": 810.451125,
+        "importMs": 1960.0330000000004,
+        "verificationMs": 614.0007499999992,
+        "totalMs": 6076.445042,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5389194,
+          "systemCPUTime": 2287141,
+          "maxRSS": 475232,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 84609,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1019,
+          "involuntaryContextSwitches": 176925
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 5,
+      "values": {
+        "generationMs": 1537.817458,
+        "authorizationMs": 1212.8272910000003,
+        "exportMs": 842.549375,
+        "importMs": 1478.4355,
+        "verificationMs": 569.7039160000004,
+        "totalMs": 5641.405416,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5513354,
+          "systemCPUTime": 1147025,
+          "maxRSS": 585728,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124122,
+          "majorPageFault": 194,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1269,
+          "involuntaryContextSwitches": 91732
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 6,
+      "values": {
+        "generationMs": 1532.288375,
+        "authorizationMs": 1200.286125,
+        "exportMs": 838.7610829999999,
+        "importMs": 1482.258625,
+        "verificationMs": 564.0337909999998,
+        "totalMs": 5617.7011250000005,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5502445,
+          "systemCPUTime": 1133930,
+          "maxRSS": 579904,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124120,
+          "majorPageFault": 89,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1025,
+          "involuntaryContextSwitches": 91559
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 6,
+      "values": {
+        "generationMs": 1539.639459,
+        "authorizationMs": 1163.839542,
+        "exportMs": 847.7061250000002,
+        "importMs": 1455.3994580000003,
+        "verificationMs": 448.81008399999973,
+        "totalMs": 5455.468292,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5225634,
+          "systemCPUTime": 2025044,
+          "maxRSS": 517104,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 88122,
+          "majorPageFault": 180,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1312,
+          "involuntaryContextSwitches": 186373
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 7,
+      "values": {
+        "generationMs": 1512.169417,
+        "authorizationMs": 1157.125875,
+        "exportMs": 801.954667,
+        "importMs": 1427.2056670000002,
+        "verificationMs": 442.032416,
+        "totalMs": 5340.561375,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5185478,
+          "systemCPUTime": 1956875,
+          "maxRSS": 472688,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 83445,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1036,
+          "involuntaryContextSwitches": 184916
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 7,
+      "values": {
+        "generationMs": 1509.768875,
+        "authorizationMs": 1153.5174579999998,
+        "exportMs": 837.3266249999997,
+        "importMs": 1496.7225420000004,
+        "verificationMs": 570.4169590000001,
+        "totalMs": 5567.85575,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5585314,
+          "systemCPUTime": 1038752,
+          "maxRSS": 552768,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 123220,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1065,
+          "involuntaryContextSwitches": 90409
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 8,
+      "values": {
+        "generationMs": 1528.836959,
+        "authorizationMs": 1161.2585829999998,
+        "exportMs": 865.8149170000002,
+        "importMs": 1486.9007500000002,
+        "verificationMs": 630.5363750000006,
+        "totalMs": 5673.420125,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5535760,
+          "systemCPUTime": 1067698,
+          "maxRSS": 682032,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 128731,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1041,
+          "involuntaryContextSwitches": 91642
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 8,
+      "values": {
+        "generationMs": 1521.6056250000001,
+        "authorizationMs": 1165.9387920000001,
+        "exportMs": 782.7538750000003,
+        "importMs": 1476.7295,
+        "verificationMs": 442.08379200000036,
+        "totalMs": 5389.189,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5497265,
+          "systemCPUTime": 1974278,
+          "maxRSS": 475376,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 83583,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1058,
+          "involuntaryContextSwitches": 185541
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 9,
+      "values": {
+        "generationMs": 1533.0072089999999,
+        "authorizationMs": 1174.8871669999999,
+        "exportMs": 846.5666250000004,
+        "importMs": 1418.859875,
+        "verificationMs": 469.78458299999966,
+        "totalMs": 5443.182583,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5129667,
+          "systemCPUTime": 2057733,
+          "maxRSS": 520992,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87944,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1056,
+          "involuntaryContextSwitches": 185517
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 9,
+      "values": {
+        "generationMs": 1504.871625,
+        "authorizationMs": 1152.28775,
+        "exportMs": 833.6310829999998,
+        "importMs": 1478.9929589999997,
+        "verificationMs": 573.1405410000007,
+        "totalMs": 5543.000875,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5534324,
+          "systemCPUTime": 1050221,
+          "maxRSS": 534976,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 121974,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 999,
+          "involuntaryContextSwitches": 90535
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 10,
+      "values": {
+        "generationMs": 1557.866625,
+        "authorizationMs": 1185.965292,
+        "exportMs": 848.7524590000003,
+        "importMs": 1477.2140410000002,
+        "verificationMs": 563.7930839999999,
+        "totalMs": 5633.680084,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5512092,
+          "systemCPUTime": 1088993,
+          "maxRSS": 576384,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 123894,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1031,
+          "involuntaryContextSwitches": 92925
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 10,
+      "values": {
+        "generationMs": 1561.429917,
+        "authorizationMs": 1154.5674999999999,
+        "exportMs": 807.0512920000001,
+        "importMs": 1456.2320829999999,
+        "verificationMs": 429.4037499999995,
+        "totalMs": 5408.762417,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5251605,
+          "systemCPUTime": 1995801,
+          "maxRSS": 471904,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 84360,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1057,
+          "involuntaryContextSwitches": 186218
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 11,
+      "values": {
+        "generationMs": 1496.385417,
+        "authorizationMs": 1146.423583,
+        "exportMs": 841.7475830000003,
+        "importMs": 1466.084625,
+        "verificationMs": 473.1417499999998,
+        "totalMs": 5423.854625,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5310641,
+          "systemCPUTime": 1985221,
+          "maxRSS": 508944,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87939,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1008,
+          "involuntaryContextSwitches": 189046
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 11,
+      "values": {
+        "generationMs": 1516.590375,
+        "authorizationMs": 1150.635167,
+        "exportMs": 842.7455000000004,
+        "importMs": 1491.4561250000002,
+        "verificationMs": 561.3145000000004,
+        "totalMs": 5562.822375000001,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5483767,
+          "systemCPUTime": 1049524,
+          "maxRSS": 592624,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124512,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1050,
+          "involuntaryContextSwitches": 91326
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 12,
+      "values": {
+        "generationMs": 1513.521541,
+        "authorizationMs": 1156.9718750000002,
+        "exportMs": 828.2828749999999,
+        "importMs": 1453.2824999999998,
+        "verificationMs": 567.9909589999997,
+        "totalMs": 5520.119416,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5425021,
+          "systemCPUTime": 1052580,
+          "maxRSS": 585952,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124215,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1012,
+          "involuntaryContextSwitches": 90354
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 12,
+      "values": {
+        "generationMs": 1536.096625,
+        "authorizationMs": 1174.1157920000003,
+        "exportMs": 885.7377499999998,
+        "importMs": 1381.0915830000004,
+        "verificationMs": 429.4110419999997,
+        "totalMs": 5406.526959,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5128083,
+          "systemCPUTime": 2049055,
+          "maxRSS": 519488,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 88069,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1032,
+          "involuntaryContextSwitches": 186333
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 13,
+      "values": {
+        "generationMs": 1502.7407079999998,
+        "authorizationMs": 1160.502709,
+        "exportMs": 797.8266670000003,
+        "importMs": 1425.6888329999997,
+        "verificationMs": 434.1270830000003,
+        "totalMs": 5320.958875,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5187461,
+          "systemCPUTime": 1973102,
+          "maxRSS": 474960,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 83862,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1045,
+          "involuntaryContextSwitches": 185039
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 13,
+      "values": {
+        "generationMs": 1514.962375,
+        "authorizationMs": 1161.55675,
+        "exportMs": 838.955625,
+        "importMs": 1489.4140419999994,
+        "verificationMs": 569.3970419999996,
+        "totalMs": 5574.3720410000005,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5485622,
+          "systemCPUTime": 1061093,
+          "maxRSS": 577856,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 123994,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1037,
+          "involuntaryContextSwitches": 90934
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 14,
+      "values": {
+        "generationMs": 1494.085542,
+        "authorizationMs": 1154.434792,
+        "exportMs": 822.5600829999998,
+        "importMs": 1523.6245419999996,
+        "verificationMs": 564.7747079999999,
+        "totalMs": 5559.5576249999995,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5525188,
+          "systemCPUTime": 1043573,
+          "maxRSS": 536736,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 121359,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1029,
+          "involuntaryContextSwitches": 91126
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 14,
+      "values": {
+        "generationMs": 1539.0817080000002,
+        "authorizationMs": 1152.4667920000002,
+        "exportMs": 788.8045000000002,
+        "importMs": 1508.149417,
+        "verificationMs": 511.35433400000056,
+        "totalMs": 5499.928417,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5246256,
+          "systemCPUTime": 2056806,
+          "maxRSS": 472688,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 84009,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1073,
+          "involuntaryContextSwitches": 188785
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 15,
+      "values": {
+        "generationMs": 1534.376667,
+        "authorizationMs": 1220.765291,
+        "exportMs": 805.2482919999998,
+        "importMs": 1452.567708,
+        "verificationMs": 429.9523330000002,
+        "totalMs": 5442.9962909999995,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5475309,
+          "systemCPUTime": 2000247,
+          "maxRSS": 502720,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87351,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1031,
+          "involuntaryContextSwitches": 184881
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 15,
+      "values": {
+        "generationMs": 1545.427542,
+        "authorizationMs": 1200.8963339999998,
+        "exportMs": 829.891834,
+        "importMs": 1452.285625,
+        "verificationMs": 558.9127910000007,
+        "totalMs": 5587.492333,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5446175,
+          "systemCPUTime": 1102509,
+          "maxRSS": 584240,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124142,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1037,
+          "involuntaryContextSwitches": 91965
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 16,
+      "values": {
+        "generationMs": 1536.270916,
+        "authorizationMs": 1155.783375,
+        "exportMs": 831.3737920000003,
+        "importMs": 1474.238542,
+        "verificationMs": 560.7343340000007,
+        "totalMs": 5558.476542,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5472565,
+          "systemCPUTime": 1059074,
+          "maxRSS": 590032,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 124490,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1022,
+          "involuntaryContextSwitches": 91399
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 16,
+      "values": {
+        "generationMs": 1554.3692919999999,
+        "authorizationMs": 1179.0445420000003,
+        "exportMs": 849.5724999999998,
+        "importMs": 1474.36575,
+        "verificationMs": 442.99724999999944,
+        "totalMs": 5500.418167,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5242876,
+          "systemCPUTime": 2071247,
+          "maxRSS": 514608,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 88245,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1021,
+          "involuntaryContextSwitches": 187258
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 17,
+      "values": {
+        "generationMs": 1544.155666,
+        "authorizationMs": 1173.114334,
+        "exportMs": 795.1015000000002,
+        "importMs": 1465.4847090000003,
+        "verificationMs": 435.6155840000001,
+        "totalMs": 5413.544042,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5313015,
+          "systemCPUTime": 2013148,
+          "maxRSS": 508656,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87843,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 998,
+          "involuntaryContextSwitches": 185772
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 17,
+      "values": {
+        "generationMs": 1557.127083,
+        "authorizationMs": 1178.4371669999998,
+        "exportMs": 827.8028749999999,
+        "importMs": 1458.2119579999994,
+        "verificationMs": 551.3266249999997,
+        "totalMs": 5572.984417,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5497575,
+          "systemCPUTime": 1062671,
+          "maxRSS": 540432,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 121559,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1024,
+          "involuntaryContextSwitches": 91761
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 18,
+      "values": {
+        "generationMs": 1480.557584,
+        "authorizationMs": 1156.66375,
+        "exportMs": 834.8446250000002,
+        "importMs": 1475.69675,
+        "verificationMs": 549.6954999999998,
+        "totalMs": 5497.534125,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5476990,
+          "systemCPUTime": 1047495,
+          "maxRSS": 535488,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 121354,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1012,
+          "involuntaryContextSwitches": 90794
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 18,
+      "values": {
+        "generationMs": 1504.8643749999999,
+        "authorizationMs": 1150.450833,
+        "exportMs": 797.3888750000001,
+        "importMs": 1453.82125,
+        "verificationMs": 436.4217090000002,
+        "totalMs": 5343.021917,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5270943,
+          "systemCPUTime": 1978470,
+          "maxRSS": 509232,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 87947,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1038,
+          "involuntaryContextSwitches": 183582
+        }
+      }
+    },
+    {
+      "engine": "candidate",
+      "sample": 19,
+      "values": {
+        "generationMs": 1493.070917,
+        "authorizationMs": 1152.999916,
+        "exportMs": 790.6023330000003,
+        "importMs": 1439.2721670000005,
+        "verificationMs": 433.39266599999974,
+        "totalMs": 5309.418874999999,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5152073,
+          "systemCPUTime": 1965414,
+          "maxRSS": 489968,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 86705,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 5,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1027,
+          "involuntaryContextSwitches": 183967
+        }
+      }
+    },
+    {
+      "engine": "reference",
+      "sample": 19,
+      "values": {
+        "generationMs": 1497.417375,
+        "authorizationMs": 1274.270292,
+        "exportMs": 823.3104170000001,
+        "importMs": 1507.0515410000003,
+        "verificationMs": 541.5724999999993,
+        "totalMs": 5643.696833,
+        "selectedBytes": 9064525,
+        "archiveBytes": 9154560,
+        "resourceUsage": {
+          "userCPUTime": 5537226,
+          "systemCPUTime": 1090045,
+          "maxRSS": 538992,
+          "sharedMemorySize": 0,
+          "unsharedDataSize": 0,
+          "unsharedStackSize": 0,
+          "minorPageFault": 123065,
+          "majorPageFault": 86,
+          "swappedOut": 0,
+          "fsRead": 0,
+          "fsWrite": 0,
+          "ipcSent": 0,
+          "ipcReceived": 0,
+          "signalsCount": 0,
+          "voluntaryContextSwitches": 1041,
+          "involuntaryContextSwitches": 93069
+        }
+      }
+    }
+  ]
+}

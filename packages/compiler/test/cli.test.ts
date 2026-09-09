@@ -334,6 +334,9 @@ describe("convention-only CLI", () => {
         summary: {
           buildReceiptVerifications: 2,
           buildSemanticAnalysisRuns: 0,
+          artifactEmissions: 0,
+          catalogCompilations: 0,
+          verifiedCatalogs: 2,
           valid: true,
         },
       });

@@ -1,0 +1,704 @@
+{
+  "node": "v24.18.0",
+  "scope": "Paired acceptance, native CLI diagnostic codes/locations and verified source/project coverage against the exhaustive reference. Failed verification has no accepted coverage. Raw error wording may differ.",
+  "results": [
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "unchanged",
+      "accepted": true,
+      "coverage": [
+        {
+          "sources": [
+            {
+              "file": "apps/a/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/a/src/i18n/generated/builds/d00de10f01639e423e552f4789280ad12d1f20a870c60a5bf484bdb5e0bb7560/catalog.schema.gen.d.ts",
+                "apps/a/src/i18n/generated/index.ts",
+                "apps/a/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/b/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/b/src/i18n/generated/builds/944f2ccf81a0afed07040488159c0b381c5ff782edb572de8f4aa8ff60c184ef/catalog.schema.gen.d.ts",
+                "apps/b/src/i18n/generated/index.ts",
+                "apps/b/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/c/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/c/src/i18n/generated/builds/33e1c0b546c888fc5735ccd15b96e01312ba6828259c6eb6f462f1c438ba251f/catalog.schema.gen.d.ts",
+                "apps/c/src/i18n/generated/index.ts",
+                "apps/c/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/d/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/d/src/i18n/generated/builds/203b59ed189ace37554bde3f44f0377ca7aa1d091ddd855c3adda19c2a299804/catalog.schema.gen.d.ts",
+                "apps/d/src/i18n/generated/index.ts",
+                "apps/d/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/e/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/e/src/i18n/generated/builds/fb248b422a23557c7c7160d49f5569153874ea20e2fe57167723e28d7371afe7/catalog.schema.gen.d.ts",
+                "apps/e/src/i18n/generated/index.ts",
+                "apps/e/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        }
+      ],
+      "diagnostics": []
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "changed source",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl V3 bound file is stale or corrupt: apps/a/src/page.ts",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "new source",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl check-project source universe is stale: tsconfig.json; expected [\"apps/a/src/i18n/generated/builds/d00de10f01639e423e552f4789280ad12d1f20a870c60a5bf484bdb5e0bb7560/catalog.schema.gen.d.ts\",\"apps/a/src/i18n/generated/index.ts\",\"apps/a/src/page.ts\"], received [\"apps/a/src/i18n/generated/builds/d00de10f01639e423e552f4789280ad12d1f20a870c60a5bf484bdb5e0bb7560/catalog.schema.gen.d.ts\",\"apps/a/src/i18n/generated/index.ts\",\"apps/a/src/new.ts\",\"apps/a/src/page.ts\"]",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "deleted source",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl receipt input must be a regular file: /private/var/folders/2m/lv9hdlzj5rzd69kt8n82gfcm0000gn/T/intl-receipt-parity-cIrLQj/reference/apps/a/src/page.ts",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "missing locale",
+      "accepted": false,
+      "coverage": null,
+      "message": "Generated current pointer is stale or tampered",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "missing keys",
+      "accepted": false,
+      "coverage": null,
+      "message": "<root> locale keys differ between en and th: th is missing key message0",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message0"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "empty translation",
+      "accepted": false,
+      "coverage": null,
+      "message": "<root> locale keys differ between en and th: th is missing key message1",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "wrong-kind translation",
+      "accepted": false,
+      "coverage": null,
+      "message": "<root> locale keys differ between en and th: th is missing key message1",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "invalid ICU",
+      "accepted": false,
+      "coverage": null,
+      "message": "<root> locale keys differ between en and th: th is missing key message1",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "new locale",
+      "accepted": false,
+      "coverage": null,
+      "message": "<root> locale keys differ between en and ja: ja is missing key message1",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/ja.json",
+          "locale": "ja",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "changed manifest",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl package authority set package identity is stale or corrupt",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "changed config",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl V3 bound file is stale or corrupt: apps/a/tsconfig.json",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "corrupt pointer",
+      "accepted": false,
+      "coverage": null,
+      "message": "Catalog current pointer has unexpected or missing fields",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "missing generation receipt",
+      "accepted": false,
+      "coverage": null,
+      "message": "ENOENT: no such file or directory, open '/private/var/folders/2m/lv9hdlzj5rzd69kt8n82gfcm0000gn/T/intl-receipt-parity-cIrLQj/reference/apps/a/src/i18n/generated/catalog-generation-receipt.v1.json'",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "reference",
+      "commit": "02f4093cbaae8574f05317899c13b86b1411bde6",
+      "case": "missing authority selector",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl production build requires an intl:prove V2 receipt",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "unchanged",
+      "accepted": true,
+      "coverage": [
+        {
+          "sources": [
+            {
+              "file": "apps/a/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/a/src/i18n/generated/builds/d00de10f01639e423e552f4789280ad12d1f20a870c60a5bf484bdb5e0bb7560/catalog.schema.gen.d.ts",
+                "apps/a/src/i18n/generated/index.ts",
+                "apps/a/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/b/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/b/src/i18n/generated/builds/944f2ccf81a0afed07040488159c0b381c5ff782edb572de8f4aa8ff60c184ef/catalog.schema.gen.d.ts",
+                "apps/b/src/i18n/generated/index.ts",
+                "apps/b/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/c/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/c/src/i18n/generated/builds/33e1c0b546c888fc5735ccd15b96e01312ba6828259c6eb6f462f1c438ba251f/catalog.schema.gen.d.ts",
+                "apps/c/src/i18n/generated/index.ts",
+                "apps/c/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/d/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/d/src/i18n/generated/builds/203b59ed189ace37554bde3f44f0377ca7aa1d091ddd855c3adda19c2a299804/catalog.schema.gen.d.ts",
+                "apps/d/src/i18n/generated/index.ts",
+                "apps/d/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        },
+        {
+          "sources": [
+            {
+              "file": "apps/e/src/page.ts",
+              "hash": "sha256:a2098bd92b10bf8b816d24b7556b1ce8c49a879d130489065ef1051c17e042f6",
+              "owner": "tsconfig.json",
+              "verdict": "accepted"
+            }
+          ],
+          "projects": [
+            {
+              "path": "tsconfig.json",
+              "role": "owner",
+              "rootFiles": [
+                "apps/e/src/i18n/generated/builds/fb248b422a23557c7c7160d49f5569153874ea20e2fe57167723e28d7371afe7/catalog.schema.gen.d.ts",
+                "apps/e/src/i18n/generated/index.ts",
+                "apps/e/src/page.ts"
+              ]
+            }
+          ],
+          "sourceFiles": 1,
+          "lexicalFilesClassified": 1,
+          "semanticFilesAnalyzed": 1
+        }
+      ],
+      "diagnostics": []
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "changed source",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "new source",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "deleted source",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "missing locale",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "missing keys",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message0"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "empty translation",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "wrong-kind translation",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "invalid ICU",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/th.json",
+          "locale": "th",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "new locale",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a/src/locales/ja.json",
+          "locale": "ja",
+          "path": "message1"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "changed manifest",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "changed config",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "corrupt pointer",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "missing generation receipt",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    },
+    {
+      "engine": "candidate",
+      "commit": "97b6415d328ea0f47c15a49a2b8f34ecf8dfe96f",
+      "case": "missing authority selector",
+      "accepted": false,
+      "coverage": null,
+      "message": "Mirai Intl workspace verification failed",
+      "diagnostics": [
+        {
+          "code": "INTL_CATALOG_INVALID",
+          "severity": "error",
+          "file": "apps/a"
+        }
+      ]
+    }
+  ]
+}
