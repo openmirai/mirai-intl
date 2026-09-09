@@ -6,6 +6,7 @@ import { availableParallelism, totalmem } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { compileCatalog } from "./compile";
+import type { IntlBuildReceiptVerification } from "./check-receipt";
 import {
   discoverWorkspaceCatalogs,
   nearestWorkspaceRoot,
@@ -731,21 +732,29 @@ async function authorizeWorkspaceCatalogInProcess(
 }
 
 async function verifyWorkspace(output: ReporterOptions): Promise<void> {
-  const { verifyConventionBuildReceipt } = await import("./check-receipt");
+  const { verifyConventionBuildReceiptBatch } = await import("./check-receipt");
   const workspaceRoot = await realpath(
     await nearestWorkspaceRoot(process.cwd())
   );
   const roots = await discoverWorkspaceCatalogs(workspaceRoot);
   const diagnostics: Array<CliDiagnostic> = [];
   const catalogs: Array<{
-    build?: IntlBuildVerificationCountersV2;
+    build?: IntlBuildReceiptVerification;
     diagnostics: Array<CliDiagnostic>;
     root: string;
   }> = [];
-  for (const root of roots) {
+  const results = await verifyConventionBuildReceiptBatch(roots, workspaceRoot);
+  for (const [index, root] of roots.entries()) {
     const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
     try {
-      const verification = await verifyConventionBuildReceipt(root);
+      const result = results[index];
+      if (!result) {
+        throw new Error("Missing catalog verification result");
+      }
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      const verification = result.value;
       catalogs.push({
         build: verification,
         diagnostics: [],
@@ -766,13 +775,25 @@ async function verifyWorkspace(output: ReporterOptions): Promise<void> {
   if (semanticBuildRuns !== 0) {
     throw new Error("Mirai Intl build verification invoked semantic analysis");
   }
-  const build: IntlBuildVerificationCountersV2 = {
+  const build = {
+    catalogCompilations: catalogs.reduce(
+      (total, catalog) => total + (catalog.build?.catalogCompilations ?? 0),
+      0
+    ),
+    artifactEmissions: catalogs.reduce(
+      (total, catalog) => total + (catalog.build?.artifactEmissions ?? 0),
+      0
+    ),
+    verifiedCatalogs: catalogs.reduce(
+      (total, catalog) => total + (catalog.build?.verifiedCatalogs ?? 0),
+      0
+    ),
     buildReceiptVerifications: catalogs.reduce<number>(
       (total, catalog) =>
         total + (catalog.build?.buildReceiptVerifications ?? 0),
       0
     ),
-    buildSemanticAnalysisRuns: 0,
+    buildSemanticAnalysisRuns: 0 as const,
   };
   await report(
     "verify",
@@ -913,6 +934,9 @@ function reportSummary(
   ) {
     copyNumber("buildReceiptVerifications", build);
     copyNumber("buildSemanticAnalysisRuns", build);
+    copyNumber("catalogCompilations", build);
+    copyNumber("artifactEmissions", build);
+    copyNumber("verifiedCatalogs", build);
   }
   return summary;
 }

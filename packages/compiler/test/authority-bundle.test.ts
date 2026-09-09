@@ -310,7 +310,10 @@ it("transfers catalogs in scoped workspace directories as literal archive paths"
 });
 
 it("allows bounded tar overhead above the selected-content byte limit", async () => {
-  const { consumer, archive } = await workspaceFixture();
+  // Invalid archive framing is rejected before any catalog is needed.
+  const consumer = await mkdtemp(join(tmpdir(), "intl-transfer-framing-"));
+  temporaryRoots.push(consumer);
+  const archive = join(consumer, "authority.tar");
   await writeFile(archive, "not a tar");
   await truncate(archive, 512 * 1024 * 1024 + 1024);
   await expect(
