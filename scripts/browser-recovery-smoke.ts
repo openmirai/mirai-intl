@@ -94,8 +94,8 @@ await writeFile(
     {
       dependencies: {
         "@openmirai/intl-i18next": packedPackages["@openmirai/intl-i18next"],
-        react: "19.2.7",
-        "react-dom": "19.2.7",
+        react: process.env.MIRAI_INTL_SMOKE_REACT_VERSION ?? "19.2.8",
+        "react-dom": process.env.MIRAI_INTL_SMOKE_REACT_VERSION ?? "19.2.8",
       },
       devDependencies: { vite: "7.3.6" },
       name: "mirai-intl-browser-recovery-smoke",

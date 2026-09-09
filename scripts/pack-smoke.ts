@@ -298,7 +298,7 @@ const directDependencies = {
   [catalogPackageName]: packedPackages[catalogPackageName],
   [intlI18nextPackage.name]: packedPackages[intlI18nextPackage.name],
   [intlPackage.name]: packedPackages[intlPackage.name],
-  react: "19.2.7",
+  react: process.env.MIRAI_INTL_SMOKE_REACT_VERSION ?? "19.2.8",
 } as const;
 if (Object.values(directDependencies).some((value) => value === undefined)) {
   throw new Error("Packed consumer dependencies are incomplete");

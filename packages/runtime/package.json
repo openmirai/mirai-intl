@@ -61,9 +61,13 @@
     "@openmirai/intl-abi": "workspace:*",
     "@opentelemetry/api-logs": "0.220.0"
   },
+  "devDependencies": {
+    "i18next": "26.4.1",
+    "react": "19.2.8"
+  },
   "peerDependencies": {
-    "i18next": "26.3.6",
-    "react": "19.2.7"
+    "i18next": "26.3.6 || 26.4.1",
+    "react": "19.2.7 || 19.2.8"
   },
   "peerDependenciesMeta": {
     "i18next": {

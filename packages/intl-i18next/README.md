@@ -10,7 +10,9 @@ provider, translation hook, and browser/request controllers.
 npm install @openmirai/intl @openmirai/intl-i18next
 ```
 
-The package expects React `19.2.7` as a peer dependency. `i18next-icu` is an
+The package supports React `19.2.7` and `19.2.8` as peer dependencies. It owns
+`i18next@26.4.1` and `react-i18next@17.0.13`; applications that also declare
+i18next should use `26.4.1` so the adapter and application share one runtime. `i18next-icu` is an
 optional peer dependency; install it when ICU formatting is enabled:
 
 ```sh
