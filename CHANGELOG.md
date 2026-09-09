@@ -6,6 +6,14 @@
 ### Bug Fixes
 
 * **runtime:** qualify current React and i18next versions ([f2bb07e](https://github.com/openmirai/mirai-intl/commit/f2bb07e76de3056611ab4655859527628828866a))
+* **compiler:** export/import the complete selected authority closure, including immutable V3 receipts and classifier envelopes; validate staged imports and publish archives atomically ([#12](https://github.com/openmirai/mirai-intl/pull/12)).
+
+### Performance Improvements
+
+* **compiler:** verify V3 build authority without catalog compilation or emission; retain fresh strict input, source, toolchain and artifact checks, with bounded workspace identity reuse ([#13](https://github.com/openmirai/mirai-intl/pull/13)).
+
+The content-derived convention `buildId` migration is not included in this patch.
+Fresh authorization is still required after application/package version changes.
 
 ## [0.3.28](https://github.com/openmirai/mirai-intl/compare/v0.3.27...v0.3.28) (2026-08-28)
 
