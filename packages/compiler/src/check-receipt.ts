@@ -34,15 +34,18 @@ import {
 } from "@openmirai/intl-abi";
 
 import {
+  canonicalHash,
   canonicalJson,
   compareCanonicalStrings,
   decodeUtf8Fatal,
   sha256,
 } from "./canonical";
 import {
+  loadFreshConventionCatalogGenerationInput,
   loadConventionCatalog,
   verifyLoadedConventionCatalog,
 } from "./catalog";
+import { verifyCommittedArtifactSnapshot } from "./writer";
 import {
   parseCanonicalCatalogCurrentPointer,
   parseCanonicalCatalogGenerationReceipt,
@@ -1095,7 +1098,8 @@ async function verifyConventionBuildReceiptV3(
   receipt: IntlCheckReceiptV3,
   transferredGeneratedRoot?: string
 ): Promise<IntlBuildReceiptVerification> {
-  const original = await loadConventionCatalog(root);
+  const fresh = await loadFreshConventionCatalogGenerationInput(root);
+  const original = fresh.loaded;
   const loaded =
     transferredGeneratedRoot === undefined
       ? original
@@ -1117,12 +1121,49 @@ async function verifyConventionBuildReceiptV3(
     ),
     verifyClassifierFilesystemV3(workspace, receipt),
   ]);
-  await verifyGeneration(
-    loaded.outputRoot,
-    receipt.generationReceiptHash,
-    receipt
+  const generationBytes = await readFile(
+    join(loaded.outputRoot, generationReceiptName)
   );
-  await verifyLoadedConventionCatalog(loaded, { collectEnvironment: false });
+  if (sha256(generationBytes) !== receipt.generationReceiptHash) {
+    throw new Error("Mirai Intl generation receipt is stale or corrupt");
+  }
+  const generation = parseCanonicalCatalogGenerationReceipt(
+    decodeUtf8Fatal(generationBytes, "Mirai Intl generation receipt")
+  );
+  if (
+    generation.abi.artifactAbi !== receipt.artifactAbi ||
+    generation.abi.runtimeAbi !== receipt.runtimeAbi
+  ) {
+    throw new Error("Mirai Intl generation and authorization ABI disagree");
+  }
+  const allowed = new Set([
+    "builds",
+    generationReceiptName,
+    "catalog.lock.json",
+    "current.json",
+    "index.ts",
+  ]);
+  for (const entry of await readdir(loaded.outputRoot, {
+    withFileTypes: true,
+  })) {
+    if (!allowed.has(entry.name) || entry.isSymbolicLink()) {
+      throw new Error(
+        `Mirai Intl generated catalog contains unexplained state: ${entry.name}`
+      );
+    }
+  }
+  const committed = await verifyCommittedArtifactSnapshot(
+    loaded.outputRoot,
+    {
+      changed: false,
+      contentHash: generation.payload.contentHash,
+      directory: join(loaded.outputRoot, generation.payload.directory),
+    },
+    receipt.generationReceiptHash
+  );
+  if (committed.generationInputHash !== canonicalHash(fresh.generationInput)) {
+    throw new Error("Mirai Intl generation inputs are stale or corrupt");
+  }
   const reconstructedProjects = await Promise.all(
     receipt.projects.map(async (project) => {
       const expandedProject = {
@@ -1193,7 +1234,7 @@ async function verifyConventionBuildReceiptV3(
   if (canonicalJson(reconstructedOwners) !== canonicalJson(receiptOwners)) {
     throw new Error("Mirai Intl authorized source universe is stale");
   }
-  const immutable = await getImmutableIntegrityIdentity();
+  const immutable = fresh.integrity.immutable;
   if (
     canonicalJson(
       receiptV3Files(receipt, receipt.compilerManifest, "V3 compiler manifest")
@@ -1222,7 +1263,7 @@ async function verifyConventionBuildReceiptV3(
       );
     }
   }
-  const application = await computeApplicationPackageIdentity(root);
+  const application = fresh.integrity.application;
   const packageManifest =
     receipt.tables.files[receipt.application.packageManifest];
   const workspaceLockfile =
@@ -1242,6 +1283,12 @@ async function verifyConventionBuildReceiptV3(
     canonicalJson(workspaceLockfile) !== canonicalJson(expectedLockfile)
   ) {
     throw new Error("Mirai Intl application package or lock identity is stale");
+  }
+  // Re-read generation inputs at the return barrier, never trusting an mtime or
+  // cross-call cache to authorize a changed locale/config/compiler input.
+  const after = await loadFreshConventionCatalogGenerationInput(root);
+  if (canonicalHash(after.generationInput) !== committed.generationInputHash) {
+    throw new Error("Mirai Intl generation inputs changed during verification");
   }
   return {
     ...parseIntlBuildVerificationCountersV2({
