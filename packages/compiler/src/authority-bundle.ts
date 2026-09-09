@@ -2,6 +2,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import {
   cp,
   lstat,
+  link,
   mkdir,
   mkdtemp,
   open,
@@ -414,12 +415,17 @@ export async function exportAuthorityBundle(
     if ((await lstat(tar)).size > MAX_ARCHIVE_BYTES) {
       throw new Error("Authority archive exceeds metadata overhead limit");
     }
-    // Never overwrite an existing archive or user file.
-    const destination = await open(archive, "wx", 0o600);
+    // Stage on the destination filesystem, then atomically install complete bytes
+    // without replacing an existing archive (rename would overwrite on POSIX).
+    const destinationStage = await mkdtemp(
+      join(dirname(archive), ".intl-authority-export-")
+    );
     try {
-      await destination.writeFile(await readFile(tar));
+      const completed = join(destinationStage, "bundle.tar");
+      await cp(tar, completed, { force: false, errorOnExist: true });
+      await link(completed, archive);
     } finally {
-      await destination.close();
+      await rm(destinationStage, { recursive: true, force: true });
     }
     return summary(manifest);
   } finally {

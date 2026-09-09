@@ -391,20 +391,19 @@ it.each([
         buildWorkspaceAuthorityRootPointerV1(hash)
       )
     );
-    if (kind !== "valid") {
-      await expect(exportAuthorityBundle({ root, archive })).rejects.toThrow(
-        /Workspace authority/u
-      );
-    } else {
+    const result = await (async () => {
       await exportAuthorityBundle({ root, archive });
       await importAuthorityBundle({ root: consumer, archive });
-      expect(
-        await readFile(
-          join(consumer, workspaceAuthorityManifestPath(hash)),
-          "utf8"
-        )
-      ).toBe(bytes);
-    }
+      return readFile(
+        join(consumer, workspaceAuthorityManifestPath(hash)),
+        "utf8"
+      );
+    })().catch((error: unknown) =>
+      error instanceof Error ? error.message : String(error)
+    );
+    const expected =
+      kind === "valid" ? bytes : expect.stringMatching(/Workspace authority/u);
+    expect(result).toEqual(expected);
   },
   60_000
 );
