@@ -1160,15 +1160,18 @@ async function verifyConventionBuildReceiptV3(
     "current.json",
     "index.ts",
   ]);
-  for (const entry of await readdir(loaded.outputRoot, {
-    withFileTypes: true,
-  })) {
-    if (!allowed.has(entry.name) || entry.isSymbolicLink()) {
-      throw new Error(
-        `Mirai Intl generated catalog contains unexplained state: ${entry.name}`
-      );
+  const verifyGeneratedInventory = async () => {
+    for (const entry of await readdir(loaded.outputRoot, {
+      withFileTypes: true,
+    })) {
+      if (!allowed.has(entry.name) || entry.isSymbolicLink()) {
+        throw new Error(
+          `Mirai Intl generated catalog contains unexplained state: ${entry.name}`
+        );
+      }
     }
-  }
+  };
+  await verifyGeneratedInventory();
   const committed = await verifyCommittedArtifactSnapshot(
     loaded.outputRoot,
     {
@@ -1178,9 +1181,6 @@ async function verifyConventionBuildReceiptV3(
     },
     receipt.generationReceiptHash
   );
-  if (committed.generationInputHash !== canonicalHash(fresh.generationInput)) {
-    throw new Error("Mirai Intl generation inputs are stale or corrupt");
-  }
   const verifySourceUniverse = async () => {
     const reconstructedProjects = await Promise.all(
       receipt.projects.map(async (project) => {
@@ -1304,6 +1304,9 @@ async function verifyConventionBuildReceiptV3(
   ) {
     throw new Error("Mirai Intl application package or lock identity is stale");
   }
+  if (committed.generationInputHash !== canonicalHash(fresh.generationInput)) {
+    throw new Error("Mirai Intl generation inputs are stale or corrupt");
+  }
   // Re-read all mutation-sensitive inputs at the return barrier. A workspace
   // session defers this until every package's initial verification has finished.
   const finalCheck = async () => {
@@ -1320,6 +1323,7 @@ async function verifyConventionBuildReceiptV3(
     }
     await verifyBoundFiles();
     await verifySourceUniverse();
+    await verifyGeneratedInventory();
     await verifyCommittedArtifactSnapshot(
       loaded.outputRoot,
       {

@@ -164,12 +164,12 @@ try {
           );
         }
         const diagnostics = report.diagnostics.map(
-          ({ code, severity, file, locale, path }) => ({
+          ({ code, severity, file, locale, path: messagePath }) => ({
             code,
             severity,
             file,
             locale,
-            path,
+            path: messagePath,
           })
         );
         if (result.accepted !== (test.name === "unchanged")) {
