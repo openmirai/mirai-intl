@@ -56,3 +56,30 @@ verification, total preparation, archive bytes and native process resource usage
 These are five-catalog synthetic measurements, **not a claim about complete
 frontend build or CI duration**. No concurrent build or benchmark should run
 against either measured worktree.
+
+## Measured result — 2026-09-09
+
+Node 24.18.0, Apple M4 Pro; 20 samples per engine, five catalogs with 1,000 keys,
+two locales and one source file each. Reference `02f4093`, candidate compiler
+`7eec6f9`. These observations measure synthetic work, not the Turbo application.
+
+| Scope | Reference median / p95 | Candidate median / p95 |
+| --- | --- | --- |
+| Fresh-process workspace verification | 678.7 / 708.3 ms | 507.2 / 584.8 ms |
+| Warm workspace verification | 510.4 / 543.8 ms | 402.7 / 1051.9 ms |
+| Full Intl preparation | 5567.9 / 5643.7 ms | 5408.8 / 5500.4 ms |
+
+Median verification was 25.3% lower cold and 21.1% lower warm. Full preparation
+was 2.9% lower at the median. **Warm p95 regressed** in this run; this is not
+evidence of improved tail latency. Keep the raw observations and measure the
+real CI workload after adoption rather than extrapolating these percentages.
+
+The candidate was marked dirty during timing because the parity runner was
+being extended to compare diagnostic line/column (subsequently committed as
+`97b6415`). No compiler/runtime source or built artifact changed during timing.
+Parity was rerun at that clean commit: all 30 reference/candidate observations
+matched acceptance, full diagnostic locations and accepted source coverage.
+
+Raw evidence: [verification](benchmarks/2026-09-09-speed-final.json),
+[preparation](benchmarks/2026-09-09-pipeline.json), and
+[mutation parity](benchmarks/2026-09-09-parity.json).
