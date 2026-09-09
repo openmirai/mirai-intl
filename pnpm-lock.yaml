@@ -51,8 +51,8 @@ importers:
         specifier: 19.1.0
         version: 19.1.0
       i18next:
-        specifier: 26.3.6
-        version: 26.3.6(typescript@7.0.2)
+        specifier: 26.4.1
+        version: 26.4.1(typescript@7.0.2)
       i18next-icu:
         specifier: 2.4.4
         version: 2.4.4(intl-messageformat@11.2.11)
@@ -64,7 +64,7 @@ importers:
         version: 2.1.10
       next:
         specifier: 16.2.9
-        version: 16.2.9(@opentelemetry/api@1.9.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 16.2.9(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       oxfmt:
         specifier: 0.59.0
         version: 0.59.0
@@ -72,17 +72,17 @@ importers:
         specifier: 1.74.0
         version: 1.74.0(oxlint-tsgolint@0.24.0)
       react:
-        specifier: 19.2.7
-        version: 19.2.7
+        specifier: 19.2.8
+        version: 19.2.8
       react-dom:
-        specifier: 19.2.7
-        version: 19.2.7(react@19.2.7)
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
       react-i18next:
-        specifier: 17.0.9
-        version: 17.0.9(i18next@26.3.6(typescript@7.0.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@7.0.2)
+        specifier: 17.0.13
+        version: 17.0.13(i18next@26.4.1(typescript@7.0.2))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2)
       react-test-renderer:
-        specifier: 19.2.7
-        version: 19.2.7(react@19.2.7)
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
       release-it:
         specifier: 20.2.1
         version: 20.2.1(@types/node@24.13.3)
@@ -149,17 +149,18 @@ importers:
         specifier: workspace:*
         version: link:../runtime
       i18next:
-        specifier: 26.3.6
-        version: 26.3.6(typescript@7.0.2)
+        specifier: 26.4.1
+        version: 26.4.1(typescript@7.0.2)
       i18next-icu:
         specifier: 2.4.4
         version: 2.4.4(intl-messageformat@11.2.11)
-      react:
-        specifier: 19.2.7
-        version: 19.2.7
       react-i18next:
-        specifier: 17.0.9
-        version: 17.0.9(i18next@26.3.6(typescript@7.0.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@7.0.2)
+        specifier: 17.0.13
+        version: 17.0.13(i18next@26.4.1(typescript@7.0.2))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2)
+    devDependencies:
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
 
   packages/runtime:
     dependencies:
@@ -169,12 +170,13 @@ importers:
       '@opentelemetry/api-logs':
         specifier: 0.220.0
         version: 0.220.0
+    devDependencies:
       i18next:
-        specifier: 26.3.6
-        version: 26.3.6(typescript@7.0.2)
+        specifier: 26.4.1
+        version: 26.4.1(typescript@7.0.2)
       react:
-        specifier: 19.2.7
-        version: 19.2.7
+        specifier: 19.2.8
+        version: 19.2.8
 
 packages:
 
@@ -2255,8 +2257,8 @@ packages:
     resolution: {integrity: sha512-Rw/B2DNQaPBICNXEm8balFz9a6WpZrkCGpcWFpy7nCj+NyhSdqXipmfvtmWt9xGfp0wZnBxB+iVpLmQMYt47Tw==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
-  html-parse-stringify@3.0.1:
-    resolution: {integrity: sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==}
+  html-parse-stringify@4.0.1:
+    resolution: {integrity: sha512-0zHsZJrK7S3K2aucXWL6ycoYJ/iNtIcFHC/nYQgFklPtrv5LpJctIiSCroWZWeuoXvuyFdzp6KzjJQ+OT5MfFw==}
 
   htmlparser2@10.1.0:
     resolution: {integrity: sha512-VTZkM9GWRAtEpveh7MSF6SjjrpNVNNVJfFup7xTY3UpFtm67foy9HDVXneLtFVt4pMz5kZtgNcvCniNFb1hlEQ==}
@@ -2274,8 +2276,8 @@ packages:
     peerDependencies:
       intl-messageformat: '>=10.3.3 <12.0.0'
 
-  i18next@26.3.6:
-    resolution: {integrity: sha512-Bu5Z2nAXgfVyM8xvW3jk9EKRIuX37PudsrBViThNFx7CR7aaYTpP01cxNB/E4c4UUzTDiAZRstEhsRfPOL/8xA==}
+  i18next@26.4.1:
+    resolution: {integrity: sha512-9YbX5E6gd1H+yaOSX3izCsPj5iWXyH7X4oC+iuHHJJw8AeHglzOK5SJf+1CHxaYKYigcea+8jvzSxqYx46YvyA==}
     peerDependencies:
       typescript: ^5 || ^6 || ^7
     peerDependenciesMeta:
@@ -2738,13 +2740,13 @@ packages:
   rc9@2.1.2:
     resolution: {integrity: sha512-btXCnMmRIBINM2LDZoEmOogIZU7Qe7zn4BpomSKZ/ykbLObuBdvG+mFq11DL6fjH1DRwHhrlgtYWG96bJiC7Cg==}
 
-  react-dom@19.2.7:
-    resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
+  react-dom@19.2.8:
+    resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
     peerDependencies:
-      react: ^19.2.7
+      react: ^19.2.8
 
-  react-i18next@17.0.9:
-    resolution: {integrity: sha512-buLzOSqHtXxjf+qgSrLWNTXVZ1jSwO6kUv3uJqSP1roGBPgNnbhFm7OmdVwWcgf2gIbUyP0J333uPyx+Btsi3w==}
+  react-i18next@17.0.13:
+    resolution: {integrity: sha512-Cc1PscmblIHA1kljTqDwrcVMI21ydgmUzw0UAeQBe7pAOgfuRLfzXze4EUBQoeDiICzFIXXhHFoZxuetNg5D0Q==}
     peerDependencies:
       i18next: '>= 26.2.0'
       react: '>= 16.8.0'
@@ -2759,16 +2761,16 @@ packages:
       typescript:
         optional: true
 
-  react-is@19.2.7:
-    resolution: {integrity: sha512-kZFnouyVv7eP/Phmrlo9FK+zcAdriZJvzxXHF1Sl1P377WSGe2G/JxVolhTrB/jeV47lKImhNUsijjHAAbcl/A==}
+  react-is@19.2.8:
+    resolution: {integrity: sha512-s5un28nYxKJw5gvUHyW5PCC28CvBqLu9r3cWgzHT4Vo/5fqqkFcdRYsGcKf50WMPpjjFZS5d76fn3YCo2njKwQ==}
 
-  react-test-renderer@19.2.7:
-    resolution: {integrity: sha512-U4TyPDJ9MsC8rFimXuJum8w40aPc9kbOZYO8Pc2/4A884i8hwJsMNA/JNyuOc/f2/37wHvk7HjpVl1V4re7Dig==}
+  react-test-renderer@19.2.8:
+    resolution: {integrity: sha512-GHKPaDRaNYU24PHTLG8Bx8VMY9t+qNfxQbt/Yjp7aMWBkKU6766SR0n6TnYu7P5I1MfEuAMUadqiyDHyI4Yy9Q==}
     peerDependencies:
-      react: ^19.2.7
+      react: ^19.2.8
 
-  react@19.2.7:
-    resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
+  react@19.2.8:
+    resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
     engines: {node: '>=0.10.0'}
 
   readable-stream@3.6.2:
@@ -3164,10 +3166,6 @@ packages:
         optional: true
       jsdom:
         optional: true
-
-  void-elements@3.1.0:
-    resolution: {integrity: sha512-Dhxzh5HZuiHQhbvTW9AMetFfBHDMYpo23Uo9btPXgdYP+3T5S+p+jgNy7spra+veYhBP2dCSgxR/i2Y02h5/6w==}
-    engines: {node: '>=0.10.0'}
 
   walk-up-path@4.0.0:
     resolution: {integrity: sha512-3hu+tD8YzSLGuFYtPRb48vdhKMi0KQV5sn+uWr8+7dMEq/2G/dtLrdDinkLjqq5TIbIBjYJ4Ax/n3YiaW7QM8A==}
@@ -4831,9 +4829,7 @@ snapshots:
     dependencies:
       lru-cache: 10.4.3
 
-  html-parse-stringify@3.0.1:
-    dependencies:
-      void-elements: 3.1.0
+  html-parse-stringify@4.0.1: {}
 
   htmlparser2@10.1.0:
     dependencies:
@@ -4860,7 +4856,7 @@ snapshots:
     dependencies:
       intl-messageformat: 11.2.11
 
-  i18next@26.3.6(typescript@7.0.2):
+  i18next@26.4.1(typescript@7.0.2):
     optionalDependencies:
       typescript: 7.0.2
 
@@ -5067,16 +5063,16 @@ snapshots:
     dependencies:
       type-fest: 2.19.0
 
-  next@16.2.9(@opentelemetry/api@1.9.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  next@16.2.9(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       '@next/env': 16.2.9
       '@swc/helpers': 0.5.15
       baseline-browser-mapping: 2.10.43
       caniuse-lite: 1.0.30001805
       postcss: 8.5.10
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-      styled-jsx: 5.1.6(react@19.2.7)
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+      styled-jsx: 5.1.6(react@19.2.8)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.2.9
       '@next/swc-darwin-x64': 16.2.9
@@ -5313,31 +5309,31 @@ snapshots:
       defu: 6.1.7
       destr: 2.0.5
 
-  react-dom@19.2.7(react@19.2.7):
+  react-dom@19.2.8(react@19.2.8):
     dependencies:
-      react: 19.2.7
+      react: 19.2.8
       scheduler: 0.27.0
 
-  react-i18next@17.0.9(i18next@26.3.6(typescript@7.0.2))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@7.0.2):
+  react-i18next@17.0.13(i18next@26.4.1(typescript@7.0.2))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2):
     dependencies:
       '@babel/runtime': 7.29.7
-      html-parse-stringify: 3.0.1
-      i18next: 26.3.6(typescript@7.0.2)
-      react: 19.2.7
-      use-sync-external-store: 1.6.0(react@19.2.7)
+      html-parse-stringify: 4.0.1
+      i18next: 26.4.1(typescript@7.0.2)
+      react: 19.2.8
+      use-sync-external-store: 1.6.0(react@19.2.8)
     optionalDependencies:
-      react-dom: 19.2.7(react@19.2.7)
+      react-dom: 19.2.8(react@19.2.8)
       typescript: 7.0.2
 
-  react-is@19.2.7: {}
+  react-is@19.2.8: {}
 
-  react-test-renderer@19.2.7(react@19.2.7):
+  react-test-renderer@19.2.8(react@19.2.8):
     dependencies:
-      react: 19.2.7
-      react-is: 19.2.7
+      react: 19.2.8
+      react-is: 19.2.8
       scheduler: 0.27.0
 
-  react@19.2.7: {}
+  react@19.2.8: {}
 
   readable-stream@3.6.2:
     dependencies:
@@ -5575,10 +5571,10 @@ snapshots:
     dependencies:
       ansi-regex: 6.2.2
 
-  styled-jsx@5.1.6(react@19.2.7):
+  styled-jsx@5.1.6(react@19.2.8):
     dependencies:
       client-only: 0.0.1
-      react: 19.2.7
+      react: 19.2.8
 
   tar@7.5.22:
     dependencies:
@@ -5693,9 +5689,9 @@ snapshots:
 
   url-join@5.0.0: {}
 
-  use-sync-external-store@1.6.0(react@19.2.7):
+  use-sync-external-store@1.6.0(react@19.2.8):
     dependencies:
-      react: 19.2.7
+      react: 19.2.8
 
   util-deprecate@1.0.2: {}
 
@@ -5746,8 +5742,6 @@ snapshots:
       '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
-
-  void-elements@3.1.0: {}
 
   walk-up-path@4.0.0: {}
 
