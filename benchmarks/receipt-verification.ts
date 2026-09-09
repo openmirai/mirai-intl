@@ -4,6 +4,15 @@ import { cpus, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import type { IntlCheckReceiptV3 } from "@openmirai/intl-abi";
+
+interface VerificationObservation {
+  buildSemanticAnalysisRuns: number;
+  receipt: IntlCheckReceiptV3;
+  catalogCompilations?: number;
+  artifactEmissions?: number;
+  verifiedCatalogs?: number;
+}
 
 const execute = promisify(execFile);
 const args = process.argv.slice(2);
@@ -26,17 +35,12 @@ async function worker() {
   const module = (await import(
     pathToFileURL(join(repository, "packages/compiler/dist/verify.js")).href
   )) as {
-    verifyWorkspaceBuildReceipts?: (root: string) => Promise<
-      Array<{
-        buildSemanticAnalysisRuns: number;
-        catalogCompilations: number;
-        artifactEmissions: number;
-        verifiedCatalogs: number;
-      }>
-    >;
+    verifyWorkspaceBuildReceipts?: (
+      root: string
+    ) => Promise<Array<VerificationObservation>>;
     verifyConventionBuildReceipt: (
       root: string
-    ) => Promise<{ buildSemanticAnalysisRuns: number }>;
+    ) => Promise<VerificationObservation>;
   };
   const verify = async () => {
     if (module.verifyWorkspaceBuildReceipts) {
@@ -53,8 +57,9 @@ async function worker() {
       ) {
         throw new Error("Incomplete workspace verification");
       }
-      return;
+      return results;
     }
+    const results: Array<VerificationObservation> = [];
     for (const catalog of catalogs) {
       const result = await module.verifyConventionBuildReceipt(
         join(root, catalog)
@@ -62,15 +67,36 @@ async function worker() {
       if (result.buildSemanticAnalysisRuns !== 0) {
         throw new Error("Unexpected semantic analysis");
       }
+      results.push(result);
     }
+    return results;
   };
   if (args.includes("--probe")) {
     try {
-      await verify();
-      return { accepted: true };
+      const results = await verify();
+      return {
+        accepted: true,
+        coverage: results.map(({ receipt }) => ({
+          sources: receipt.sources.map(({ file, hash, owner, verdict }) => ({
+            file,
+            hash,
+            owner,
+            verdict,
+          })),
+          projects: receipt.projects.map(({ path, role, rootFiles }) => ({
+            path,
+            role,
+            rootFiles,
+          })),
+          sourceFiles: receipt.counters.sourceFiles,
+          lexicalFilesClassified: receipt.counters.lexicalFilesClassified,
+          semanticFilesAnalyzed: receipt.counters.semanticFilesAnalyzed,
+        })),
+      };
     } catch (error) {
       return {
         accepted: false,
+        coverage: null,
         message: error instanceof Error ? error.message : String(error),
       };
     }

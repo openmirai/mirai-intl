@@ -127,7 +127,51 @@ try {
         const result = JSON.parse(stdout) as {
           accepted: boolean;
           message?: string;
+          coverage: unknown;
         };
+        const cli = await execute(
+          process.execPath,
+          [
+            join(engine.repository, "packages/compiler/dist/cli.js"),
+            "verify",
+            "--workspace",
+            "--format=json",
+          ],
+          { cwd: root, maxBuffer: 16 * 1024 * 1024 }
+        ).catch((error: unknown) => {
+          if (
+            error instanceof Error &&
+            "stdout" in error &&
+            typeof error.stdout === "string"
+          ) {
+            return { stdout: error.stdout };
+          }
+          throw error;
+        });
+        const report = JSON.parse(cli.stdout) as {
+          success: boolean;
+          diagnostics: Array<{
+            code: string;
+            severity: string;
+            file?: string;
+            locale?: string;
+            path?: string;
+          }>;
+        };
+        if (report.success !== result.accepted) {
+          throw new Error(
+            `CLI/API disagreement for ${engine.name}: ${test.name}`
+          );
+        }
+        const diagnostics = report.diagnostics.map(
+          ({ code, severity, file, locale, path }) => ({
+            code,
+            severity,
+            file,
+            locale,
+            path,
+          })
+        );
         if (result.accepted !== (test.name === "unchanged")) {
           throw new Error(
             `${engine.name} unexpectedly ${result.accepted ? "accepted" : "rejected"} ${test.name}: ${stdout}`
@@ -138,6 +182,7 @@ try {
           commit: commit.trim(),
           case: test.name,
           ...result,
+          diagnostics,
         });
       } finally {
         if (path && previous) {
@@ -148,11 +193,35 @@ try {
       }
     }
   }
+  for (const test of cases) {
+    const reference = results.find(
+      (entry) => entry.engine === "reference" && entry.case === test.name
+    );
+    const candidate = results.find(
+      (entry) => entry.engine === "candidate" && entry.case === test.name
+    );
+    if (!reference || !candidate) {
+      throw new Error(`Missing paired observation: ${test.name}`);
+    }
+    const evidence = (entry: typeof reference) => ({
+      accepted: entry.accepted,
+      diagnostics: entry.diagnostics,
+      coverage: entry.coverage,
+    });
+    if (
+      JSON.stringify(evidence(reference)) !==
+      JSON.stringify(evidence(candidate))
+    ) {
+      throw new Error(
+        `Reference/candidate diagnostic or source-coverage divergence: ${test.name}\n${JSON.stringify({ reference, candidate })}`
+      );
+    }
+  }
   const output = option("--out");
   await mkdir(dirname(output), { recursive: true });
   await writeFile(
     output,
-    `${JSON.stringify({ node: process.version, scope: "Acceptance/rejection parity against the exhaustive reference. Error wording is retained below, not required to be identical.", results }, null, 2)}\n`
+    `${JSON.stringify({ node: process.version, scope: "Paired acceptance, native CLI diagnostic codes/locations and verified source/project coverage against the exhaustive reference. Failed verification has no accepted coverage. Raw error wording may differ.", results }, null, 2)}\n`
   );
   console.log(
     `All ${results.length} reference/candidate mutation observations match expected acceptance; ${output}`
