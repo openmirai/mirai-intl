@@ -3561,7 +3561,10 @@ export async function loadConventionCatalogGenerationInput(
 
 /** @internal Load and hash every generation input without using the cache. */
 export async function loadFreshConventionCatalogGenerationInput(
-  packageRoot: string
+  packageRoot: string,
+  immutableIdentity?: Awaited<
+    ReturnType<typeof computeImmutableIntegrityIdentity>
+  >
 ): Promise<
   Readonly<{
     generationInput: CatalogGenerationInputIdentityV1;
@@ -3577,7 +3580,7 @@ export async function loadFreshConventionCatalogGenerationInput(
   const root = realpathSync(resolve(packageRoot));
   const [integrity, loaded] = await Promise.all([
     Promise.all([
-      computeImmutableIntegrityIdentity(),
+      immutableIdentity ?? computeImmutableIntegrityIdentity(),
       computeApplicationPackageIdentity(root),
     ]).then(([immutable, application]) => ({ application, immutable })),
     loadConventionCatalogSnapshot(root, false),

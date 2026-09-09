@@ -11,8 +11,35 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type * as Compile from "../src/compile";
 import type * as Emit from "../src/emit";
+import type * as FileSystem from "node:fs/promises";
 
 const work = vi.hoisted(() => ({ compile: 0, emit: 0 }));
+const mutation = vi.hoisted(() => ({
+  skipGenerationReads: 0,
+  afterGenerationRead: undefined as (() => Promise<void>) | undefined,
+}));
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof FileSystem>();
+  return {
+    ...actual,
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      const bytes = await actual.readFile(...args);
+      if (
+        String(args[0]).endsWith("/catalog-generation-receipt.v1.json") &&
+        mutation.afterGenerationRead
+      ) {
+        if (mutation.skipGenerationReads > 0) {
+          mutation.skipGenerationReads--;
+          return bytes;
+        }
+        const change = mutation.afterGenerationRead;
+        mutation.afterGenerationRead = undefined;
+        await change();
+      }
+      return bytes;
+    },
+  };
+});
 vi.mock("../src/compile", async (original) => {
   const actual = await original<typeof Compile>();
   return {
@@ -35,12 +62,76 @@ vi.mock("../src/emit", async (original) => {
 });
 
 import { proveConventionCatalog } from "../src/proof";
-import { verifyConventionBuildReceipt } from "../src/verify";
+import {
+  verifyConventionBuildReceipt,
+  verifyWorkspaceBuildReceipts,
+} from "../src/verify";
 
 const roots: Array<string> = [];
 afterEach(async () => {
+  mutation.afterGenerationRead = undefined;
+  mutation.skipGenerationReads = 0;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+  );
+});
+
+it("rejects source edits interleaved after the initial source-hash pass", async () => {
+  const root = await fixture();
+  mutation.afterGenerationRead = () =>
+    writeFile(join(root, "src/page.ts"), "export const answer = 43;\n");
+  await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+    /stale|changed/u
+  );
+});
+
+it("rejects a payload changed after its initial committed-snapshot validation", async () => {
+  const root = await fixture();
+  const generated = join(root, "src/i18n/generated");
+  const receipt = JSON.parse(
+    await readFile(
+      join(generated, "catalog-generation-receipt.v1.json"),
+      "utf8"
+    )
+  ) as {
+    payload: {
+      directory: string;
+      manifest: { entries: Array<{ path: string }> };
+    };
+  };
+  const first = receipt.payload.manifest.entries[0];
+  if (!first) {
+    throw new Error("fixture requires a generated payload");
+  }
+  mutation.skipGenerationReads = 2;
+  mutation.afterGenerationRead = () =>
+    writeFile(
+      join(generated, receipt.payload.directory, first.path),
+      "corrupt after validation"
+    );
+  await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+    /corrupt|manifest|payload|artifact/iu
+  );
+});
+
+it("rejects a new catalog added during workspace verification", async () => {
+  const { cp } = await import("node:fs/promises");
+  const source = await fixture();
+  const workspace = await mkdtemp(join(tmpdir(), "intl-verify-inventory-"));
+  roots.push(workspace);
+  await writeFile(
+    join(workspace, "pnpm-workspace.yaml"),
+    "packages:\n  - apps/*\n"
+  );
+  const app = join(workspace, "apps/a");
+  await cp(source, app, { recursive: true });
+  await rm(join(app, ".mirai-intl"), { recursive: true });
+  await rm(join(app, "src/i18n/generated"), { recursive: true });
+  await proveConventionCatalog(app);
+  mutation.afterGenerationRead = () =>
+    cp(source, join(workspace, "apps/new"), { recursive: true });
+  await expect(verifyWorkspaceBuildReceipts(workspace)).rejects.toThrow(
+    /workspace verification failed/u
   );
 });
 
@@ -72,6 +163,9 @@ it("verifies current V3 authority without compiling or emitting catalog artifact
   work.compile = 0;
   work.emit = 0;
   await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
+    catalogCompilations: 0,
+    artifactEmissions: 0,
+    verifiedCatalogs: 1,
     buildReceiptVerifications: 1,
     buildSemanticAnalysisRuns: 0,
   });
@@ -81,6 +175,36 @@ it("verifies current V3 authority without compiling or emitting catalog artifact
   );
   expect(await readdir(join(root, "src/i18n/generated/builds"))).toHaveLength(
     1
+  );
+});
+
+it("verifies every catalog in a bounded workspace session and rejects stale members", async () => {
+  const { cp } = await import("node:fs/promises");
+  const source = await fixture();
+  const workspace = await mkdtemp(join(tmpdir(), "intl-verify-workspace-"));
+  roots.push(workspace);
+  await writeFile(
+    join(workspace, "pnpm-workspace.yaml"),
+    "packages:\n  - apps/*\n"
+  );
+  for (const name of ["a", "b"]) {
+    const app = join(workspace, "apps", name);
+    await cp(source, app, { recursive: true });
+    await rm(join(app, ".mirai-intl"), { recursive: true });
+    await rm(join(app, "src/i18n/generated"), { recursive: true });
+    await proveConventionCatalog(app);
+  }
+  work.compile = 0;
+  work.emit = 0;
+  const verified = await verifyWorkspaceBuildReceipts(workspace);
+  expect(verified).toHaveLength(2);
+  expect(verified.map(({ verifiedCatalogs }) => verifiedCatalogs)).toEqual([
+    1, 1,
+  ]);
+  expect(work).toEqual({ compile: 0, emit: 0 });
+  await writeFile(join(workspace, "apps/b/src/locales/th.json"), "{}");
+  await expect(verifyWorkspaceBuildReceipts(workspace)).rejects.toThrow(
+    /workspace verification failed/u
   );
 });
 

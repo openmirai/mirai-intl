@@ -26,11 +26,35 @@ async function worker() {
   const module = (await import(
     pathToFileURL(join(repository, "packages/compiler/dist/verify.js")).href
   )) as {
+    verifyWorkspaceBuildReceipts?: (root: string) => Promise<
+      Array<{
+        buildSemanticAnalysisRuns: number;
+        catalogCompilations: number;
+        artifactEmissions: number;
+        verifiedCatalogs: number;
+      }>
+    >;
     verifyConventionBuildReceipt: (
       root: string
     ) => Promise<{ buildSemanticAnalysisRuns: number }>;
   };
   const verify = async () => {
+    if (module.verifyWorkspaceBuildReceipts) {
+      const results = await module.verifyWorkspaceBuildReceipts(root);
+      if (
+        results.length !== catalogs.length ||
+        results.some(
+          (result) =>
+            result.buildSemanticAnalysisRuns !== 0 ||
+            result.catalogCompilations !== 0 ||
+            result.artifactEmissions !== 0 ||
+            result.verifiedCatalogs !== 1
+        )
+      ) {
+        throw new Error("Incomplete workspace verification");
+      }
+      return;
+    }
     for (const catalog of catalogs) {
       const result = await module.verifyConventionBuildReceipt(
         join(root, catalog)
@@ -40,6 +64,17 @@ async function worker() {
       }
     }
   };
+  if (args.includes("--probe")) {
+    try {
+      await verify();
+      return { accepted: true };
+    } catch (error) {
+      return {
+        accepted: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
   if (args.includes("--warm")) {
     for (let index = 0; index < warmups; index++) {
       await verify();
@@ -67,7 +102,11 @@ const statistics = (values: ReadonlyArray<number>) => {
   };
 };
 
-async function fixture(root: string, repository: string) {
+export async function fixture(
+  root: string,
+  repository: string,
+  authorize = true
+) {
   await mkdir(root);
   await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
   await writeFile(
@@ -105,16 +144,18 @@ async function fixture(root: string, repository: string) {
       );
     }
   }
-  await execute(
-    process.execPath,
-    [
-      join(repository, "packages/compiler/dist/cli.js"),
-      "check",
-      "--workspace",
-      "--format=json",
-    ],
-    { cwd: root, maxBuffer: 16 * 1024 * 1024 }
-  );
+  if (authorize) {
+    await execute(
+      process.execPath,
+      [
+        join(repository, "packages/compiler/dist/cli.js"),
+        "check",
+        "--workspace",
+        "--format=json",
+      ],
+      { cwd: root, maxBuffer: 16 * 1024 * 1024 }
+    );
+  }
 }
 
 async function benchmark() {
@@ -200,8 +241,10 @@ async function benchmark() {
   }
 }
 
-if (args.includes("--worker")) {
-  console.log(JSON.stringify(await worker()));
-} else {
-  await benchmark();
+if (resolve(process.argv[1] ?? "") === import.meta.filename) {
+  if (args.includes("--worker")) {
+    console.log(JSON.stringify(await worker()));
+  } else {
+    await benchmark();
+  }
 }
