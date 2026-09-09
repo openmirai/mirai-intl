@@ -154,6 +154,8 @@ try {
             code: string;
             severity: string;
             file?: string;
+            line?: number;
+            column?: number;
             locale?: string;
             path?: string;
           }>;
@@ -164,10 +166,20 @@ try {
           );
         }
         const diagnostics = report.diagnostics.map(
-          ({ code, severity, file, locale, path: messagePath }) => ({
+          ({
             code,
             severity,
             file,
+            line,
+            column,
+            locale,
+            path: messagePath,
+          }) => ({
+            code,
+            severity,
+            file,
+            line,
+            column,
             locale,
             path: messagePath,
           })
