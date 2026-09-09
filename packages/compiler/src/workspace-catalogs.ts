@@ -35,10 +35,13 @@ async function hasConventionCatalog(directory: string): Promise<boolean> {
   if (config?.isFile() && !config.isSymbolicLink()) {
     return true;
   }
-  const locales = await lstat(join(directory, "src/locales")).catch(
-    () => undefined
-  );
-  return locales?.isDirectory() === true && !locales.isSymbolicLink();
+  for (const name of ["src/locales", "locales"]) {
+    const locales = await lstat(join(directory, name)).catch(() => undefined);
+    if (locales?.isDirectory() && !locales.isSymbolicLink()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function discoverWorkspaceCatalogs(

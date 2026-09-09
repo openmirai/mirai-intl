@@ -55,6 +55,14 @@ paths without relying on GitHub's hidden-file selection or permission
 normalization. Imports reject compressed tar streams, links, duplicate entries,
 unsafe paths, non-regular files, unlisted members, oversized payloads and digest
 mismatches. The current limits are 10,000 files and 512 MiB of selected content.
+The archive allows a further 64 MiB of bounded tar/manifest overhead.
+
+Optional workspace authority must match every selected package reference and
+the receiving lockfile bytes. Top-level tree/snapshot/toolchain hashes are
+preserved producer provenance; transfer does not reinterpret or recompute them.
+Receiving authorization comes from native V3 package closure verification,
+including current compiler and dependency identities. A receiving workspace
+authority absent from the bundle is rejected; use a clean checkout.
 
 GitHub's digest validates transferred bytes, not the trustworthiness of their
 producer. Keep the producer on the intended trusted workflow/checkout. A
@@ -80,6 +88,8 @@ fails, the error identifies retained backups and leaves the import lock in place
 for explicit recovery; it never deletes those backups to report a clean failure.
 A killed process may likewise leave a transaction directory and lock. Recover
 those before retrying; do not silently delete locks or bypass verification.
+Import also refuses existing catalog publication locks or journals instead of
+replacing their recovery evidence.
 
 Do not import concurrently with builds or generation. Existing publication
 contracts do not provide lock-free readers during generated-directory rotation.

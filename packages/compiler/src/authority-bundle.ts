@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   cp,
   lstat,
@@ -6,6 +6,7 @@ import {
   mkdtemp,
   open,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
@@ -15,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 
-import { create, extract, Parser } from "tar";
+import { extract, Pack, Parser } from "tar";
 
 import { canonicalJson, sha256 } from "./canonical";
 import {
@@ -28,6 +29,7 @@ import {
 } from "./check-receipt";
 import { parseCanonicalCatalogGenerationReceipt } from "./generation-snapshot";
 import { discoverWorkspaceCatalogs } from "./workspace-catalogs";
+import type { WorkspaceAuthorityPackageV1 } from "./workspace-authority";
 import {
   INTL_WORKSPACE_AUTHORITY_ROOT_POINTER_PATH,
   parseCanonicalWorkspaceAuthorityRootPointerV1,
@@ -38,6 +40,7 @@ import {
 const MANIFEST = "intl-authority-bundle.v1.json";
 const GENERATED = "src/i18n/generated";
 const MAX_BYTES = 512 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES = MAX_BYTES + 64 * 1024 * 1024;
 const MAX_FILES = 10_000;
 
 class AuthorityImportRecoveryError extends Error {
@@ -70,7 +73,6 @@ export type AuthorityBundleResult = Readonly<{
 function safePath(value: string): string {
   if (
     !value ||
-    value.startsWith("@") ||
     /[\\:]/u.test(value) ||
     [...value].some((character) => character.charCodeAt(0) < 32) ||
     value.normalize("NFC") !== value ||
@@ -190,7 +192,7 @@ async function selectedFiles(
   catalogs: ReadonlyArray<string>
 ): Promise<Array<string>> {
   const paths = new Set<string>();
-  const selectedSets = new Map<string, string>();
+  const selectedPackages: Array<WorkspaceAuthorityPackageV1> = [];
   for (const catalog of catalogs) {
     const packageRoot = join(sourceRoot, catalog);
     const stagedRoot = join(stateRoot, catalog);
@@ -208,7 +210,6 @@ async function selectedFiles(
         `Authority bundle requires selected immutable V3 authority: ${catalog}`
       );
     }
-    selectedSets.set(catalog, selected.authoritySetHash);
     const setPath = localPath(
       stateRoot,
       conventionPackageAuthoritySetPath(stagedRoot, selected.authoritySetHash)
@@ -241,6 +242,15 @@ async function selectedFiles(
     const receipt = parseCanonicalCatalogGenerationReceipt(
       (await regularFile(stateRoot, receiptPath)).toString("utf8")
     );
+    selectedPackages.push({
+      authoritySetHash: selected.authoritySetHash,
+      catalogContentHash: receipt.payload.contentHash,
+      classifierAuthorityHash: set.classifierAuthority.hash,
+      generationReceiptHash: selected.receipt.generationReceiptHash,
+      package: set.package,
+      receiptHash: set.receipt.hash,
+      sourceAuthorizationHash: selected.receipt.sourceAuthorizationHash,
+    });
     for (const name of [
       "current.json",
       "catalog.lock.json",
@@ -275,11 +285,9 @@ async function selectedFiles(
     );
     if (
       sha256(bytes) !== pointer.manifestHash ||
-      authority.packages.length !== catalogs.length ||
-      authority.packages.some(
-        (entry) =>
-          selectedSets.get(entry.package.root) !== entry.authoritySetHash
-      )
+      canonicalJson(authority.packages) !== canonicalJson(selectedPackages) ||
+      sha256(await regularFile(sourceRoot, authority.workspaceLock.path)) !==
+        authority.workspaceLock.hash
     ) {
       throw new Error(
         "Workspace authority does not match selected package authority"
@@ -386,17 +394,26 @@ export async function exportAuthorityBundle(
       flag: "wx",
     });
     const tar = join(temporary, "bundle.tar");
-    await create(
-      {
-        cwd: stage,
-        file: tar,
-        portable: true,
-        noMtime: true,
-        strict: true,
-        noDirRecurse: true,
-      },
-      [MANIFEST, ...files.map((file) => file.path)]
+    const pack = new Pack({
+      cwd: stage,
+      portable: true,
+      noMtime: true,
+      strict: true,
+      noDirRecurse: true,
+    });
+    const packed = pipeline(
+      pack,
+      createWriteStream(tar, { flags: "wx", mode: 0o600 })
     );
+    // Pack.add treats scoped paths literally; create interprets @file as another archive.
+    for (const path of [MANIFEST, ...files.map((file) => file.path)]) {
+      pack.add(path);
+    }
+    pack.end();
+    await packed;
+    if ((await lstat(tar)).size > MAX_ARCHIVE_BYTES) {
+      throw new Error("Authority archive exceeds metadata overhead limit");
+    }
     // Never overwrite an existing archive or user file.
     const destination = await open(archive, "wx", 0o600);
     try {
@@ -498,9 +515,40 @@ async function publish(
     )
   ) {
     paths.push(".mirai-intl/workspace-authority");
+  } else if (
+    await lstat(join(root, ".mirai-intl/workspace-authority")).catch(
+      (error: unknown) => {
+        if (object(error).code === "ENOENT") {
+          return undefined;
+        }
+        throw error;
+      }
+    )
+  ) {
+    throw new Error(
+      "Receiving workspace authority is absent from the bundle; use a clean checkout"
+    );
   }
   for (const path of paths) {
     await safeDestination(root, path);
+  }
+  for (const path of generatedPaths) {
+    const entries = await readdir(join(root, path)).catch((error: unknown) => {
+      if (object(error).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    });
+    if (
+      entries.some(
+        (name) =>
+          name.startsWith(".publish.lock") || name === ".catalog-publication"
+      )
+    ) {
+      throw new Error(
+        `Receiving catalog has publication recovery state: ${path}; recover it before import`
+      );
+    }
   }
   const installed: Array<string> = [];
   const backedUp: Array<string> = [];
@@ -567,7 +615,11 @@ export async function importAuthorityBundle(
   const root = await realpath(resolve(options.root));
   const archive = resolve(options.archive);
   const entry = await lstat(archive);
-  if (!entry.isFile() || entry.isSymbolicLink() || entry.size > MAX_BYTES) {
+  if (
+    !entry.isFile() ||
+    entry.isSymbolicLink() ||
+    entry.size > MAX_ARCHIVE_BYTES
+  ) {
     throw new Error("Invalid authority archive file");
   }
   const lockPath = join(root, ".mirai-intl-authority-transfer.lock");
@@ -587,7 +639,7 @@ export async function importAuthorityBundle(
     if (
       !copied.isFile() ||
       copied.isSymbolicLink() ||
-      copied.size > MAX_BYTES
+      copied.size > MAX_ARCHIVE_BYTES
     ) {
       throw new Error("Authority archive changed during snapshot");
     }

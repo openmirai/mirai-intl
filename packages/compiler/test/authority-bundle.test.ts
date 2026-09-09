@@ -9,6 +9,8 @@ import {
   writeFile,
   readdir,
   symlink,
+  rename,
+  truncate,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -17,6 +19,20 @@ import { afterEach, expect, it } from "vitest";
 import { create, extract } from "tar";
 
 import { proveConventionCatalog } from "../src/proof";
+import { sha256 } from "../src/canonical";
+import {
+  readConventionCheckReceipt,
+  conventionPackageAuthoritySetPath,
+  parseCanonicalPackageAuthoritySetV1,
+} from "../src/check-receipt";
+import { parseCanonicalCatalogGenerationReceipt } from "../src/generation-snapshot";
+import {
+  buildWorkspaceAuthorityV1,
+  canonicalWorkspaceAuthorityV1Bytes,
+  workspaceAuthorityManifestPath,
+  canonicalWorkspaceAuthorityRootPointerV1Bytes,
+  buildWorkspaceAuthorityRootPointerV1,
+} from "../src/workspace-authority";
 import {
   exportAuthorityBundle,
   importAuthorityBundle,
@@ -31,16 +47,16 @@ afterEach(async () => {
   }
 });
 
-async function workspaceFixture() {
+async function workspaceFixture(catalogPath = "apps/app") {
   const directory = await mkdtemp(join(tmpdir(), "intl-transfer-test-"));
   temporaryRoots.push(directory);
   const root = join(directory, "producer");
-  const app = join(root, "apps/app");
+  const app = join(root, catalogPath);
   await mkdir(join(app, "src/locales"), { recursive: true });
   await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n");
   await writeFile(
     join(root, "pnpm-lock.yaml"),
-    "lockfileVersion: '9.0'\nimporters:\n\n  apps/app:\n    dependencies: {}\n"
+    `lockfileVersion: '9.0'\nimporters:\n\n  ${catalogPath}:\n    dependencies: {}\n`
   );
   await writeFile(
     join(app, "package.json"),
@@ -147,6 +163,30 @@ it("rejects an omitted catalog rather than trusting the bundle inventory", async
   ).rejects.toThrow(/catalog inventory/u);
 });
 
+it("includes root locales alongside src/locales and rejects newly omitted root-locales catalogs", async () => {
+  const { root, consumer, archive } = await workspaceFixture();
+  for (const workspace of [root, consumer]) {
+    const legacy = join(workspace, "apps/root-locales");
+    await cp(join(consumer, "apps/app"), legacy, { recursive: true });
+    await rename(join(legacy, "src/locales"), join(legacy, "locales"));
+  }
+  await proveConventionCatalog(join(root, "apps/root-locales"));
+  expect(await exportAuthorityBundle({ root, archive })).toMatchObject({
+    catalogs: ["apps/app", "apps/root-locales"],
+  });
+  await expect(
+    importAuthorityBundle({ root: consumer, archive })
+  ).resolves.toMatchObject({ catalogs: ["apps/app", "apps/root-locales"] });
+  await cp(
+    join(consumer, "apps/root-locales"),
+    join(consumer, "apps/omitted"),
+    { recursive: true }
+  );
+  await expect(
+    importAuthorityBundle({ root: consumer, archive })
+  ).rejects.toThrow(/catalog inventory/u);
+});
+
 it("preserves previously imported state when new input validation fails", async () => {
   const { root, consumer, archive } = await workspaceFixture();
   await exportAuthorityBundle({ root, archive });
@@ -227,6 +267,147 @@ it("never overwrites an existing export destination", async () => {
   });
   expect(await readFile(archive, "utf8")).toBe("keep me");
 });
+
+it.each([".publish.lock", ".publish.lock.recovering", ".catalog-publication"])(
+  "preserves receiving publication recovery state %s",
+  async (name) => {
+    const { root, consumer, archive } = await workspaceFixture();
+    await exportAuthorityBundle({ root, archive });
+    const generated = join(consumer, "apps/app/src/i18n/generated");
+    await mkdir(generated, { recursive: true });
+    const evidence = join(generated, name);
+    await writeFile(evidence, "recover me");
+    await expect(
+      importAuthorityBundle({ root: consumer, archive })
+    ).rejects.toThrow(/publication recovery/u);
+    expect(await readFile(evidence, "utf8")).toBe("recover me");
+  }
+);
+
+it("rejects stale receiving workspace authority absent from the bundle", async () => {
+  const { root, consumer, archive } = await workspaceFixture();
+  await exportAuthorityBundle({ root, archive });
+  const authority = join(consumer, ".mirai-intl/workspace-authority");
+  await mkdir(authority, { recursive: true });
+  await writeFile(join(authority, "current.json"), "old workspace authority");
+  await expect(
+    importAuthorityBundle({ root: consumer, archive })
+  ).rejects.toThrow(/workspace authority/u);
+  expect(await readFile(join(authority, "current.json"), "utf8")).toBe(
+    "old workspace authority"
+  );
+});
+
+it("transfers catalogs in scoped workspace directories as literal archive paths", async () => {
+  const { root, consumer, archive } = await workspaceFixture("@scope/app");
+  await exportAuthorityBundle({ root, archive });
+  expect(
+    await importAuthorityBundle({ root: consumer, archive })
+  ).toMatchObject({ catalogs: ["@scope/app"] });
+  await expect(
+    verifyConventionBuildReceipt(join(consumer, "@scope/app"))
+  ).resolves.toMatchObject({ buildReceiptVerifications: 1 });
+});
+
+it("allows bounded tar overhead above the selected-content byte limit", async () => {
+  const { consumer, archive } = await workspaceFixture();
+  await writeFile(archive, "not a tar");
+  await truncate(archive, 512 * 1024 * 1024 + 1024);
+  await expect(
+    importAuthorityBundle({ root: consumer, archive })
+  ).rejects.toThrow(/uncompressed tar/u);
+});
+
+it.each([
+  "valid",
+  "generationReceiptHash",
+  "sourceAuthorizationHash",
+  "catalogContentHash",
+] as const)(
+  "validates workspace authority references: %s",
+  async (kind) => {
+    const { root, consumer, archive } = await workspaceFixture();
+    const catalogRoots = ["apps/app", "apps/b", "apps/c", "apps/d", "apps/e"];
+    for (const catalog of catalogRoots.slice(1)) {
+      for (const workspace of [root, consumer]) {
+        await cp(join(consumer, "apps/app"), join(workspace, catalog), {
+          recursive: true,
+        });
+      }
+      await proveConventionCatalog(join(root, catalog));
+    }
+    const packages = await Promise.all(
+      catalogRoots.map(async (catalog) => {
+        const app = join(root, catalog);
+        const selected = await readConventionCheckReceipt(app);
+        if (
+          !selected.authoritySetHash ||
+          selected.receipt.schemaVersion !== 3
+        ) {
+          throw new Error("fixture requires V3 authority");
+        }
+        const authoritySet = parseCanonicalPackageAuthoritySetV1(
+          await readFile(
+            conventionPackageAuthoritySetPath(app, selected.authoritySetHash),
+            "utf8"
+          )
+        );
+        const generated = parseCanonicalCatalogGenerationReceipt(
+          await readFile(
+            join(app, "src/i18n/generated/catalog-generation-receipt.v1.json"),
+            "utf8"
+          )
+        );
+        const entry = {
+          authoritySet,
+          authoritySetHash: selected.authoritySetHash,
+          catalogContentHash: generated.payload.contentHash,
+          generationReceiptHash: selected.receipt.generationReceiptHash,
+          sourceAuthorizationHash: selected.receipt.sourceAuthorizationHash,
+        };
+        return kind !== "valid" && catalog === "apps/app"
+          ? { ...entry, [kind]: sha256("invalid reference") }
+          : entry;
+      })
+    );
+    const authority = buildWorkspaceAuthorityV1({
+      packages,
+      gitTreeHash: sha256("producer tree"),
+      snapshotHash: sha256("producer snapshot"),
+      toolchainHash: sha256("producer toolchain"),
+      workspaceLock: {
+        path: "pnpm-lock.yaml",
+        hash: sha256(await readFile(join(root, "pnpm-lock.yaml"))),
+      },
+    });
+    const bytes = canonicalWorkspaceAuthorityV1Bytes(authority);
+    const hash = sha256(bytes);
+    const manifestPath = join(root, workspaceAuthorityManifestPath(hash));
+    await mkdir(join(manifestPath, ".."), { recursive: true });
+    await writeFile(manifestPath, bytes);
+    await writeFile(
+      join(root, ".mirai-intl/workspace-authority/current.json"),
+      canonicalWorkspaceAuthorityRootPointerV1Bytes(
+        buildWorkspaceAuthorityRootPointerV1(hash)
+      )
+    );
+    if (kind !== "valid") {
+      await expect(exportAuthorityBundle({ root, archive })).rejects.toThrow(
+        /Workspace authority/u
+      );
+    } else {
+      await exportAuthorityBundle({ root, archive });
+      await importAuthorityBundle({ root: consumer, archive });
+      expect(
+        await readFile(
+          join(consumer, workspaceAuthorityManifestPath(hash)),
+          "utf8"
+        )
+      ).toBe(bytes);
+    }
+  },
+  60_000
+);
 
 it("runs the documented workspace export/import CLI without private-path copying", async () => {
   const { root, consumer, archive } = await workspaceFixture();
