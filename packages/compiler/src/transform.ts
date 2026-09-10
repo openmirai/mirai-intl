@@ -949,6 +949,55 @@ function requiresMiraiIntlAnalysis(
   );
 }
 
+/** @internal Conservative semantic activity, sealed into the source ledger.
+ * Facade-disjoint imports do not prove the absence of adapter translation calls.
+ * This observation requests semantics for this source without inventing a module
+ * resolution request or enrolling unrelated files in an owner fallback.
+ */
+export function miraiIntlSemanticSourceBoundary(
+  source: string,
+  id: string,
+  observationOrdinal: number,
+  sourceFile: ts.SourceFile
+): MiraiIntlClassifierShadowUnknownBoundary | undefined {
+  if (!requiresMiraiIntlAnalysis(source, id, sourceFile)) {
+    return undefined;
+  }
+  const kind = "semantic-source";
+  const reason = "semantic-analysis-required";
+  const nodeKind = "SourceFile";
+  const byteStart = 0;
+  const byteEnd = Buffer.byteLength(source);
+  const sourceSliceHash = sha256(source);
+  return {
+    kind,
+    reason,
+    nodeKind,
+    byteStart,
+    byteEnd,
+    sourceSliceHash,
+    source: id,
+    observationOrdinal,
+    nodeHash: sha256(
+      canonicalJson([
+        "mirai-intl",
+        "unknown-boundary-node",
+        3,
+        [
+          kind,
+          nodeKind,
+          observationOrdinal,
+          reason,
+          id,
+          byteStart,
+          byteEnd,
+          sourceSliceHash,
+        ],
+      ])
+    ),
+  };
+}
+
 function moduleResolutionOptions(root: string): ts.CompilerOptions {
   const cached = moduleResolutionOptionsCache.get(root);
   if (cached) {
@@ -2165,6 +2214,15 @@ export async function classifyMiraiIntlModuleBoundariesShadow(
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
+  const semanticBoundary = miraiIntlSemanticSourceBoundary(
+    source,
+    cleanId,
+    nextObservationOrdinal,
+    sourceFile
+  );
+  if (semanticBoundary) {
+    unknownBoundaries.push(semanticBoundary);
+  }
 
   const requests = await Promise.all(
     boundaries.map(

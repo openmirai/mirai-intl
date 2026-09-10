@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "baseLibraryRevision": "7599ee4c4394b31884aaf195a8d85c953c0774f4",
+  "consumerSource": "42a898e58b7355326d3da121f56b63f1c995a161",
+  "scope": "Direct R compiler CLI in disposable F, not an installed packed candidate or CI benchmark",
+  "command": "MIRAI_INTL_ENGINE=rust node /Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-patch-release/packages/intl/dist/cli.js check --workspace --format=json",
+  "cwd": "/private/tmp/intl-native-profile-consumer.HDeWIM",
+  "result": {
+    "command": "check",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "catalogCount": 5,
+      "checkerProjects": 0,
+      "ownerProjects": 5,
+      "projects": [
+        {
+          "findings": 0,
+          "path": "apps/admin",
+          "valid": true
+        },
+        {
+          "findings": 0,
+          "path": "apps/auth",
+          "valid": true
+        },
+        {
+          "findings": 0,
+          "path": "apps/instructor",
+          "valid": true
+        },
+        {
+          "findings": 0,
+          "path": "apps/learner",
+          "valid": true
+        },
+        {
+          "findings": 0,
+          "path": "packages/i18n",
+          "valid": true
+        }
+      ],
+      "semanticAuthorizationRuns": 1,
+      "semanticFilesAnalyzed": 899,
+      "valid": true
+    }
+  },
+  "rawSha256": "67904a1bc5ee24e82debb374cc58e9d4d6895b81b410e4c6353b581fb97235b8",
+  "performanceClaim": null,
+  "sourceFiles": {
+    "packages/compiler/src/transform.ts": "6cb895394c549d88796605f03a631e700447121ec7b61070748bc366920a8b38",
+    "packages/compiler/src/classifier-candidate-shadow.ts": "1be0490f1be93ec4312fdc0c4cb25ced66c289996b20076aada932a5f844094f",
+    "packages/compiler/src/authorization-snapshot.ts": "b8041bef948722865ca1e3d38bae5f2a63858b481adefde25d88163e860df29e",
+    "packages/abi/src/proof.ts": "dab5f74a8085c8345c02d17beceaa9d8691cfdbaf3b9d0a3377d012de4bca25e"
+  },
+  "checks": {
+    "existingClassifierSourceReceiptTransformTests": {
+      "passed": 139,
+      "log": ".tmp/semantic-source-tests.log"
+    },
+    "approvedVersusUnfilteredRegressionTests": 8,
+    "actualReceiptRemountTamperReuseTests": 5,
+    "fullVerifyBeforeSmokeExpectationRepair": {
+      "testsPassed": 982,
+      "runtimePerfTestsPassed": 12,
+      "formatLintTypeFixturesGeneratedCheckBenchmarks": "passed",
+      "exit": 1,
+      "reason": "Packed shortened-source negative rejected earlier at complete-source boundary parsing; expected diagnostic was too narrow."
+    },
+    "remainingVerifyStepsAfterNarrowExpectationRepair": {
+      "forcedRustPackSmoke": "passed",
+      "forcedRustBrowserSmoke": "passed",
+      "forcedRustDiagnosticSmoke": "passed"
+    }
+  },
+  "packedConsumer": {
+    "apiSurface": "getServerTranslations(namespace).t(named-key)",
+    "catalogIdentity": {
+      "buildId": "pack-smoke-build",
+      "capabilitySetHash": "sha256:0f92fb686b0ee7466fb6d166cb7ae2fe845d8a517ef76e246005c6bb220e0e8d",
+      "catalogHash": "sha256:4d402f1813e883c63dc864904dfd607dc7df179b70c86c5c0f5d6289b35cfa75",
+      "catalogId": "pack-smoke",
+      "packageName": "@openmirai/intl-catalog-smoke",
+      "rendererCapabilityId": "precompiled-v1",
+      "runtimeAbi": "1.0.0",
+      "version": "0.3.30-smoke.4d402f1813e8"
+    },
+    "checksums": {
+      "openmirai-intl-0.3.30.tgz": "sha256:e3fdfdd8d19018a64197cead440ef1d4cc57c38b54613904692eec2dee679d7c",
+      "openmirai-intl-abi-0.3.30.tgz": "sha256:96358e89c16e34fa9a807eced8f30aede028fa1ede9bbccbe0c278463a4a597b",
+      "openmirai-intl-catalog-smoke-0.3.30-smoke.4d402f1813e8.tgz": "sha256:cbb622462bd8a55d6d6b2aebcfee045934da698f7d41436af0e4ac9f074f53fa",
+      "openmirai-intl-compiler-0.3.30.tgz": "sha256:578e968584e76b140e6801d771288b833e939d0844ecf9eaf93f4930c8a6653f",
+      "openmirai-intl-i18next-0.3.30.tgz": "sha256:2074e28628f8d39f9cb9a839f7bb871dc0e1ba1424f47cc31736329db33dd646",
+      "openmirai-intl-runtime-0.3.30.tgz": "sha256:97e9eb13ed3966ad841baf5f2bb8fdaa41f8fef84e536bba43c7c0e25f060807"
+    },
+    "compilerPublicApi": true,
+    "receiptV3": {
+      "authorization": {
+        "semanticAuthorizationRuns": 1,
+        "semanticFilesAnalyzed": 1
+      },
+      "build": {
+        "buildReceiptVerifications": 1,
+        "buildSemanticAnalysisRuns": 0
+      },
+      "negativeMatrix": [
+        "v1",
+        "malformed-v3",
+        "noncanonical-v3",
+        "tampered-v3",
+        "stale-source",
+        "stale-config",
+        "stale-provider",
+        "stale-generation-receipt",
+        "stale-payload",
+        "stale-control",
+        "stale-typescript-lib"
+      ],
+      "localeNegativeMatrix": [
+        "missing-nested-en",
+        "missing-nested-th",
+        "missing-nested-key",
+        "extra-nested-key",
+        "empty-translation",
+        "invalid-icu",
+        "incompatible-contract"
+      ],
+      "translationChange": {
+        "generationChanged": true,
+        "oldAuthorityRejected": true,
+        "freshAuthorizationVerified": true,
+        "runtimeLocales": ["en", "th"],
+        "unchangedRerunStable": true,
+        "baselineRestored": true
+      },
+      "generationIdentity": {
+        "identicalRerunStable": true,
+        "versionOnlyGeneratedHash": "7d0a8a40398f341a35acda9d15eae62e7dda84440ad4b40cf56a31c9d7d9b166",
+        "oldAuthorizationRejectedBeforeAndAfterGenerate": true,
+        "freshAuthorizationVerified": true
+      }
+    },
+    "installed": true,
+    "isolatedInstall": true,
+    "otelDependencyResolvedTransitively": true,
+    "privateDescriptorLowering": true,
+    "nodeNextTypecheck": true,
+    "renderedTranslation": "Good morning, Mali",
+    "skipLibCheck": false,
+    "tarballs": [
+      "openmirai-intl-0.3.30.tgz",
+      "openmirai-intl-abi-0.3.30.tgz",
+      "openmirai-intl-catalog-smoke-0.3.30-smoke.4d402f1813e8.tgz",
+      "openmirai-intl-compiler-0.3.30.tgz",
+      "openmirai-intl-i18next-0.3.30.tgz",
+      "openmirai-intl-runtime-0.3.30.tgz"
+    ]
+  },
+  "logs": {
+    ".tmp/semantic-source-tests.log": "e41d34d1d5d3d9328d1ac43a18be2b7c684dd54409d2c91e45aac1d368ee2205",
+    ".tmp/semantic-source-full-verify.log": "bc3e321a6ac83c21f8aadfed432bea107314951961f4b27b73d5ff49d675b457",
+    ".tmp/semantic-source-pack-smoke.log": "b2d6b18a60988d3b57d56bfb045399e9f285033574b86732ffe2c42af2f2a528",
+    ".tmp/semantic-source-browser-smoke.log": "0c88e9f1df24f7820b2aed7c121d69056a41b46145636490fdbf2a78e3843004",
+    ".tmp/semantic-source-diagnostic-smoke.log": "76f2bc0ad9324b949a1cb0e59d2a0db09400200d9ccb9405c1f1b18724329780"
+  }
+}

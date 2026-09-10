@@ -1850,7 +1850,9 @@ const CANDIDATE_REASONS = [
 ] as const satisfies ReadonlyArray<
   GeneratedFacadeCandidateIndexV3["reasons"][number]
 >;
+const UNKNOWN_BOUNDARY_KINDS = [...BOUNDARY_KINDS, "semantic-source"] as const;
 const UNKNOWN_BOUNDARY_REASONS = [
+  "semantic-analysis-required",
   "nonliteral-specifier",
   "unknown-resolution-mode",
   "unsupported-boundary-shape",
@@ -2541,10 +2543,18 @@ function parseV3Tables(value: unknown): IntlCheckTablesV3 {
     if (byteStart >= byteEnd) {
       fail(context, "must have byteStart strictly before byteEnd");
     }
+    if (
+      (unknown.kind === "semantic-source") !==
+        (unknown.reason === "semantic-analysis-required") ||
+      (unknown.kind === "semantic-source" &&
+        (unknown.nodeKind !== "SourceFile" || byteStart !== 0))
+    ) {
+      fail(context, "semantic activity must bind the complete source file");
+    }
     return {
       byteEnd,
       byteStart,
-      kind: enumValue(unknown.kind, BOUNDARY_KINDS, `${context}.kind`),
+      kind: enumValue(unknown.kind, UNKNOWN_BOUNDARY_KINDS, `${context}.kind`),
       nodeHash: sha(unknown.nodeHash, `${context}.nodeHash`),
       nodeKind: text(unknown.nodeKind, `${context}.nodeKind`),
       observationOrdinal: count(
@@ -4254,6 +4264,15 @@ function validateUnknownBoundaryEvidence(
       fail(
         `Intl check receipt V3.tables.unknownBoundaries[${reference}]`,
         "byte range exceeds the receipt-bound source bytes"
+      );
+    }
+    if (
+      boundary.kind === "semantic-source" &&
+      boundary.byteEnd !== sourceBytes.length
+    ) {
+      fail(
+        `Intl check receipt V3.tables.unknownBoundaries[${reference}]`,
+        "semantic activity must cover the complete receipt-bound source bytes"
       );
     }
     const sourceSlice = sourceBytes.subarray(

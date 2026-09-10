@@ -1206,7 +1206,9 @@ await expectReceiptRejection(
       "export const stale = true;\n",
       "utf8"
     ),
-  /(?:source|V3 bound file) is stale or corrupt/u
+  // The full-source semantic observation can reject the shortened source while
+  // parsing the receipt, before the later ordinary source-hash diagnostic.
+  /(?:source|V3 bound file) is stale or corrupt|unknownBoundaries\[\d+\] byte range exceeds the receipt-bound source bytes/u
 );
 await expectReceiptRejection(
   "stale-config",
