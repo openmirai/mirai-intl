@@ -78,6 +78,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run strictness and packed-consumer gates with Rust required
         run: pnpm verify
+      - name: Pack immutable candidate packages without publishing
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: node native/scripts/pack-candidate.mjs --source-revision "$SOURCE_SHA" --output "$RUNNER_TEMP/intl-candidate-packs"
+      - name: Upload verified candidate packages for Turbo acceptance
+        uses: actions/upload-artifact@v7
+        with:
+          name: intl-candidate-packages-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/intl-candidate-packs/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
       - name: Upload packed-consumer evidence
         if: always()
         uses: actions/upload-artifact@v7

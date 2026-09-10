@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-09-10T08:15:27.666507+00:00",
-  "status": "identity split implemented; final mutation-barrier review fix and Turbo real consumer execution pending",
+  "recordedAt": "2026-09-10T08:47:09.824801+00:00",
+  "status": "identity split and final barriers implemented; packed consumer and all four historical Turbo probes pass; current-staging builds and final CI adoption pending",
   "runtime": "Node 24.18.0; forced Rust; macOS arm64 local single-platform candidate",
   "incident": "72dd09fd3b6e95e71ec7fbcf997f62313b624cfc",
   "tests": {
@@ -35,7 +35,7 @@
         "openmirai-intl-0.3.29.tgz": "sha256:646e2680e347b1023341de36c4c081adebe4984086ac06acd19b7808b944cb24",
         "openmirai-intl-abi-0.3.29.tgz": "sha256:a0e08d5d1a764979fba31a35f00934a5d724a07e51e241d58a81aa7dcf2d75d0",
         "openmirai-intl-catalog-smoke-0.3.29-smoke.4d402f1813e8.tgz": "sha256:27577d14a85a3b9a29622584626dd49afcf43dab11fd415193431a6be266e23e",
-        "openmirai-intl-compiler-0.3.29.tgz": "sha256:95ac27cad99ec5ac50e45d7c8a9eede164192941aded2503937246742280ad13",
+        "openmirai-intl-compiler-0.3.29.tgz": "sha256:99a2dd1d7f31b4f42ec86a8e579492c7ffcbfc1f08e4a0df77d2e44027b34aa9",
         "openmirai-intl-i18next-0.3.29.tgz": "sha256:e3963c755ea32a958e65a1fcc13a7092e7748b2c28c8f34be5c1b558fa3a690e",
         "openmirai-intl-runtime-0.3.29.tgz": "sha256:9041d45511cf55e067105e71ab18a6f8737c54b68fee4ce1f19b682f076d8c09"
       },
@@ -85,12 +85,94 @@
         "openmirai-intl-runtime-0.3.29.tgz"
       ]
     },
-    "scope": "candidate pack built before deferred full-application final barrier fix; rerun final package after that fix"
+    "scope": "Final f71bbc8 compiler with full-application return barrier; local Darwin-only candidate assets. All8-target candidate separately passed library CI."
   },
   "gaps": [
-    "All four actual Turbo identity probes pending new candidate packs",
-    "Deferred manifest mutation barrier regression pending review fix",
-    "All-platform matrix and final CI adoption pending",
-    "No package published or PR merged"
-  ]
+    "Current-staging version probes and four production-mode builds pending",
+    "Repeated identical-input end-to-end benchmarks pending",
+    "Turbo candidate CI adoption pending",
+    "Patch publication/merge approvals still required; no publication or merge"
+  ],
+  "finalBarriers": {
+    "standaloneBatchTransferRed": 3,
+    "standaloneBatchTransferGreen": 3,
+    "strictnessTransferTests": 26,
+    "seconds": 13.21,
+    "logs": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/application-barrier-focused.log"
+  },
+  "fullSuite": {
+    "total": 972,
+    "sandboxPassed": 932,
+    "sandboxIpcFailures": 40,
+    "affectedAndAdditionalRerunPassed": 112,
+    "rerunSeconds": 39.91,
+    "scope": "All40sandbox-blocked tests passed with IPC access; all full-suite tests accounted for, not a single clean sandbox run."
+  },
+  "turboHistoricalProbes": {
+    "revision": "1f57e8dda0065674abce36ef51359686038259e7",
+    "report": {
+      "incidentRevision": "72dd09fd3b6e95e71ec7fbcf997f62313b624cfc",
+      "catalogs": [
+        {
+          "app": "admin",
+          "versionBefore": "2.0.7",
+          "generated": {
+            "sha256": "ad0217c80114969e78a58b9d4de6dff44d6471a30523cd5c24906a1260a8dd6b",
+            "files": 14
+          },
+          "oldAuthorityRejected": true,
+          "freshAuthorityVerified": true,
+          "identicalRerunStable": true
+        },
+        {
+          "app": "auth",
+          "versionBefore": "2.0.7",
+          "generated": {
+            "sha256": "39855860744939594ae6f6075d5411fce4ab0af36366dff1b5f096992c797b00",
+            "files": 14
+          },
+          "oldAuthorityRejected": true,
+          "freshAuthorityVerified": true,
+          "identicalRerunStable": true
+        },
+        {
+          "app": "instructor",
+          "versionBefore": "2.0.7",
+          "generated": {
+            "sha256": "3325599d6f33bed51c24ee019d5be5b9914edf77db371b7804579063743d7328",
+            "files": 14
+          },
+          "oldAuthorityRejected": true,
+          "freshAuthorityVerified": true,
+          "identicalRerunStable": true
+        },
+        {
+          "app": "learner",
+          "versionBefore": "2.0.7",
+          "generated": {
+            "sha256": "b9b967e6f288bb2243b00d2c0b1492e201c498493c5bc2c7729a1258293c9126",
+            "files": 14
+          },
+          "oldAuthorityRejected": true,
+          "freshAuthorityVerified": true,
+          "identicalRerunStable": true
+        }
+      ]
+    },
+    "runtime": "Node24.18.0 macOS arm64 forcedRust candidatepackv2",
+    "postProbeState": "All app manifests restored; authority intentionally stale after restoration. Reauthorize before further use."
+  },
+  "libraryCI": {
+    "featureCommit": "f71bbc868615cce0d877f6c9e456421cd9cd1058",
+    "compiledMergeRevision": "4b8231acdf28762086d6f6b29b14b01f7d1023d5",
+    "pr": "https://github.com/openmirai/mirai-intl/pull/16",
+    "verificationRun": 34455729941,
+    "nativeRun": 34455730495,
+    "bothConclusion": "success",
+    "nativeTargets": 8,
+    "assembly": "success",
+    "forcedRustPackedConsumer": "success",
+    "artifactId": 10143630998,
+    "artifactDigest": "sha256:1e79ca7e554539334f00b03b4d2f9365a427c25221bd3881f2c689b22cbc4393"
+  }
 }
