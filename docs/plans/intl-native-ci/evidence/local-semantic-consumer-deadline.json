@@ -1,0 +1,159 @@
+{
+  "capturedAt": "2026-09-10T15:44:26.806257+00:00",
+  "classification": "Operational deadline failures, not passing strictness or performance evidence",
+  "consumerRoot": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo",
+  "sourceRevision": "2596ad2c03ef401e53fe2d83c0556e6f2f81ff9d",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "packSource": "Local clean37 pack with verified same-source .30 native assets; separate from final37 CI package bytes",
+  "hostLoadObservation": {
+    "logicalCpu": 14,
+    "loadAverage": [181.66, 110.89, 56.61],
+    "timeApproxUtc": "2026-09-10T15:21:00Z",
+    "causality": "Heavy load observed, exact deadline cause not established"
+  },
+  "files": [
+    {
+      "path": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/.intl-candidate/evidence/producer.json",
+      "sha256": "9e8be7de0cc86f20437cf5f66e6205e42bf88cd219cc8882469930db17d16827",
+      "result": {
+        "command": "check",
+        "diagnostics": [
+          {
+            "code": "INTL_CATALOG_INVALID",
+            "hint": "Fix the catalog or proof finding, then rerun mirai-intl prove.",
+            "message": "Mirai Intl dormant V3 publication deadline expired",
+            "severity": "error"
+          },
+          {
+            "code": "INTL_CATALOG_INVALID",
+            "hint": "Fix the catalog or proof finding, then rerun mirai-intl prove.",
+            "message": "Mirai Intl dormant V3 publication deadline expired",
+            "severity": "error"
+          },
+          {
+            "code": "INTL_CATALOG_INVALID",
+            "hint": "Fix the catalog or proof finding, then rerun mirai-intl prove.",
+            "message": "Mirai Intl dormant V3 publication deadline expired",
+            "severity": "error"
+          }
+        ],
+        "schemaVersion": 1,
+        "success": false,
+        "summary": {
+          "catalogCount": 5,
+          "checkerProjects": 0,
+          "ownerProjects": 2,
+          "projects": [
+            {
+              "findings": 0,
+              "path": "apps/admin",
+              "valid": true
+            },
+            {
+              "findings": 1,
+              "path": "apps/auth",
+              "valid": false
+            },
+            {
+              "findings": 1,
+              "path": "apps/instructor",
+              "valid": false
+            },
+            {
+              "findings": 1,
+              "path": "apps/learner",
+              "valid": false
+            },
+            {
+              "findings": 0,
+              "path": "packages/i18n",
+              "valid": true
+            }
+          ],
+          "semanticAuthorizationRuns": 1,
+          "semanticFilesAnalyzed": 613,
+          "valid": false
+        }
+      }
+    },
+    {
+      "path": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/.intl-candidate/evidence/auth-serial/summary.json",
+      "sha256": "0db9a07473bf37b3eb062be99b3663a0afb5c713569bd293b875f89998ef02f2",
+      "result": {
+        "success": false,
+        "stage": "fresh standalone Auth prove",
+        "classification": "operational deadline failure; no invalid-input acceptance evidence",
+        "producerChildrenExitedBeforeRun": true,
+        "engine": "rust",
+        "scope": "single catalog; correctness only; not benchmark",
+        "command": {
+          "command": [
+            "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin/node",
+            "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/apps/admin/node_modules/@openmirai/intl/dist/cli.js",
+            "prove",
+            "--format=json"
+          ],
+          "cwd": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/apps/auth",
+          "startEpoch": 1789054193.97614,
+          "timeoutSeconds": 180,
+          "engine": "rust",
+          "exitCode": 1,
+          "elapsedSeconds": 88.24224305152893
+        },
+        "diagnostics": [
+          {
+            "code": "INTL_CATALOG_INVALID",
+            "hint": "Fix the catalog or proof finding, then rerun mirai-intl prove.",
+            "message": "Mirai Intl dormant V3 publication deadline expired",
+            "severity": "error"
+          }
+        ],
+        "strictnessCasesExecuted": 0,
+        "versionProbesExecuted": 0,
+        "authoredProbeMutations": 0,
+        "authorityQuarantine": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/.intl-candidate/evidence/auth-serial/pre-standalone-authority",
+        "retry": false,
+        "originalWorkspaceEvidenceUnchanged": true,
+        "resultSha256": "5cf2cb1a3665bffec93b32d58640f87fb755e2ed1f5c66894143ef3405899f6a"
+      }
+    },
+    {
+      "path": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/.intl-candidate/evidence/auth-serial/standalone-prove.json",
+      "sha256": "5cf2cb1a3665bffec93b32d58640f87fb755e2ed1f5c66894143ef3405899f6a",
+      "result": {
+        "command": "prove",
+        "diagnostics": [
+          {
+            "code": "INTL_CATALOG_INVALID",
+            "hint": "Fix the catalog or proof finding, then rerun mirai-intl prove.",
+            "message": "Mirai Intl dormant V3 publication deadline expired",
+            "severity": "error"
+          }
+        ],
+        "schemaVersion": 1,
+        "success": false,
+        "summary": {
+          "valid": false
+        }
+      }
+    },
+    {
+      "path": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/.intl-candidate/evidence/auth-serial/standalone-command.json",
+      "sha256": "0a601d89e3eee07a8827e2e14fa268967bc28f1377ecb3608136949ae2e0df60",
+      "result": {
+        "command": [
+          "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin/node",
+          "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/apps/admin/node_modules/@openmirai/intl/dist/cli.js",
+          "prove",
+          "--format=json"
+        ],
+        "cwd": "/private/tmp/intl-native-semantic-consumer.bPVcp5Wo/apps/auth",
+        "startEpoch": 1789054193.97614,
+        "timeoutSeconds": 180,
+        "engine": "rust",
+        "exitCode": 1,
+        "elapsedSeconds": 88.24224305152893
+      }
+    }
+  ]
+}

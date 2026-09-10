@@ -1,0 +1,1623 @@
+{
+  "capturedAt": "2026-09-10T18:08:59.095150+00:00",
+  "status": "success",
+  "runId": 34510179246,
+  "url": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34510179246",
+  "sourceRevision": "911339ca7ac0df9cc37acf2201898ac55505291f",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "candidatePin": {
+    "schemaVersion": 1,
+    "repository": "openmirai/mirai-intl",
+    "repositoryId": 1302569862,
+    "prHeadSha": "37a8628f66cd793330db2d5a163287f8454182a8",
+    "sourceSha": "1324a5ebe03865128f4f1468ea671442cd708367",
+    "sourceTree": "6cf328a934ac7ddb6a550e0f4e292c301ee2ef50",
+    "runId": 34494038965,
+    "runAttempt": 1,
+    "workflowPath": ".github/workflows/native-build-ci.yml",
+    "artifact": {
+      "id": 10159503087,
+      "name": "intl-candidate-packages-1324a5ebe03865128f4f1468ea671442cd708367-1",
+      "digest": "sha256:36c8a1109c7ac63698770365f2e51f20eced9381ab2dd91d467dba6c50654428",
+      "size": 7017305
+    }
+  },
+  "artifact": {
+    "id": 10166169123,
+    "node_id": "MDg6QXJ0aWZhY3QxMDE2NjE2OTEyMw==",
+    "name": "intl-native-benchmark-evidence-34510179246-1",
+    "size_in_bytes": 1032414,
+    "url": "https://api.github.com/repos/openmirai/fe-mirai-org-turbo/actions/artifacts/10166169123",
+    "archive_download_url": "https://api.github.com/repos/openmirai/fe-mirai-org-turbo/actions/artifacts/10166169123/zip",
+    "expired": false,
+    "digest": "sha256:1e1d217f27c385c29a958c2a151aa705edbb2287aaebf655b092e58e4a6e4d7f",
+    "created_at": "2026-09-10T18:04:31Z",
+    "updated_at": "2026-09-10T18:04:31Z",
+    "expires_at": "2026-09-24T18:04:30Z",
+    "workflow_run": {
+      "id": 34510179246,
+      "repository_id": 1005969136,
+      "head_repository_id": 1005969136,
+      "head_branch": "codex/intl-native-ci-adoption",
+      "head_sha": "911339ca7ac0df9cc37acf2201898ac55505291f"
+    }
+  },
+  "archiveSha256": "1e1d217f27c385c29a958c2a151aa705edbb2287aaebf655b092e58e4a6e4d7f",
+  "retainedArchive": "workspace-verify-ci-34510179246.zip in private Turbo evidence directory",
+  "statistics": {
+    "profile": "verify",
+    "samplesPerCell": 10,
+    "manifestSha256": "91221af57f71d4a1747bbbdba83d669669d3fe7e0d6732da337b9d116831f59f",
+    "status": "complete-input-summary",
+    "results": {
+      "verify-cold-node": {
+        "summary": {
+          "wallMs": {
+            "n": 10,
+            "mean": 17418.0906667,
+            "median": 17394.932597500003,
+            "p95": 17846.665439000004,
+            "min": 17218.746678000003,
+            "max": 17846.665439000004,
+            "sampleVariance": 31890.04555283348,
+            "sampleSd": 178.57784171848834,
+            "populationVariance": 28701.04099755013,
+            "populationSd": 169.41381584023816,
+            "totalSamples": 10
+          },
+          "officialCpuMs": {
+            "n": 10,
+            "mean": 21255,
+            "median": 21205,
+            "p95": 22200,
+            "min": 20950,
+            "max": 22200,
+            "sampleVariance": 131894.44444444444,
+            "sampleSd": 363.17274738675593,
+            "populationVariance": 118705,
+            "populationSd": 344.53591975293375,
+            "totalSamples": 10
+          },
+          "officialMaxRssBytes": {
+            "n": 10,
+            "mean": 920950374.4,
+            "median": 935866368,
+            "p95": 1063325696,
+            "min": 670543872,
+            "max": 1063325696,
+            "sampleVariance": 9526696103891580,
+            "sampleSd": 97604795.49638727,
+            "populationVariance": 8574026493502422,
+            "populationSd": 92596039.29705861,
+            "totalSamples": 10
+          },
+          "sampledTreeCpuMs": {
+            "n": 10,
+            "mean": 20800,
+            "median": 21000,
+            "p95": 22000,
+            "min": 20000,
+            "max": 22000,
+            "sampleVariance": 400000,
+            "sampleSd": 632.4555320336759,
+            "populationVariance": 360000,
+            "populationSd": 600,
+            "totalSamples": 10
+          },
+          "sampledTreePeakRssBytes": {
+            "n": 10,
+            "mean": 916245708.8,
+            "median": 932249600,
+            "p95": 1064091648,
+            "min": 662228992,
+            "max": 1064091648,
+            "sampleVariance": 9926149740819616,
+            "sampleSd": 99630064.44251461,
+            "populationVariance": 8933534766737654,
+            "populationSd": 94517378.12031,
+            "totalSamples": 10
+          }
+        },
+        "blocks": [
+          {
+            "label": "verify-cold-node-0",
+            "sha256": "bde3dedcfdc568dec46d5cbef4441a7804a4025f76d563ad99da13415f43d089",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 17407.9036922,
+                "median": 17414.205472,
+                "p95": 17540.228647999997,
+                "min": 17218.746678000003,
+                "max": 17540.228647999997,
+                "sampleVariance": 14252.922775712406,
+                "sampleSd": 119.3856053957612,
+                "populationVariance": 11402.338220569925,
+                "populationSd": 106.7817316799551,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 21202,
+                "median": 21250,
+                "p95": 21350,
+                "min": 20980,
+                "max": 21350,
+                "sampleVariance": 19970,
+                "sampleSd": 141.315250415516,
+                "populationVariance": 15976,
+                "populationSd": 126.39620247459969,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 885528166.4,
+                "median": 932003840,
+                "p95": 948879360,
+                "min": 670543872,
+                "max": 948879360,
+                "sampleVariance": 14503278411566286,
+                "sampleSd": 120429557.88163587,
+                "populationVariance": 11602622729253028,
+                "populationSd": 107715471.16943336,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 20800,
+                "median": 21000,
+                "p95": 21000,
+                "min": 20000,
+                "max": 21000,
+                "sampleVariance": 200000,
+                "sampleSd": 447.21359549995793,
+                "populationVariance": 160000,
+                "populationSd": 400,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 880906240,
+                "median": 928624640,
+                "p95": 944820224,
+                "min": 662228992,
+                "max": 944820224,
+                "sampleVariance": 15008501617131520,
+                "sampleSd": 122509189.92929274,
+                "populationVariance": 12006801293705216,
+                "populationSd": 109575550.62013248,
+                "totalSamples": 5
+              }
+            }
+          },
+          {
+            "label": "verify-cold-node-1",
+            "sha256": "88f752452c9dca1ae6d3b1216cf26cd80ab9d262350ad25a0e2f4b343807f5cc",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 17428.277641200002,
+                "median": 17346.100144,
+                "p95": 17846.665439000004,
+                "min": 17256.203376000005,
+                "max": 17846.665439000004,
+                "sampleVariance": 57240.24359450376,
+                "sampleSd": 239.24933352990507,
+                "populationVariance": 45792.194875603,
+                "populationSd": 213.99110933775498,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 21308,
+                "median": 21040,
+                "p95": 22200,
+                "min": 20950,
+                "max": 22200,
+                "sampleVariance": 269770,
+                "sampleSd": 519.3938775149356,
+                "populationVariance": 215816,
+                "populationSd": 464.56000688823826,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 956372582.4,
+                "median": 936964096,
+                "p95": 1063325696,
+                "min": 904384512,
+                "max": 1063325696,
+                "sampleVariance": 3794955773201613,
+                "sampleSd": 61603212.361058034,
+                "populationVariance": 3035964618561290.5,
+                "populationSd": 55099588.18867243,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 20800,
+                "median": 21000,
+                "p95": 22000,
+                "min": 20000,
+                "max": 22000,
+                "sampleVariance": 700000,
+                "sampleSd": 836.6600265340755,
+                "populationVariance": 560000,
+                "populationSd": 748.3314773547883,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 951585177.6,
+                "median": 935874560,
+                "p95": 1064091648,
+                "min": 898068480,
+                "max": 1064091648,
+                "sampleVariance": 4203140162047180.5,
+                "sampleSd": 64831629.33358362,
+                "populationVariance": 3362512129637744.5,
+                "populationSd": 57987172.11278495,
+                "totalSamples": 5
+              }
+            }
+          }
+        ]
+      },
+      "verify-cold-rust": {
+        "summary": {
+          "wallMs": {
+            "n": 10,
+            "mean": 16552.615503800003,
+            "median": 16584.425624999996,
+            "p95": 16647.660631000002,
+            "min": 16431.20902400001,
+            "max": 16647.660631000002,
+            "sampleVariance": 7270.585481117016,
+            "sampleSd": 85.26772825117962,
+            "populationVariance": 6543.526933005314,
+            "populationSd": 80.89206965460406,
+            "totalSamples": 10
+          },
+          "officialCpuMs": {
+            "n": 10,
+            "mean": 20177,
+            "median": 20195,
+            "p95": 20360,
+            "min": 19930,
+            "max": 20360,
+            "sampleVariance": 24001.11111111111,
+            "sampleSd": 154.92291990248282,
+            "populationVariance": 21601,
+            "populationSd": 146.972786596703,
+            "totalSamples": 10
+          },
+          "officialMaxRssBytes": {
+            "n": 10,
+            "mean": 833055948.8,
+            "median": 871919616,
+            "p95": 931631104,
+            "min": 663138304,
+            "max": 931631104,
+            "sampleVariance": 9885759495541012,
+            "sampleSd": 99427156.73064886,
+            "populationVariance": 8897183545986910,
+            "populationSd": 94324882.9630173,
+            "totalSamples": 10
+          },
+          "sampledTreeCpuMs": {
+            "n": 10,
+            "mean": 19900,
+            "median": 20000,
+            "p95": 20000,
+            "min": 19000,
+            "max": 20000,
+            "sampleVariance": 100000,
+            "sampleSd": 316.22776601683796,
+            "populationVariance": 90000,
+            "populationSd": 300,
+            "totalSamples": 10
+          },
+          "sampledTreePeakRssBytes": {
+            "n": 10,
+            "mean": 830399692.8,
+            "median": 869593088,
+            "p95": 926785536,
+            "min": 660938752,
+            "max": 926785536,
+            "sampleVariance": 9688689295357088,
+            "sampleSd": 98431139.86618812,
+            "populationVariance": 8719820365821379,
+            "populationSd": 93379978.39912675,
+            "totalSamples": 10
+          }
+        },
+        "blocks": [
+          {
+            "label": "verify-cold-rust-0",
+            "sha256": "e19241911c34b4a927c7f492dc124b228cd62509477906c1a30353388227569c",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 16558.8298688,
+                "median": 16591.453618999996,
+                "p95": 16647.660631000002,
+                "min": 16431.20902400001,
+                "max": 16647.660631000002,
+                "sampleVariance": 9158.722801132963,
+                "sampleSd": 95.70121629913051,
+                "populationVariance": 7326.97824090637,
+                "populationSd": 85.59777006970667,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 20194,
+                "median": 20270,
+                "p95": 20360,
+                "min": 19930,
+                "max": 20360,
+                "sampleVariance": 31330,
+                "sampleSd": 177.00282483621552,
+                "populationVariance": 25064,
+                "populationSd": 158.3161394173064,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 833730150.4,
+                "median": 892878848,
+                "p95": 931631104,
+                "min": 663138304,
+                "max": 931631104,
+                "sampleVariance": 14054125889965260,
+                "sampleSd": 118550098.65017094,
+                "populationVariance": 11243300711972208,
+                "populationSd": 106034431.72843531,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 19800,
+                "median": 20000,
+                "p95": 20000,
+                "min": 19000,
+                "max": 20000,
+                "sampleVariance": 200000,
+                "sampleSd": 447.21359549995793,
+                "populationVariance": 160000,
+                "populationSd": 400,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 830556569.6,
+                "median": 887410688,
+                "p95": 926785536,
+                "min": 660938752,
+                "max": 926785536,
+                "sampleVariance": 13705605626514636,
+                "sampleSd": 117070942.70789245,
+                "populationVariance": 10964484501211708,
+                "populationSd": 104711434.43393232,
+                "totalSamples": 5
+              }
+            }
+          },
+          {
+            "label": "verify-cold-rust-1",
+            "sha256": "30cc0bf49d272551349d859d3d78eebdd8fd9c409ca0effdabae2f1e77845439",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 16546.4011388,
+                "median": 16577.397631,
+                "p95": 16624.107469000002,
+                "min": 16451.835485000003,
+                "max": 16624.107469000002,
+                "sampleVariance": 7103.548700497222,
+                "sampleSd": 84.2825527644792,
+                "populationVariance": 5682.838960397778,
+                "populationSd": 75.38460691943533,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 20160,
+                "median": 20120,
+                "p95": 20340,
+                "min": 20010,
+                "max": 20340,
+                "sampleVariance": 21950,
+                "sampleSd": 148.15532390029054,
+                "populationVariance": 17560,
+                "populationSd": 132.51415018781955,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 832381747.2,
+                "median": 850960384,
+                "p95": 921014272,
+                "min": 733671424,
+                "max": 921014272,
+                "sampleVariance": 8187696605508403,
+                "sampleSd": 90485891.74842896,
+                "populationVariance": 6550157284406722,
+                "populationSd": 80933041.98166977,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 20000,
+                "median": 20000,
+                "p95": 20000,
+                "min": 20000,
+                "max": 20000,
+                "sampleVariance": 0,
+                "sampleSd": 0,
+                "populationVariance": 0,
+                "populationSd": 0,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 830242816,
+                "median": 851775488,
+                "p95": 914808832,
+                "min": 734392320,
+                "max": 914808832,
+                "sampleVariance": 8093883762212864,
+                "sampleSd": 89966014.48443109,
+                "populationVariance": 6475107009770291,
+                "populationSd": 80468049.62076744,
+                "totalSamples": 5
+              }
+            }
+          }
+        ]
+      },
+      "verify-warm-node": {
+        "summary": {
+          "wallMs": {
+            "n": 10,
+            "mean": 16780.410093000002,
+            "median": 16793.705381000003,
+            "p95": 16868.99764,
+            "min": 16714.352486999996,
+            "max": 16868.99764,
+            "sampleVariance": 2342.600639651287,
+            "sampleSd": 48.40041982928751,
+            "populationVariance": 2108.3405756861584,
+            "populationSd": 45.91666991067796,
+            "totalSamples": 10
+          },
+          "officialCpuMs": {
+            "n": 0,
+            "mean": null,
+            "median": null,
+            "p95": null,
+            "min": null,
+            "max": null,
+            "sampleVariance": null,
+            "sampleSd": null,
+            "populationVariance": null,
+            "populationSd": null,
+            "totalSamples": 10
+          },
+          "officialMaxRssBytes": {
+            "n": 0,
+            "mean": null,
+            "median": null,
+            "p95": null,
+            "min": null,
+            "max": null,
+            "sampleVariance": null,
+            "sampleSd": null,
+            "populationVariance": null,
+            "populationSd": null,
+            "totalSamples": 10
+          },
+          "sampledTreeCpuMs": {
+            "n": 10,
+            "mean": 19800,
+            "median": 20000,
+            "p95": 20000,
+            "min": 19000,
+            "max": 20000,
+            "sampleVariance": 177777.77777777778,
+            "sampleSd": 421.63702135578393,
+            "populationVariance": 160000,
+            "populationSd": 400,
+            "totalSamples": 10
+          },
+          "sampledTreePeakRssBytes": {
+            "n": 10,
+            "mean": 894325145.6,
+            "median": 860700672,
+            "p95": 999956480,
+            "min": 820428800,
+            "max": 999956480,
+            "sampleVariance": 4842254746884505,
+            "sampleSd": 69586311.49072714,
+            "populationVariance": 4358029272196054.5,
+            "populationSd": 66015371.48419339,
+            "totalSamples": 10
+          }
+        },
+        "blocks": [
+          {
+            "label": "verify-warm-node-0",
+            "sha256": "83cf30c21987ea0e0638f5f2b29063b45eef2170d39f0834b4dd586fffbdeaac",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 16765.922665600003,
+                "median": 16775.188510000007,
+                "p95": 16812.446509,
+                "min": 16721.30038700001,
+                "max": 16812.446509,
+                "sampleVariance": 1731.9822286576318,
+                "sampleSd": 41.61709058376897,
+                "populationVariance": 1385.5857829261054,
+                "populationSd": 37.223457428429526,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 19800,
+                "median": 20000,
+                "p95": 20000,
+                "min": 19000,
+                "max": 20000,
+                "sampleVariance": 200000,
+                "sampleSd": 447.21359549995793,
+                "populationVariance": 160000,
+                "populationSd": 400,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 905507635.2,
+                "median": 861880320,
+                "p95": 991399936,
+                "min": 857657344,
+                "max": 991399936,
+                "sampleVariance": 4086227837072179.5,
+                "sampleSd": 63923609.38708154,
+                "populationVariance": 3268982269657743.5,
+                "populationSd": 57175014.3826632,
+                "totalSamples": 5
+              }
+            }
+          },
+          {
+            "label": "verify-warm-node-1",
+            "sha256": "a5cc5458491a4cf0c9f75e9a59d2e2ac6e1e550e6d6a1362084e23823af4f2f4",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 16794.8975204,
+                "median": 16798.292612999998,
+                "p95": 16868.99764,
+                "min": 16714.352486999996,
+                "max": 16868.99764,
+                "sampleVariance": 3014.1553288822593,
+                "sampleSd": 54.901323562208034,
+                "populationVariance": 2411.3242631058074,
+                "populationSd": 49.10523661592323,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 19800,
+                "median": 20000,
+                "p95": 20000,
+                "min": 19000,
+                "max": 20000,
+                "sampleVariance": 200000,
+                "sampleSd": 447.21359549995793,
+                "populationVariance": 160000,
+                "populationSd": 400,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 883142656,
+                "median": 832962560,
+                "p95": 999956480,
+                "min": 820428800,
+                "max": 999956480,
+                "sampleVariance": 6496225159282688,
+                "sampleSd": 80599163.51478276,
+                "populationVariance": 5196980127426150,
+                "populationSd": 72090083.41947004,
+                "totalSamples": 5
+              }
+            }
+          }
+        ]
+      },
+      "verify-warm-rust": {
+        "summary": {
+          "wallMs": {
+            "n": 10,
+            "mean": 15733.984938499998,
+            "median": 15729.595799499997,
+            "p95": 15819.837186999997,
+            "min": 15673.45369699999,
+            "max": 15819.837186999997,
+            "sampleVariance": 2066.409843376864,
+            "sampleSd": 45.45778088926981,
+            "populationVariance": 1859.7688590391776,
+            "populationSd": 43.12503749609011,
+            "totalSamples": 10
+          },
+          "officialCpuMs": {
+            "n": 0,
+            "mean": null,
+            "median": null,
+            "p95": null,
+            "min": null,
+            "max": null,
+            "sampleVariance": null,
+            "sampleSd": null,
+            "populationVariance": null,
+            "populationSd": null,
+            "totalSamples": 10
+          },
+          "officialMaxRssBytes": {
+            "n": 0,
+            "mean": null,
+            "median": null,
+            "p95": null,
+            "min": null,
+            "max": null,
+            "sampleVariance": null,
+            "sampleSd": null,
+            "populationVariance": null,
+            "populationSd": null,
+            "totalSamples": 10
+          },
+          "sampledTreeCpuMs": {
+            "n": 10,
+            "mean": 18400,
+            "median": 18000,
+            "p95": 19000,
+            "min": 18000,
+            "max": 19000,
+            "sampleVariance": 266666.6666666667,
+            "sampleSd": 516.3977794943223,
+            "populationVariance": 240000,
+            "populationSd": 489.89794855663564,
+            "totalSamples": 10
+          },
+          "sampledTreePeakRssBytes": {
+            "n": 10,
+            "mean": 966350438.4,
+            "median": 979193856,
+            "p95": 1008119808,
+            "min": 895619072,
+            "max": 1008119808,
+            "sampleVariance": 1503855426480082.8,
+            "sampleSd": 38779574.862033784,
+            "populationVariance": 1353469883832074.5,
+            "populationSd": 36789534.97711101,
+            "totalSamples": 10
+          }
+        },
+        "blocks": [
+          {
+            "label": "verify-warm-rust-0",
+            "sha256": "d3e8ae4e265c1406a56051ee16becfcf690b06ff4b226e1f66e2713688c7e6c9",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 15740.563367399998,
+                "median": 15761.223529000003,
+                "p95": 15768.880323999998,
+                "min": 15692.340155999991,
+                "max": 15768.880323999998,
+                "sampleVariance": 1215.0831510885773,
+                "sampleSd": 34.858042846502116,
+                "populationVariance": 972.0665208708618,
+                "populationSd": 31.177981346951597,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 18400,
+                "median": 18000,
+                "p95": 19000,
+                "min": 18000,
+                "max": 19000,
+                "sampleVariance": 300000,
+                "sampleSd": 547.7225575051662,
+                "populationVariance": 240000,
+                "populationSd": 489.89794855663564,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 935272448,
+                "median": 933584896,
+                "p95": 973991936,
+                "min": 895619072,
+                "max": 973991936,
+                "sampleVariance": 886240647839744,
+                "sampleSd": 29769794.21896873,
+                "populationVariance": 708992518271795.2,
+                "populationSd": 26626913.419917736,
+                "totalSamples": 5
+              }
+            }
+          },
+          {
+            "label": "verify-warm-rust-1",
+            "sha256": "6648f266a8467b5b763fe56ab722bcbb7d4184c55a179a2d883b0fc27b799c52",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 15727.406509599998,
+                "median": 15728.181270999998,
+                "p95": 15819.837186999997,
+                "min": 15673.45369699999,
+                "max": 15819.837186999997,
+                "sampleVariance": 3326.149679528469,
+                "sampleSd": 57.67278109757209,
+                "populationVariance": 2660.919743622775,
+                "populationSd": 51.58410359425445,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null,
+                "sampleVariance": null,
+                "sampleSd": null,
+                "populationVariance": null,
+                "populationSd": null,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 18400,
+                "median": 18000,
+                "p95": 19000,
+                "min": 18000,
+                "max": 19000,
+                "sampleVariance": 300000,
+                "sampleSd": 547.7225575051662,
+                "populationVariance": 240000,
+                "populationSd": 489.89794855663564,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 997428428.8,
+                "median": 996929536,
+                "p95": 1008119808,
+                "min": 984395776,
+                "max": 1008119808,
+                "sampleVariance": 82830343484211.19,
+                "sampleSd": 9101117.705216827,
+                "populationVariance": 66264274787368.95,
+                "populationSd": 8140287.144036686,
+                "totalSamples": 5
+              }
+            }
+          }
+        ]
+      }
+    },
+    "environments": [
+      {
+        "label": "verify-cold-node-0",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7179284480
+          },
+          "loadAverage": [1.73, 1.96, 2.21],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135806844928",
+            "availableBytes": "135806844928",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-cold-rust-0",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7177797632
+          },
+          "loadAverage": [1.41, 1.81, 2.13],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135806304256",
+            "availableBytes": "135806304256",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-warm-node-0",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7155748864
+          },
+          "loadAverage": [1.27, 1.69, 2.06],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135805636608",
+            "availableBytes": "135805636608",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-warm-rust-0",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7123529728
+          },
+          "loadAverage": [1.38, 1.57, 1.97],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135804968960",
+            "availableBytes": "135804968960",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-warm-rust-1",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7113203712
+          },
+          "loadAverage": [1.47, 1.55, 1.92],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135804305408",
+            "availableBytes": "135804305408",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-warm-node-1",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7112843264
+          },
+          "loadAverage": [1.73, 1.64, 1.91],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135803600896",
+            "availableBytes": "135803600896",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-cold-rust-1",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7110275072
+          },
+          "loadAverage": [1.23, 1.51, 1.84],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135802806272",
+            "availableBytes": "135802806272",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "verify-cold-node-1",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src1022366385/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7110467584
+          },
+          "loadAverage": [1.3, 1.48, 1.8],
+          "storage": {
+            "path": "/codebuild/output/src1022366385/src/actions-runner/_work/_temp/intl-ci-benchmark.KzxwtL62/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135802204160",
+            "availableBytes": "135802204160",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n10:memory:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n9:blkio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n8:freezer:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n7:cpuset:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n6:pids:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n5:perf_event:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n4:net_cls,net_prio:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n3:hugetlb:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n2:cpu,cpuacct:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n1:name=systemd:/ecs/fd065143-82b2-4f00-8c3b-32608453dadb/d380576cb2ffdc16fe09811a0c2bd531b3d298f5184877c7fbef7e84eb615907\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      }
+    ],
+    "scope": {
+      "profile": "verify",
+      "cold": "fresh-process",
+      "warm": "persistent-node-api-driver",
+      "rustTransport": "node-api-addon",
+      "nativeLifetime": "fresh public API operation scope per call; no benchmark-installed shared scope",
+      "lifetimeEvidence": "compiler public API contract, not instrumented native construction counts",
+      "osCachesCleared": false,
+      "candidateOnly": true,
+      "compilationAllowed": false,
+      "samplesPerCell": 10,
+      "warmupsPerWorker": 1,
+      "expectedCells": 4,
+      "reverseBlocks": 2,
+      "wholeProfileBudgetMs": 2100000
+    },
+    "semantics": {
+      "cold": "fresh child per sample; OS caches NOT cleared",
+      "warm": "one persistent cooperating protocol worker; wall includes IPC; no per-operation time(1) high-water attribution",
+      "statistics": "median averages the two middle values; p95 nearest rank; sample variance/SD use n-1, null for n<2; variances have squared metric units",
+      "resources": "time maxRSS is NOT tree peak; sampled tree RSS is max(sum of live RSS at each poll), not sum of per-process peaks",
+      "isolation": "No CPU pinning, cache clearing or isolated cgroup; escaped sessions may evade process-group cleanup",
+      "environment": "Inherited environment values are not recorded; LC_ALL=C is applied. Exact command argv is recorded: do not pass secrets as command arguments"
+    },
+    "limitations": [
+      "Artifact authenticity, CI run/source identity and actual workload acceptance require separate verification.",
+      "Cold means fresh process; OS caches were not cleared.",
+      "Warm official CPU/maxRSS is unavailable per operation; sampled process-tree counters are estimates.",
+      "Sample variance uses n-1; p95 uses nearest rank and equals max at n10.",
+      "Do not average block p95 values; reported full-cell statistics pool raw observations.",
+      "Only the corrected candidate Node/Rust cells support equal-coverage engine comparisons."
+    ]
+  },
+  "wallPercentImprovement": {
+    "cold": {
+      "median": 4.659443018574805,
+      "p95": 6.718368829730159
+    },
+    "warm": {
+      "median": 6.336359709536854,
+      "p95": 6.21945936202054
+    }
+  },
+  "harness": {
+    "repository": "openmirai/mirai-intl",
+    "revision": "7f02a9ec5c555bfd993395e1c1573ff7902f9240",
+    "path": "benchmarks/ci-operation.mjs",
+    "sha256": "95dfd0c72a0eee6f85faee5a738e0d6cb841d2af5490495916bde79e406a7c35"
+  },
+  "scope": {
+    "profile": "verify",
+    "cold": "fresh-process",
+    "warm": "persistent-node-api-driver",
+    "rustTransport": "node-api-addon",
+    "nativeLifetime": "fresh public API operation scope per call; no benchmark-installed shared scope",
+    "lifetimeEvidence": "compiler public API contract, not instrumented native construction counts",
+    "osCachesCleared": false,
+    "candidateOnly": true,
+    "compilationAllowed": false,
+    "samplesPerCell": 10,
+    "warmupsPerWorker": 1,
+    "expectedCells": 4,
+    "reverseBlocks": 2,
+    "wholeProfileBudgetMs": 2100000
+  },
+  "run": {
+    "conclusion": "success",
+    "createdAt": "2026-09-10T17:45:42Z",
+    "headSha": "911339ca7ac0df9cc37acf2201898ac55505291f",
+    "jobs": [
+      {
+        "completedAt": "2026-09-10T18:04:40Z",
+        "conclusion": "success",
+        "databaseId": 102982080407,
+        "name": "Measure Intl performance",
+        "startedAt": "2026-09-10T17:45:59Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-09-10T17:46:01Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-09-10T17:45:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:04Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v6",
+            "number": 2,
+            "startedAt": "2026-09-10T17:46:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:07Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v6",
+            "number": 3,
+            "startedAt": "2026-09-10T17:46:04Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:08Z",
+            "conclusion": "success",
+            "name": "Run pnpm/setup@v2.1.0",
+            "number": 4,
+            "startedAt": "2026-09-10T17:46:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:08Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/configure-npm-auth",
+            "number": 5,
+            "startedAt": "2026-09-10T17:46:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:29Z",
+            "conclusion": "success",
+            "name": "Install locked verifier tools without saving a dependency cache",
+            "number": 6,
+            "startedAt": "2026-09-10T17:46:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:30Z",
+            "conclusion": "success",
+            "name": "Pin reviewed library producer and candidate artifact",
+            "number": 7,
+            "startedAt": "2026-09-10T17:46:29Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:31Z",
+            "conclusion": "success",
+            "name": "Run actions/download-artifact@v8",
+            "number": 8,
+            "startedAt": "2026-09-10T17:46:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:31Z",
+            "conclusion": "success",
+            "name": "Recheck producer after artifact download",
+            "number": 9,
+            "startedAt": "2026-09-10T17:46:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:32Z",
+            "conclusion": "success",
+            "name": "Verify and prepare exact candidate package inputs",
+            "number": 10,
+            "startedAt": "2026-09-10T17:46:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:50Z",
+            "conclusion": "success",
+            "name": "Install candidate without Rust compilation",
+            "number": 11,
+            "startedAt": "2026-09-10T17:46:32Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:46:50Z",
+            "conclusion": "success",
+            "name": "Capture actual runner and candidate resources",
+            "number": 12,
+            "startedAt": "2026-09-10T17:46:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:48:11Z",
+            "conclusion": "success",
+            "name": "Authorize all five catalogs and export authority",
+            "number": 13,
+            "startedAt": "2026-09-10T17:46:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:48:53Z",
+            "conclusion": "success",
+            "name": "Verify unchanged reuse skips audit and regeneration",
+            "number": 14,
+            "startedAt": "2026-09-10T17:48:11Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:48:53Z",
+            "conclusion": "success",
+            "name": "Isolate producer state and restore checked-in generation surfaces",
+            "number": 15,
+            "startedAt": "2026-09-10T17:48:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "success",
+            "name": "Verify authority import for downstream consumption",
+            "number": 16,
+            "startedAt": "2026-09-10T17:48:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Run candidate source quality and runtime contracts",
+            "number": 17,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Capture memory counters after source quality",
+            "number": 18,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Run every application test suite with candidate packages",
+            "number": 19,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Load reviewed public build inputs",
+            "number": 20,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Build all four apps in production mode and finalize proofs",
+            "number": 21,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Verify locale source and artifact strictness in the actual consumer",
+            "number": 22,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:34Z",
+            "conclusion": "skipped",
+            "name": "Verify all four version-only regeneration regressions",
+            "number": 23,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:45Z",
+            "conclusion": "success",
+            "name": "Prepare isolated inputs for repeated CI measurements",
+            "number": 24,
+            "startedAt": "2026-09-10T17:49:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T17:49:45Z",
+            "conclusion": "skipped",
+            "name": "Compare preparation and unchanged reuse on identical runner resources",
+            "number": 25,
+            "startedAt": "2026-09-10T17:49:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T18:04:30Z",
+            "conclusion": "success",
+            "name": "Compare fresh and persistent workspace verification on identical runner resources",
+            "number": 26,
+            "startedAt": "2026-09-10T17:49:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T18:04:31Z",
+            "conclusion": "success",
+            "name": "Upload acceptance and final artifact evidence",
+            "number": 27,
+            "startedAt": "2026-09-10T18:04:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T18:04:31Z",
+            "conclusion": "success",
+            "name": "Post Run pnpm/setup@v2.1.0",
+            "number": 52,
+            "startedAt": "2026-09-10T18:04:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T18:04:31Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-node@v6",
+            "number": 53,
+            "startedAt": "2026-09-10T18:04:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T18:04:32Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v6",
+            "number": 54,
+            "startedAt": "2026-09-10T18:04:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-10T18:04:32Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 55,
+            "startedAt": "2026-09-10T18:04:32Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34510179246/job/102982080407"
+      }
+    ],
+    "status": "completed",
+    "updatedAt": "2026-09-10T18:04:41Z"
+  },
+  "limitations": [
+    "Native warm sampled peak RSS median is higher than Node; report memory separately from time benefit.",
+    "Samples share the same exact input tree, packages and runner within this run; another profile runs on another allocation of the same resource configuration.",
+    "Warm API uses a persistent Node process; operation-scoped native state and verification barriers are renewed each call.",
+    "No dependency startup or app builds are included in each workspace verify observation."
+  ]
+}

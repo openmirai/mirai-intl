@@ -1,0 +1,16 @@
+{
+  "script": "tools/summarize-ci-profile.mjs",
+  "sha256": "a055f745f137b0e2312a54cb20073b9f21e515558c8a9f7359546316107023ec",
+  "node": "24.18.0",
+  "validation": [
+    "Actual8cell n2packedpilot aggregate passed with n2 in each pooled result",
+    "Default n10 rejects n2pilot before reporting",
+    "One-byte retained report mutation rejects digest mismatch",
+    "Final formatted/linted script reaggregated real n10 paired CI34506408677 successfully",
+    "144 focused malformed/contradictory input regressions pass; exact complete real paired and verify summaries unchanged after strict validation fixes"
+  ],
+  "performanceClaim": "None; existing n2pilot used to verify report calculation only.",
+  "statistics": "Uses reviewed benchmarks/ci-operation.mjs statistics function; pools raw observations, never averages block p95.",
+  "previousSha256": "d569cb1bebe59faf1edf6be9b78dc702bace8ad1e6e1eb70930abfc481d20d28",
+  "followup": "aggregation-fix-validation.json"
+}

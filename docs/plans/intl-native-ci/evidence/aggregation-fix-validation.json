@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-10T18:35:22.428050+00:00",
+  "status": "passed",
+  "node": "24.18.0",
+  "sourceRevision": "3eb49b8bd9126030e87528faf2c47197e73c7f85",
+  "scope": {
+    "implementationFiles": [
+      "docs/plans/intl-native-ci/tools/summarize-ci-profile.mjs",
+      "docs/plans/intl-native-ci/tools/summarize-ci-profile.test.mjs"
+    ],
+    "runtimeModified": false,
+    "benchmarksRerun": false,
+    "commitsOrPushes": false,
+    "retainedEvidenceSummariesModified": false,
+    "fixes": [
+      "Require canonical SHA-256 for every schema-required report/raw member; only externally authenticated result.json has no parent digest.",
+      "Reject missing, nonnumeric, nonfinite or negative wall time; validate both official CPU components and their sum before pooling.",
+      "Reject malformed provided optional resource metrics; preserve unavailable optional values including officialTime:null.",
+      "Validate cold/warm mode, sample/warmup options, measured-row flags and raw warmup classification/counts.",
+      "Support reuse-cold and reuse-warm with the chosen mode, both engines and two reversed blocks; retain all, verify, reuse and preparation profiles."
+    ]
+  },
+  "hashes": [
+    {
+      "path": "docs/plans/intl-native-ci/tools/summarize-ci-profile.mjs",
+      "sha256": "a055f745f137b0e2312a54cb20073b9f21e515558c8a9f7359546316107023ec"
+    },
+    {
+      "path": "docs/plans/intl-native-ci/tools/summarize-ci-profile.test.mjs",
+      "sha256": "28b67df6ea8f5cc3d90015b363f5a19e6d4afee1fcb1cd98fa62aca59278ce5b"
+    },
+    {
+      "path": "benchmarks/ci-operation.mjs",
+      "sha256": "95dfd0c72a0eee6f85faee5a738e0d6cb841d2af5490495916bde79e406a7c35"
+    }
+  ],
+  "reviewedPreviousHelperSha256": "d569cb1bebe59faf1edf6be9b78dc702bace8ad1e6e1eb70930abfc481d20d28",
+  "focusedTests": {
+    "command": [
+      "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin/node",
+      "--test",
+      "docs/plans/intl-native-ci/tools/summarize-ci-profile.test.mjs"
+    ],
+    "workingDirectory": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-patch-release",
+    "exitCode": 0,
+    "tests": 144,
+    "passed": 144,
+    "failed": 0,
+    "skipped": 0,
+    "durationMs": 5319.246875,
+    "resultOrigin": "Executed focused Node test runner in this implementation turn; retained terminal summary. Not rerun during evidence collection.",
+    "coverage": [
+      "Eight explicit preparation/workspace profiles and default-all compatibility",
+      "Matching-digest malformed measurement fixtures including missing values, null, strings, booleans, arrays, objects, negative values and JSON exponent overflow",
+      "Missing/malformed/mismatched required report and raw hashes",
+      "Official CPU component overflow and invalid optional resource measurements",
+      "Unavailable warm resource nulls and valid zero wall time",
+      "Contradictory cold/warm modes and measured/warmup classification",
+      "Raw warmup contamination and missing/duplicated/reordered/wrong-mode or wrong-engine blocks",
+      "Pooled raw nearest-rank p95 and n-1 sample variance"
+    ]
+  },
+  "checks": [
+    {
+      "command": [
+        "node_modules/.bin/oxlint",
+        "docs/plans/intl-native-ci/tools/summarize-ci-profile.mjs",
+        "docs/plans/intl-native-ci/tools/summarize-ci-profile.test.mjs"
+      ],
+      "nodePathPrefix": "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin",
+      "exitCode": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node_modules/.bin/oxfmt",
+        "--check",
+        "docs/plans/intl-native-ci/tools/summarize-ci-profile.mjs",
+        "docs/plans/intl-native-ci/tools/summarize-ci-profile.test.mjs"
+      ],
+      "nodePathPrefix": "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin",
+      "exitCode": 0,
+      "output": "Checking formatting...\n\nAll matched files use the correct format.\nFinished in 23ms on 2 files using 14 threads.\n"
+    }
+  ],
+  "positiveReaggregations": [
+    {
+      "archive": "/private/tmp/intl-native-execution-evidence/paired-ci-34506408677.zip",
+      "archiveSha256": "b8755198e106af83e0f27e7126f4817e61c96a2237faa442eccf970998667817",
+      "expectedEvidenceFile": "docs/plans/intl-native-ci/evidence/paired-ci-34506408677.json",
+      "expectedEvidenceSha256": "02a0b04bdeb188ed4d45415458a72922ad5940cb98246154beef946d3112e470",
+      "command": [
+        "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin/node",
+        "docs/plans/intl-native-ci/tools/summarize-ci-profile.mjs",
+        "/private/tmp/intl-summary-reaggregate-ykfjdutp"
+      ],
+      "timeoutSeconds": 30,
+      "exitCode": 0,
+      "stderr": "",
+      "stdoutSha256": "975ac124df3b8c2d65b4fb3531dfd3265dca16d01dd91a6a809c90ae03ecce9b",
+      "fullSummaryEqualsRetainedStatistics": true,
+      "canonicalSummarySha256": "746c88761a2106bdecabd65d7f573c0645600c774e4fbca747011d199c24a0d4",
+      "expectedCanonicalSummarySha256": "746c88761a2106bdecabd65d7f573c0645600c774e4fbca747011d199c24a0d4",
+      "profile": "paired",
+      "cells": ["candidate-node-full", "candidate-rust-full"],
+      "blocks": 4,
+      "samplesPerCell": 10,
+      "wallObservations": {
+        "candidate-node-full": 10,
+        "candidate-rust-full": 10
+      },
+      "extractionScope": "Only result.json and declared report/raw members; flat destination names; no symlinks, duplicate names or source-body extraction. Temporary extraction removed."
+    },
+    {
+      "archive": "/private/tmp/intl-native-execution-evidence/workspace-verify-ci-34510179246.zip",
+      "archiveSha256": "1e1d217f27c385c29a958c2a151aa705edbb2287aaebf655b092e58e4a6e4d7f",
+      "expectedEvidenceFile": "docs/plans/intl-native-ci/evidence/workspace-verify-ci-34510179246.json",
+      "expectedEvidenceSha256": "2596bb9762f3d0f179e1139f74a5085053ce043ba5e5b0614750d8db5a621832",
+      "command": [
+        "/Users/kentakoong/.nvm/versions/node/v24.18.0/bin/node",
+        "docs/plans/intl-native-ci/tools/summarize-ci-profile.mjs",
+        "/private/tmp/intl-summary-reaggregate-nwb2693m"
+      ],
+      "timeoutSeconds": 30,
+      "exitCode": 0,
+      "stderr": "",
+      "stdoutSha256": "4c383c04c9a08d342276c150e830a939572d3d4ff2cd0a788625f1e6209ef798",
+      "fullSummaryEqualsRetainedStatistics": true,
+      "canonicalSummarySha256": "0b6d58dced52c47ac61cbd5aa2e289cab75b8aa0bdc6a3f347106bb57707594c",
+      "expectedCanonicalSummarySha256": "0b6d58dced52c47ac61cbd5aa2e289cab75b8aa0bdc6a3f347106bb57707594c",
+      "profile": "verify",
+      "cells": [
+        "verify-cold-node",
+        "verify-cold-rust",
+        "verify-warm-node",
+        "verify-warm-rust"
+      ],
+      "blocks": 8,
+      "samplesPerCell": 10,
+      "wallObservations": {
+        "verify-cold-node": 10,
+        "verify-cold-rust": 10,
+        "verify-warm-node": 10,
+        "verify-warm-rust": 10
+      },
+      "extractionScope": "Only result.json and declared report/raw members; flat destination names; no symlinks, duplicate names or source-body extraction. Temporary extraction removed."
+    }
+  ],
+  "coordination": {
+    "method": "Read-only inspection of peer workspace createPlan",
+    "peerFile": ".github/scripts/benchmark-intl-workspace.mjs",
+    "peerRepository": "private consumer worktree",
+    "peerSha256": "d21656bccd58381e805d585f1d52def27982fce7c76fa006c63c40687c37e0de",
+    "reuse-cold": [
+      "reuse-cold-node-0",
+      "reuse-cold-rust-0",
+      "reuse-cold-rust-1",
+      "reuse-cold-node-1"
+    ],
+    "reuse-warm": [
+      "reuse-warm-node-0",
+      "reuse-warm-rust-0",
+      "reuse-warm-rust-1",
+      "reuse-warm-node-1"
+    ]
+  },
+  "limitations": [
+    "Aggregation validates internal input consistency; archive authenticity and actual engine/workload acceptance remain separate requirements.",
+    "Positive reaggregation uses retained measurements and creates no new performance evidence.",
+    "Full returned statistics objects match both retained real summaries; no new reuse-cold/reuse-warm CI distributions are claimed."
+  ]
+}

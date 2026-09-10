@@ -1,0 +1,40 @@
+{
+  "reviewedBase": "59553abbcb1386a48b90a314fcc3b4e3c837238e",
+  "files": {
+    ".github/scripts/benchmark-intl-ci.mjs": "eca90d7944875d871e9254295885feae970a9be7c5bd3afae2dd4b391cfabd16",
+    ".github/scripts/benchmark-intl-ci.test.mjs": "6372704e52dc92e1c02c92c7ec87a96207ac2f7e1224baceccde557739c6a36a",
+    ".github/scripts/benchmark-intl-workspace.mjs": "ede44367565a98b1575484b7c0efdb03181b54270fe19bbbafb4a6658acc2041",
+    ".github/scripts/benchmark-intl-workspace.test.mjs": "3eec1fc50b644f07277697c698af58374a6ea0891ac44e3f968dd56ec6574f51",
+    ".github/scripts/benchmark-intl-profile.mjs": "35b84b3f97b26bead54490be4322e2812238252bb163ab54505fdf1eb58e360a",
+    ".github/scripts/benchmark-intl-profile.test.mjs": "382e378af4f07ce29e425e953722ea0b01a256085f935e0d1ec0de9605ff00df",
+    ".github/workflows/intl-candidate.yml": "9e98d259a7e55e67ec8bc94d680a32d906b4eac90e4f8e1012e5850d0a5343d3",
+    ".github/intl-benchmark-profile.json": "13011b44757b89ac205624f7414af52d64c182d01adecc1e311b4eb5228e7a23"
+  },
+  "tests": {
+    "command": "Node24.18.0: node --test .github/scripts/*intl*.test.mjs",
+    "passed": 118,
+    "failed": 0,
+    "logSha256": "785c3110231a30507dd3b16e8f208899d01f9e6dac87f8065a3c621e53c28477"
+  },
+  "lint": {
+    "command": "corepack pnpm run lint",
+    "status": "passed",
+    "logSha256": "8bb5cb7e6ac23977ba730d6d8ffbf39939dd3c9188dcd7aaab3a0dd9759291a1"
+  },
+  "actionlint": "actionlint -shellcheck= .github/workflows/intl-candidate.yml passed",
+  "vplan": "vplan check /private/tmp/intl-execution-current.mdx passed",
+  "review": "Independent Standard10point review found no pushblocker; P3 programmatic nullprofile default corrected and regression passes. Runtime AWS completion and upload still require CI evidence.",
+  "profiles": [
+    "preparation-paired",
+    "preparation-context",
+    "workspace-verify",
+    "workspace-reuse"
+  ],
+  "samplesPerCell": 10,
+  "blocks": "two exact reverse-order blocks",
+  "budgetMs": 2100000,
+  "stepTimeoutMinutes": 40,
+  "effectiveAwsBuildTimeoutMinutes": 45,
+  "infrastructureChanged": false,
+  "performanceClaim": "None. Scheduling and guard regressions only."
+}

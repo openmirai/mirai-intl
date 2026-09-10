@@ -1,0 +1,32 @@
+{
+  "capturedAt": "2026-09-10T18:16:55.700Z",
+  "source": "Unauthenticated HTTPS GET registry.npmjs.org scoped package metadata; no publication",
+  "packages": [
+    {
+      "name": "@openmirai/intl-abi",
+      "latest": "0.3.29",
+      "candidate0_3_30Published": false
+    },
+    {
+      "name": "@openmirai/intl-compiler",
+      "latest": "0.3.29",
+      "candidate0_3_30Published": false
+    },
+    {
+      "name": "@openmirai/intl-runtime",
+      "latest": "0.3.29",
+      "candidate0_3_30Published": false
+    },
+    {
+      "name": "@openmirai/intl",
+      "latest": "0.3.29",
+      "candidate0_3_30Published": false
+    },
+    {
+      "name": "@openmirai/intl-i18next",
+      "latest": "0.3.29",
+      "candidate0_3_30Published": false
+    }
+  ],
+  "limitation": "Recheck immediately before publication approval/execution; this snapshot does not reserve a version."
+}

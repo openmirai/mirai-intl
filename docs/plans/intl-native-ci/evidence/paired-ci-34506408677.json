@@ -1,0 +1,919 @@
+{
+  "runId": 34506408677,
+  "runUrl": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34506408677",
+  "sourceRevision": "911339ca7ac0df9cc37acf2201898ac55505291f",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "status": "passed",
+  "artifact": {
+    "id": 10165272834,
+    "name": "intl-native-benchmark-evidence-34506408677-1",
+    "size_in_bytes": 2010978,
+    "digest": "sha256:b8755198e106af83e0f27e7126f4817e61c96a2237faa442eccf970998667817"
+  },
+  "retainedArchive": "paired-ci-34506408677.zip",
+  "statistics": {
+    "profile": "paired",
+    "samplesPerCell": 10,
+    "manifestSha256": "9f39f893617209a0c27da1731b3982c5dfa111f61d62c97981a796c9bedec4ef",
+    "status": "complete-input-summary",
+    "results": {
+      "candidate-node-full": {
+        "summary": {
+          "wallMs": {
+            "n": 10,
+            "mean": 80708.0465294,
+            "median": 80643.481406,
+            "p95": 81360.894846,
+            "min": 80185.91954300003,
+            "max": 81360.894846,
+            "sampleVariance": 184940.23742616348,
+            "sampleSd": 430.0467851596655,
+            "populationVariance": 166446.21368354713,
+            "populationSd": 407.9782024612922,
+            "totalSamples": 10
+          },
+          "officialCpuMs": {
+            "n": 10,
+            "mean": 174295,
+            "median": 174040,
+            "p95": 175690,
+            "min": 173320,
+            "max": 175690,
+            "sampleVariance": 687138.8888888889,
+            "sampleSd": 828.9384107935214,
+            "populationVariance": 618425,
+            "populationSd": 786.4000254323496,
+            "totalSamples": 10
+          },
+          "officialMaxRssBytes": {
+            "n": 10,
+            "mean": 1817640140.8,
+            "median": 1866588160,
+            "p95": 1893249024,
+            "min": 1638842368,
+            "max": 1893249024,
+            "sampleVariance": 9924208691493822,
+            "sampleSd": 99620322.68314444,
+            "populationVariance": 8931787822344440,
+            "populationSd": 94508136.27590187,
+            "totalSamples": 10
+          },
+          "sampledTreeCpuMs": {
+            "n": 10,
+            "mean": 169500,
+            "median": 169500,
+            "p95": 171000,
+            "min": 168000,
+            "max": 171000,
+            "sampleVariance": 1166666.6666666667,
+            "sampleSd": 1080.1234497346434,
+            "populationVariance": 1050000,
+            "populationSd": 1024.6950765959598,
+            "totalSamples": 10
+          },
+          "sampledTreePeakRssBytes": {
+            "n": 10,
+            "mean": 3883999232,
+            "median": 3857807360,
+            "p95": 4106383360,
+            "min": 3764428800,
+            "max": 4106383360,
+            "sampleVariance": 11765409408730908,
+            "sampleSd": 108468471.95720473,
+            "populationVariance": 10588868467857818,
+            "populationSd": 102902227.71086065,
+            "totalSamples": 10
+          }
+        },
+        "blocks": [
+          {
+            "label": "candidate-node-full-0",
+            "sha256": "a42753028aa6165f52f79ebe38cff611351eae5ae02b7bddf8be93f459b7cb0d",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 80808.524066,
+                "median": 80866.82596199999,
+                "p95": 81357.294403,
+                "min": 80185.91954300003,
+                "max": 81357.294403,
+                "sampleVariance": 190194.72363686867,
+                "sampleSd": 436.11320048454013,
+                "populationVariance": 152155.77890949493,
+                "populationSd": 390.0715048673703,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 174504,
+                "median": 174270,
+                "p95": 175690,
+                "min": 173760,
+                "max": 175690,
+                "sampleVariance": 671580,
+                "sampleSd": 819.499847467954,
+                "populationVariance": 537264,
+                "populationSd": 732.9829465956217,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 1849717555.2,
+                "median": 1864704000,
+                "p95": 1893249024,
+                "min": 1770414080,
+                "max": 1893249024,
+                "sampleVariance": 2191122205193011.2,
+                "sampleSd": 46809424.32024785,
+                "populationVariance": 1752897764154409,
+                "populationSd": 41867621.90708243,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 170000,
+                "median": 170000,
+                "p95": 171000,
+                "min": 169000,
+                "max": 171000,
+                "sampleVariance": 1000000,
+                "sampleSd": 1000,
+                "populationVariance": 800000,
+                "populationSd": 894.4271909999159,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 3854423654.4,
+                "median": 3850346496,
+                "p95": 3964121088,
+                "min": 3764428800,
+                "max": 3964121088,
+                "sampleVariance": 6926681995267277,
+                "sampleSd": 83226690.40198149,
+                "populationVariance": 5541345596213822,
+                "populationSd": 74440214.91246396,
+                "totalSamples": 5
+              }
+            }
+          },
+          {
+            "label": "candidate-node-full-1",
+            "sha256": "d813dd53a6d2214928ab99a563f6f536b3ceff0176ba7219d77928d18f4f17c9",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 80607.56899279999,
+                "median": 80424.85160599998,
+                "p95": 81360.894846,
+                "min": 80234.553051,
+                "max": 81360.894846,
+                "sampleVariance": 200681.47216898523,
+                "sampleSd": 447.9748566258884,
+                "populationVariance": 160545.1777351882,
+                "populationSd": 400.6808926504834,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 174086,
+                "median": 174020,
+                "p95": 175540,
+                "min": 173320,
+                "max": 175540,
+                "sampleVariance": 765280,
+                "sampleSd": 874.8028349291056,
+                "populationVariance": 612224,
+                "populationSd": 782.447442324403,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 1785562726.4,
+                "median": 1875345408,
+                "p95": 1891082240,
+                "min": 1638842368,
+                "max": 1891082240,
+                "sampleVariance": 17565946064194764,
+                "sampleSd": 132536583.87100056,
+                "populationVariance": 14052756851355812,
+                "populationSd": 118544324.41646379,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 169000,
+                "median": 169000,
+                "p95": 170000,
+                "min": 168000,
+                "max": 170000,
+                "sampleVariance": 1000000,
+                "sampleSd": 1000,
+                "populationVariance": 800000,
+                "populationSd": 894.4271909999159,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 3913574809.6,
+                "median": 3865268224,
+                "p95": 4106383360,
+                "min": 3770064896,
+                "max": 4106383360,
+                "sampleVariance": 17358702198443212,
+                "sampleSd": 131752427.67571007,
+                "populationVariance": 13886961758754570,
+                "populationSd": 117842953.79340494,
+                "totalSamples": 5
+              }
+            }
+          }
+        ]
+      },
+      "candidate-rust-full": {
+        "summary": {
+          "wallMs": {
+            "n": 10,
+            "mean": 77959.379242,
+            "median": 78011.53660049998,
+            "p95": 78260.33584000001,
+            "min": 77617.847373,
+            "max": 78260.33584000001,
+            "sampleVariance": 44806.08010716801,
+            "sampleSd": 211.67446730101392,
+            "populationVariance": 40325.47209645121,
+            "populationSd": 200.8120317522115,
+            "totalSamples": 10
+          },
+          "officialCpuMs": {
+            "n": 10,
+            "mean": 170775,
+            "median": 170690,
+            "p95": 171550,
+            "min": 170220,
+            "max": 171550,
+            "sampleVariance": 286761.1111111111,
+            "sampleSd": 535.5008040247102,
+            "populationVariance": 258085,
+            "populationSd": 508.020668870864,
+            "totalSamples": 10
+          },
+          "officialMaxRssBytes": {
+            "n": 10,
+            "mean": 1800441036.8,
+            "median": 1798856704,
+            "p95": 1892974592,
+            "min": 1648828416,
+            "max": 1892974592,
+            "sampleVariance": 5477755442033824,
+            "sampleSd": 74011860.14439729,
+            "populationVariance": 4929979897830442,
+            "populationSd": 70213815.5766402,
+            "totalSamples": 10
+          },
+          "sampledTreeCpuMs": {
+            "n": 10,
+            "mean": 165600,
+            "median": 166000,
+            "p95": 166000,
+            "min": 165000,
+            "max": 166000,
+            "sampleVariance": 266666.6666666667,
+            "sampleSd": 516.3977794943223,
+            "populationVariance": 240000,
+            "populationSd": 489.89794855663564,
+            "totalSamples": 10
+          },
+          "sampledTreePeakRssBytes": {
+            "n": 10,
+            "mean": 3877611110.4,
+            "median": 3848347648,
+            "p95": 4081967104,
+            "min": 3796054016,
+            "max": 4081967104,
+            "sampleVariance": 7296238280961775,
+            "sampleSd": 85418020.82091211,
+            "populationVariance": 6566614452865598,
+            "populationSd": 81034649.70533036,
+            "totalSamples": 10
+          }
+        },
+        "blocks": [
+          {
+            "label": "candidate-rust-full-0",
+            "sha256": "8bb14acf3ce4bb9597aadb637b643fc7e089b7634b8d6acd48e21e99ca7cca4b",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 77973.82033399999,
+                "median": 78021.962347,
+                "p95": 78156.71590999997,
+                "min": 77657.43970500001,
+                "max": 78156.71590999997,
+                "sampleVariance": 40434.11062619276,
+                "sampleSd": 201.08234787318543,
+                "populationVariance": 32347.28850095421,
+                "populationSd": 179.85351956788116,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 170970,
+                "median": 171100,
+                "p95": 171380,
+                "min": 170260,
+                "max": 171380,
+                "sampleVariance": 225500,
+                "sampleSd": 474.8684028233506,
+                "populationVariance": 180400,
+                "populationSd": 424.73521163190605,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 1811253657.6,
+                "median": 1788129280,
+                "p95": 1889202176,
+                "min": 1748791296,
+                "max": 1889202176,
+                "sampleVariance": 3363698476109004.5,
+                "sampleSd": 57997400.59786304,
+                "populationVariance": 2690958780887203.5,
+                "populationSd": 51874452.10204348,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 165800,
+                "median": 166000,
+                "p95": 166000,
+                "min": 165000,
+                "max": 166000,
+                "sampleVariance": 200000,
+                "sampleSd": 447.21359549995793,
+                "populationVariance": 160000,
+                "populationSd": 400,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 3854241792,
+                "median": 3861467136,
+                "p95": 3881558016,
+                "min": 3831742464,
+                "max": 3881558016,
+                "sampleVariance": 476955967225856,
+                "sampleSd": 21839321.5834617,
+                "populationVariance": 381564773780684.8,
+                "populationSd": 19533683.057239484,
+                "totalSamples": 5
+              }
+            }
+          },
+          {
+            "label": "candidate-rust-full-1",
+            "sha256": "b22334e3858791b443f187bb7c832924e680cc940802ea64d2aad5167188a75a",
+            "summary": {
+              "wallMs": {
+                "n": 5,
+                "mean": 77944.93814999999,
+                "median": 78001.11085399997,
+                "p95": 78260.33584000001,
+                "min": 77617.847373,
+                "max": 78260.33584000001,
+                "sampleVariance": 59858.20676955391,
+                "sampleSd": 244.65936885709877,
+                "populationVariance": 47886.56541564313,
+                "populationSd": 218.82999203866714,
+                "totalSamples": 5
+              },
+              "officialCpuMs": {
+                "n": 5,
+                "mean": 170580,
+                "median": 170250,
+                "p95": 171550,
+                "min": 170220,
+                "max": 171550,
+                "sampleVariance": 324650,
+                "sampleSd": 569.7806595524281,
+                "populationVariance": 259720,
+                "populationSd": 509.6273148095577,
+                "totalSamples": 5
+              },
+              "officialMaxRssBytes": {
+                "n": 5,
+                "mean": 1789628416,
+                "median": 1809584128,
+                "p95": 1892974592,
+                "min": 1648828416,
+                "max": 1892974592,
+                "sampleVariance": 8668969347055616,
+                "sampleSd": 93107300.18132636,
+                "populationVariance": 6935175477644493,
+                "populationSd": 83277700.9627697,
+                "totalSamples": 5
+              },
+              "sampledTreeCpuMs": {
+                "n": 5,
+                "mean": 165400,
+                "median": 165000,
+                "p95": 166000,
+                "min": 165000,
+                "max": 166000,
+                "sampleVariance": 300000,
+                "sampleSd": 547.7225575051662,
+                "populationVariance": 240000,
+                "populationSd": 489.89794855663564,
+                "totalSamples": 5
+              },
+              "sampledTreePeakRssBytes": {
+                "n": 5,
+                "mean": 3900980428.8,
+                "median": 3835228160,
+                "p95": 4081967104,
+                "min": 3796054016,
+                "max": 4081967104,
+                "sampleVariance": 14574267558736692,
+                "sampleSd": 120723931.17661755,
+                "populationVariance": 11659414046989354,
+                "populationSd": 107978766.64876921,
+                "totalSamples": 5
+              }
+            }
+          }
+        ]
+      }
+    },
+    "environments": [
+      {
+        "label": "candidate-node-full-0",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src3544238535/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7156895744
+          },
+          "loadAverage": [2.26, 1.91, 0.95],
+          "storage": {
+            "path": "/codebuild/output/src3544238535/src/actions-runner/_work/_temp/intl-ci-benchmark.sBAzW7eI/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135805886464",
+            "availableBytes": "135805886464",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n10:memory:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n9:blkio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n8:freezer:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n7:cpuset:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n6:pids:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n5:perf_event:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n4:net_cls,net_prio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n3:hugetlb:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n2:cpu,cpuacct:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n1:name=systemd:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "candidate-rust-full-0",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src3544238535/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7096639488
+          },
+          "loadAverage": [2.71, 2.84, 1.77],
+          "storage": {
+            "path": "/codebuild/output/src3544238535/src/actions-runner/_work/_temp/intl-ci-benchmark.sBAzW7eI/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135801188352",
+            "availableBytes": "135801188352",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n10:memory:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n9:blkio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n8:freezer:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n7:cpuset:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n6:pids:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n5:perf_event:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n4:net_cls,net_prio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n3:hugetlb:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n2:cpu,cpuacct:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n1:name=systemd:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "candidate-rust-full-1",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src3544238535/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7090937856
+          },
+          "loadAverage": [2.57, 3.05, 2.27],
+          "storage": {
+            "path": "/codebuild/output/src3544238535/src/actions-runner/_work/_temp/intl-ci-benchmark.sBAzW7eI/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135796600832",
+            "availableBytes": "135796600832",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n10:memory:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n9:blkio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n8:freezer:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n7:cpuset:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n6:pids:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n5:perf_event:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n4:net_cls,net_prio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n3:hugetlb:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n2:cpu,cpuacct:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n1:name=systemd:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      },
+      {
+        "label": "candidate-node-full-1",
+        "environment": {
+          "platform": "linux",
+          "release": "4.14.355-284.741.amzn2.aarch64",
+          "arch": "arm64",
+          "node": "v24.21.0",
+          "nodeExecutable": "/codebuild/output/src3544238535/src/actions-runner/_work/_tool/node/24.21.0/arm64/bin/node",
+          "cpu": {
+            "logicalCount": 4,
+            "availableParallelism": 4,
+            "models": ["unknown"],
+            "affinity": ["Cpus_allowed_list:\t0-3", "Mems_allowed_list:\t0"]
+          },
+          "memory": {
+            "hostTotalBytes": 8256585728,
+            "hostFreeBytes": 7090626560
+          },
+          "loadAverage": [2.54, 3.21, 2.66],
+          "storage": {
+            "path": "/codebuild/output/src3544238535/src/actions-runner/_work/_temp/intl-ci-benchmark.sBAzW7eI/candidate",
+            "filesystemType": "1481003842",
+            "blockSize": "4096",
+            "totalBytes": "221168775168",
+            "freeBytes": "135792254976",
+            "availableBytes": "135792254976",
+            "source": "fs.statfs; byte values are decimal strings"
+          },
+          "cgroup": {
+            "membership": {
+              "file": "/proc/self/cgroup",
+              "value": "11:devices:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n10:memory:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n9:blkio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n8:freezer:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n7:cpuset:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n6:pids:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n5:perf_event:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n4:net_cls,net_prio:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n3:hugetlb:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n2:cpu,cpuacct:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n1:name=systemd:/ecs/bdc41568-d8c9-4b75-8d66-e30bd12193de/4bcb261db78ae4065312015bc90154a68659be9f27d0a60a3ed53069cf22a088\n",
+              "truncated": false
+            },
+            "version": null,
+            "limits": [],
+            "scope": "Existing shared cgroup/ancestors; lifetime counters include harness and other processes. No cgroup writes/resets."
+          },
+          "gaps": [
+            "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+            "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+            "cgroup v2 not resolved; cgroup v1 allocations are unavailable",
+            "Cgroup namespaces may hide additional ancestor limits; no dedicated per-command cgroup was created"
+          ]
+        },
+        "gaps": []
+      }
+    ],
+    "scope": {
+      "equivalentControl": "candidate-node-full versus candidate-rust-full uses the same corrected compiler and semantic coverage",
+      "publishedContext": "published-node-full predates the adapter semantic-retention correction; report it as historical context, not equivalent strictness or a causal Rust speedup",
+      "reuse": "candidate-rust-reuse must validate the frozen current-input authority and forward identical archive bytes"
+    },
+    "semantics": {
+      "cold": "fresh child per sample; OS caches NOT cleared",
+      "warm": "one persistent cooperating protocol worker; wall includes IPC; no per-operation time(1) high-water attribution",
+      "statistics": "median averages the two middle values; p95 nearest rank; sample variance/SD use n-1, null for n<2; variances have squared metric units",
+      "resources": "time maxRSS is NOT tree peak; sampled tree RSS is max(sum of live RSS at each poll), not sum of per-process peaks",
+      "isolation": "No CPU pinning, cache clearing or isolated cgroup; escaped sessions may evade process-group cleanup",
+      "environment": "Inherited environment values are not recorded; LC_ALL=C is applied. Exact command argv is recorded: do not pass secrets as command arguments"
+    },
+    "limitations": [
+      "Artifact authenticity, CI run/source identity and actual workload acceptance require separate verification.",
+      "Cold means fresh process; OS caches were not cleared.",
+      "Warm official CPU/maxRSS is unavailable per operation; sampled process-tree counters are estimates.",
+      "Sample variance uses n-1; p95 uses nearest rank and equals max at n10.",
+      "Do not average block p95 values; reported full-cell statistics pool raw observations.",
+      "Only the corrected candidate Node/Rust cells support equal-coverage engine comparisons."
+    ]
+  },
+  "job": {
+    "completedAt": "2026-09-10T17:41:34Z",
+    "conclusion": "success",
+    "databaseId": 102969578353,
+    "name": "Measure Intl performance",
+    "startedAt": "2026-09-10T17:09:08Z",
+    "status": "completed",
+    "steps": [
+      {
+        "completedAt": "2026-09-10T17:09:11Z",
+        "conclusion": "success",
+        "name": "Set up job",
+        "number": 1,
+        "startedAt": "2026-09-10T17:09:09Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:15Z",
+        "conclusion": "success",
+        "name": "Run actions/checkout@v6",
+        "number": 2,
+        "startedAt": "2026-09-10T17:09:11Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:19Z",
+        "conclusion": "success",
+        "name": "Run actions/setup-node@v6",
+        "number": 3,
+        "startedAt": "2026-09-10T17:09:15Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:21Z",
+        "conclusion": "success",
+        "name": "Run pnpm/setup@v2.1.0",
+        "number": 4,
+        "startedAt": "2026-09-10T17:09:19Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:21Z",
+        "conclusion": "success",
+        "name": "Run ./.github/actions/configure-npm-auth",
+        "number": 5,
+        "startedAt": "2026-09-10T17:09:21Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:40Z",
+        "conclusion": "success",
+        "name": "Install locked verifier tools without saving a dependency cache",
+        "number": 6,
+        "startedAt": "2026-09-10T17:09:21Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:41Z",
+        "conclusion": "success",
+        "name": "Pin reviewed library producer and candidate artifact",
+        "number": 7,
+        "startedAt": "2026-09-10T17:09:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:42Z",
+        "conclusion": "success",
+        "name": "Run actions/download-artifact@v8",
+        "number": 8,
+        "startedAt": "2026-09-10T17:09:41Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:42Z",
+        "conclusion": "success",
+        "name": "Recheck producer after artifact download",
+        "number": 9,
+        "startedAt": "2026-09-10T17:09:42Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:43Z",
+        "conclusion": "success",
+        "name": "Verify and prepare exact candidate package inputs",
+        "number": 10,
+        "startedAt": "2026-09-10T17:09:42Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:56Z",
+        "conclusion": "success",
+        "name": "Install candidate without Rust compilation",
+        "number": 11,
+        "startedAt": "2026-09-10T17:09:43Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:09:56Z",
+        "conclusion": "success",
+        "name": "Capture actual runner and candidate resources",
+        "number": 12,
+        "startedAt": "2026-09-10T17:09:56Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:11:18Z",
+        "conclusion": "success",
+        "name": "Authorize all five catalogs and export authority",
+        "number": 13,
+        "startedAt": "2026-09-10T17:09:56Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:11:59Z",
+        "conclusion": "success",
+        "name": "Verify unchanged reuse skips audit and regeneration",
+        "number": 14,
+        "startedAt": "2026-09-10T17:11:18Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:11:59Z",
+        "conclusion": "success",
+        "name": "Isolate producer state and restore checked-in generation surfaces",
+        "number": 15,
+        "startedAt": "2026-09-10T17:11:59Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "success",
+        "name": "Verify authority import for downstream consumption",
+        "number": 16,
+        "startedAt": "2026-09-10T17:11:59Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Run candidate source quality and runtime contracts",
+        "number": 17,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Capture memory counters after source quality",
+        "number": 18,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Run every application test suite with candidate packages",
+        "number": 19,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Load reviewed public build inputs",
+        "number": 20,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Build all four apps in production mode and finalize proofs",
+        "number": 21,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Verify locale source and artifact strictness in the actual consumer",
+        "number": 22,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:40Z",
+        "conclusion": "skipped",
+        "name": "Verify all four version-only regeneration regressions",
+        "number": 23,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:12:51Z",
+        "conclusion": "success",
+        "name": "Prepare isolated inputs for repeated CI measurements",
+        "number": 24,
+        "startedAt": "2026-09-10T17:12:40Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:23Z",
+        "conclusion": "success",
+        "name": "Compare preparation and unchanged reuse on identical runner resources",
+        "number": 25,
+        "startedAt": "2026-09-10T17:12:51Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:23Z",
+        "conclusion": "skipped",
+        "name": "Compare fresh and persistent workspace verification on identical runner resources",
+        "number": 26,
+        "startedAt": "2026-09-10T17:41:23Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:24Z",
+        "conclusion": "success",
+        "name": "Upload acceptance and final artifact evidence",
+        "number": 27,
+        "startedAt": "2026-09-10T17:41:23Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:25Z",
+        "conclusion": "success",
+        "name": "Post Run pnpm/setup@v2.1.0",
+        "number": 52,
+        "startedAt": "2026-09-10T17:41:24Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:25Z",
+        "conclusion": "success",
+        "name": "Post Run actions/setup-node@v6",
+        "number": 53,
+        "startedAt": "2026-09-10T17:41:25Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:25Z",
+        "conclusion": "success",
+        "name": "Post Run actions/checkout@v6",
+        "number": 54,
+        "startedAt": "2026-09-10T17:41:25Z",
+        "status": "completed"
+      },
+      {
+        "completedAt": "2026-09-10T17:41:25Z",
+        "conclusion": "success",
+        "name": "Complete job",
+        "number": 55,
+        "startedAt": "2026-09-10T17:41:25Z",
+        "status": "completed"
+      }
+    ],
+    "url": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34506408677/job/102969578353"
+  },
+  "scope": "n10 per engine, same correctedcompiler/packages/authoredinputs/runner; fullcheck+export+standaloneverification+archivehash+cleanup. Freshprocess, OScachesnotcleared. SingleCIrun; no claimed overallapplicationCI speedup."
+}

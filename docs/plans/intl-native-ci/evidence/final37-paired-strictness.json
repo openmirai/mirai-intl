@@ -1,0 +1,57 @@
+{
+  "capturedAt": "2026-09-10T16:08:17.680305+00:00",
+  "sourceRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "node": "24.18.0",
+  "corpus": [
+    {
+      "path": "packages/compiler/test/strict-receipt-verification.test.ts",
+      "sha256": "e056626d183ca9cbe7b54e158439fd19164a42005580acb5db0c2c1b798f52af"
+    },
+    {
+      "path": "packages/compiler/test/authority-bundle.test.ts",
+      "sha256": "c46505355ddc2357f109e945a49d05f37d26ba2162f5b78d422b011c16c6738c"
+    },
+    {
+      "path": "packages/compiler/test/semantic-source-receipt.test.ts",
+      "sha256": "a6b399822198b7f4e9e499a412ed61ab8527498c37dcc708f5ab69e27aafa33b"
+    },
+    {
+      "path": "packages/compiler/test/generation-receipt-fast-path.test.ts",
+      "sha256": "116ec5dc003e0d021faf0ea26f0550a2594e9b61e712028f9d83f2b62926c5bd"
+    },
+    {
+      "path": "packages/compiler/test/check-receipt-v2.test.ts",
+      "sha256": "a03652b0a44157c263b6078566840b9ac70f5c946608dd960ab6a16b38d489ed"
+    }
+  ],
+  "runs": [
+    {
+      "engine": "node",
+      "command": "MIRAI_INTL_ENGINE=node pnpm exec vitest run packages/compiler/test/strict-receipt-verification.test.ts packages/compiler/test/authority-bundle.test.ts packages/compiler/test/semantic-source-receipt.test.ts packages/compiler/test/generation-receipt-fast-path.test.ts packages/compiler/test/check-receipt-v2.test.ts",
+      "testFilesPassed": 5,
+      "testsPassed": 144,
+      "failed": 0,
+      "exitCode": 0,
+      "wallSeconds": 41.66,
+      "log": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-patch-release/.tmp/final37-strictness-node.log",
+      "sha256": "7300eed0c91c7c5f9ce4fcd98bb3369120a0fc1cc5a3ccc43987d29d04606be6"
+    },
+    {
+      "engine": "rust",
+      "command": "MIRAI_INTL_ENGINE=rust pnpm exec vitest run packages/compiler/test/strict-receipt-verification.test.ts packages/compiler/test/authority-bundle.test.ts packages/compiler/test/semantic-source-receipt.test.ts packages/compiler/test/generation-receipt-fast-path.test.ts packages/compiler/test/check-receipt-v2.test.ts",
+      "testFilesPassed": 5,
+      "testsPassed": 144,
+      "failed": 0,
+      "exitCode": 0,
+      "wallSeconds": 40.98,
+      "log": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-patch-release/.tmp/final37-strictness-rust.log",
+      "sha256": "acbf9f5d2f267c7a51dd3afc89fb64f41d52d42fefd682b8f321002b17290614"
+    }
+  ],
+  "scope": "Same finite concrete144case corpus exercised sequentially under Node and installed prebuilt Rust; existing receipt/authority/generation/mutation assertions unchanged",
+  "notClaimed": [
+    "Exhaustive proof over all malformed JSON/V3 inputs",
+    "Performance comparison from test durations",
+    "Current Turbo app acceptance from library fixtures"
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "githubRunId": 34498088946,
+  "githubJobId": 102941588507,
+  "turboRevision": "cb22e0506772543cf24a384b25e2850d96e2f074",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "codebuild": {
+    "id": "fe-mirai-arm-builder-md:fb7ebcee-8063-4624-a8a8-90f2dded38f7",
+    "arn": "arn:aws:codebuild:us-east-1:867344467192:build/fe-mirai-arm-builder-md:fb7ebcee-8063-4624-a8a8-90f2dded38f7",
+    "buildStatus": "FAILED",
+    "startTime": "2026-09-10T22:48:50.517000+07:00",
+    "endTime": "2026-09-10T23:34:02.691000+07:00",
+    "currentPhase": "COMPLETED",
+    "timeoutInMinutes": 45,
+    "phases": [
+      {
+        "phaseType": "SUBMITTED",
+        "phaseStatus": "SUCCEEDED",
+        "startTime": "2026-09-10T22:48:50.517000+07:00",
+        "endTime": "2026-09-10T22:48:50.605000+07:00",
+        "durationInSeconds": 0
+      },
+      {
+        "phaseType": "QUEUED",
+        "phaseStatus": "SUCCEEDED",
+        "startTime": "2026-09-10T22:48:50.605000+07:00",
+        "endTime": "2026-09-10T22:48:51.291000+07:00",
+        "durationInSeconds": 0
+      },
+      {
+        "phaseType": "PROVISIONING",
+        "phaseStatus": "SUCCEEDED",
+        "startTime": "2026-09-10T22:48:51.291000+07:00",
+        "endTime": "2026-09-10T22:48:56.006000+07:00",
+        "durationInSeconds": 4,
+        "contexts": [
+          {
+            "statusCode": "",
+            "message": ""
+          }
+        ]
+      },
+      {
+        "phaseType": "DOWNLOAD_SOURCE",
+        "phaseStatus": "SUCCEEDED",
+        "startTime": "2026-09-10T22:48:56.006000+07:00",
+        "endTime": "2026-09-10T22:48:57.512000+07:00",
+        "durationInSeconds": 1,
+        "contexts": [
+          {
+            "statusCode": "",
+            "message": ""
+          }
+        ]
+      },
+      {
+        "phaseType": "INSTALL",
+        "phaseStatus": "SUCCEEDED",
+        "startTime": "2026-09-10T22:48:57.512000+07:00",
+        "endTime": "2026-09-10T22:48:57.582000+07:00",
+        "durationInSeconds": 0,
+        "contexts": [
+          {
+            "statusCode": "",
+            "message": ""
+          }
+        ]
+      },
+      {
+        "phaseType": "PRE_BUILD",
+        "phaseStatus": "SUCCEEDED",
+        "startTime": "2026-09-10T22:48:57.582000+07:00",
+        "endTime": "2026-09-10T22:48:57.618000+07:00",
+        "durationInSeconds": 0,
+        "contexts": [
+          {
+            "statusCode": "",
+            "message": ""
+          }
+        ]
+      },
+      {
+        "phaseType": "BUILD",
+        "phaseStatus": "TIMED_OUT",
+        "startTime": "2026-09-10T22:48:57.618000+07:00",
+        "endTime": "2026-09-10T23:34:02.691000+07:00",
+        "durationInSeconds": 2705,
+        "contexts": [
+          {
+            "statusCode": "BUILD_TIMED_OUT",
+            "message": "Build has timed out. "
+          }
+        ]
+      },
+      {
+        "phaseType": "COMPLETED",
+        "startTime": "2026-09-10T23:34:02.691000+07:00"
+      }
+    ]
+  },
+  "cloudWatch": {
+    "region": "us-east-1",
+    "group": "/aws/codebuild/fe-mirai-arm-builder-md",
+    "stream": "fb7ebcee-8063-4624-a8a8-90f2dded38f7",
+    "retrievedEvents": 47,
+    "jobIdentification": [
+      {
+        "timestamp": 1789055340556,
+        "message": "[Container] 2026/09/10 15:48:57.353661 Configuring runner with labels: codebuild-fe-mirai-arm-builder-md-34498088946-1\n",
+        "ingestionTime": 1789055340576
+      },
+      {
+        "timestamp": 1789055340556,
+        "message": "GHA self-hosted runner build triggered by /actions/runs/34498088946/job/102941588507\n",
+        "ingestionTime": 1789055340576
+      },
+      {
+        "timestamp": 1789055348610,
+        "message": "2026-09-10 15:49:06Z: Running job: Measure Intl preparation\n",
+        "ingestionTime": 1789055348613
+      }
+    ],
+    "availableEventsEnd": 1789055348610,
+    "retrievedResponseSha256": "6a0349d9e3b373ef6b2a96440d5bf04e400096469cd24348139dec0cf6daf939",
+    "paginationLimitation": "Follow-up end-of-stream check failed because AWS authorization grant expired again. Retrieved response has 47 startup events; no benchmark samples. Do not claim exhaustive stream traversal."
+  },
+  "github": {
+    "conclusion": "failure",
+    "completedAt": "2026-09-10T16:43:08Z",
+    "artifactCount": 0,
+    "annotation": "The self-hosted runner lost communication with the server. Verify the machine is running and has a healthy network connection. Anything in your workflow that terminates the runner process, starves it for CPU/Memory, or blocks its network access can cause this error."
+  },
+  "finding": "AWS BUILD_TIMED_OUT after2705s, effective run timeout45min. GitHub reported lost runner later. No OOM evidence; no measured samples available. Earlier project60min reading is not the effective run limit.",
+  "action": "Split preparation paired/context and workspace verify/reuse into separate35min helper budgets with40min steps; retain n10 reverse-order blocks, identical inputs and proof guards. No AWS configuration change."
+}

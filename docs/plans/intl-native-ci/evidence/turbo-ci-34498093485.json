@@ -1,0 +1,573 @@
+{
+  "capturedAt": "2026-09-10T16:36:54.911582+00:00",
+  "runId": 34498093485,
+  "attempt": 1,
+  "url": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34498093485",
+  "sourceRevision": "cb22e0506772543cf24a384b25e2850d96e2f074",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "candidatePin": {
+    "schemaVersion": 1,
+    "repository": "openmirai/mirai-intl",
+    "repositoryId": 1302569862,
+    "prHeadSha": "37a8628f66cd793330db2d5a163287f8454182a8",
+    "sourceSha": "1324a5ebe03865128f4f1468ea671442cd708367",
+    "sourceTree": "6cf328a934ac7ddb6a550e0f4e292c301ee2ef50",
+    "runId": 34494038965,
+    "runAttempt": 1,
+    "workflowPath": ".github/workflows/native-build-ci.yml",
+    "artifact": {
+      "id": 10159503087,
+      "name": "intl-candidate-packages-1324a5ebe03865128f4f1468ea671442cd708367-1",
+      "digest": "sha256:36c8a1109c7ac63698770365f2e51f20eced9381ab2dd91d467dba6c50654428",
+      "size": 7017305
+    }
+  },
+  "conclusion": "success",
+  "artifact": {
+    "id": 10162472204,
+    "node_id": "MDg6QXJ0aWZhY3QxMDE2MjQ3MjIwNA==",
+    "name": "intl-native-candidate-evidence-34498093485-1",
+    "size_in_bytes": 1119962,
+    "url": "https://api.github.com/repos/openmirai/fe-mirai-org-turbo/actions/artifacts/10162472204",
+    "archive_download_url": "https://api.github.com/repos/openmirai/fe-mirai-org-turbo/actions/artifacts/10162472204/zip",
+    "expired": false,
+    "digest": "sha256:1a9558fe06c56dfb3b9ee11be0a89d7a4b36989ea1cbe1c99deb8879d0bd7b84",
+    "created_at": "2026-09-10T16:31:25Z",
+    "updated_at": "2026-09-10T16:31:25Z",
+    "expires_at": "2026-09-24T16:31:24Z",
+    "workflow_run": {
+      "id": 34498093485,
+      "repository_id": 1005969136,
+      "head_repository_id": 1005969136,
+      "head_branch": "codex/intl-native-ci-adoption",
+      "head_sha": "cb22e0506772543cf24a384b25e2850d96e2f074"
+    }
+  },
+  "artifactSha256": "1a9558fe06c56dfb3b9ee11be0a89d7a4b36989ea1cbe1c99deb8879d0bd7b84",
+  "retainedArchive": "turbo-ci-34498093485.zip in private openmirai/fe-mirai-org-turbo docs/plans/intl-native-ci/evidence; contains private locale/config/generated backups",
+  "strictness": {
+    "schemaVersion": 1,
+    "root": "/codebuild/output/src1431466375/src/actions-runner/_work/fe-mirai-org-turbo/fe-mirai-org-turbo/apps/auth",
+    "cli": "/codebuild/output/src1431466375/src/actions-runner/_work/fe-mirai-org-turbo/fe-mirai-org-turbo/node_modules/.pnpm/@openmirai+intl@file+.intl-candidate+packs+openmirai-intl-0.3.30.tgz_i18next@26.4.1_typescript@7.0.2__react@19.2.7/node_modules/@openmirai/intl/dist/cli.js",
+    "cliHash": "a55e27427a269ca9da95ce56f6ef8b3f29763424bcbccde4bcf036f639e93ff5",
+    "node": "v24.21.0",
+    "engine": "rust",
+    "backup": "/codebuild/output/src1431466375/src/actions-runner/_work/fe-mirai-org-turbo/fe-mirai-org-turbo/.intl-candidate/evidence/strictness-backups-8b4oGs",
+    "cases": [
+      {
+        "name": "missing-en",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "missing-th",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "missing-nested-key",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "extra-nested-key",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "empty-translation",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "invalid-icu",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "incompatible-contract",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "descriptor-facade-tamper",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "payload-tamper",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "authority-tamper",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "new-source",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "app-config",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "manifest-dependency",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "unknown-source-key",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "dynamic-source-key",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "hardcoded-source-prose",
+        "passed": true,
+        "restored": true
+      },
+      {
+        "name": "valid-translation-change",
+        "passed": true,
+        "restored": true
+      }
+    ],
+    "semanticFailures": [],
+    "success": true,
+    "restored": true,
+    "generatedBefore": "3c0e44ff091953f1c9e7e080b15800e376983c6b80a0d88078308a5c3c4a118a",
+    "generatedAfter": "3c0e44ff091953f1c9e7e080b15800e376983c6b80a0d88078308a5c3c4a118a"
+  },
+  "versionOnly": {
+    "incidentRevision": "72dd09fd3b6e95e71ec7fbcf997f62313b624cfc",
+    "catalogs": [
+      {
+        "app": "admin",
+        "versionBefore": "2.0.9",
+        "generated": {
+          "sha256": "40f168314b624a9a5cc2c8c5054cb6ab94e28c4a6f66186fd4df9b108fa76cb6",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      },
+      {
+        "app": "auth",
+        "versionBefore": "2.0.9",
+        "generated": {
+          "sha256": "708d73e7a334c20f7f33f4c9117d4d2eec1fa7ebea59725cef72ef6b1c4df8c3",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      },
+      {
+        "app": "instructor",
+        "versionBefore": "2.0.9",
+        "generated": {
+          "sha256": "5fd958f9f95fe084946b82c91978af8fc58b0ac0d267f797185865ed41ff86e8",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      },
+      {
+        "app": "learner",
+        "versionBefore": "2.0.9",
+        "generated": {
+          "sha256": "f288a2438cea6b09eff20902dce05a9a0ecc8a45f3d22e1372c03a0322e1ad1b",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      }
+    ]
+  },
+  "verification": {
+    "artifactEmissions": 0,
+    "buildReceiptVerifications": 5,
+    "buildSemanticAnalysisRuns": 0,
+    "catalogCompilations": 0,
+    "valid": true,
+    "verifiedCatalogs": 5
+  },
+  "finalProofs": [
+    {
+      "app": "admin",
+      "target": "client",
+      "sha256": "5e1473843765c72b1f4eadb0d49c7bc072377a95ff30e47840724a558712a636",
+      "state": "finalized",
+      "authorityHash": "sha256:26c97068ed2addf768e2a732158bc83427fbfc0f691c0912ee371f35c217865f",
+      "deploymentReceiptHash": "sha256:e1f9cd9e839d4bdaeea9f5a509e87318473c76f3cfc36e0c15dd242a531f7d9a",
+      "graphHash": "sha256:8235bb5504fd58b88235d3f839ba9851ec3759d8e426c61fc4bdc14932c79b3b",
+      "emittedFiles": 750
+    },
+    {
+      "app": "admin",
+      "target": "worker",
+      "sha256": "bc19fa9f11151dc860996afaddb20d95d4ccb3ef7aee96456a6f486566982482",
+      "state": "finalized",
+      "authorityHash": "sha256:26c97068ed2addf768e2a732158bc83427fbfc0f691c0912ee371f35c217865f",
+      "deploymentReceiptHash": "sha256:e1f9cd9e839d4bdaeea9f5a509e87318473c76f3cfc36e0c15dd242a531f7d9a",
+      "graphHash": "sha256:f7e19a82f60d8698a8d6a7c65af9ab2bf4a4d96f716d33a4551c20bf0655920d",
+      "emittedFiles": 623
+    },
+    {
+      "app": "auth",
+      "target": "client",
+      "sha256": "f27947ebadca99f063d2d5abff885339abd5d61ed6a4219a3ab560b7c6166fc8",
+      "state": "finalized",
+      "authorityHash": "sha256:b103af6781d13fd47e10aa7077aa70beb75c9090fc377e8fce18dd1fb9d24fab",
+      "deploymentReceiptHash": "sha256:58a60172317e2092233b2fde101983f1ad804b3be49cf10108f169007788118a",
+      "graphHash": "sha256:eb472308203fe9c4372925173339035458a3f83499087a79a80ad6521e0f6779",
+      "emittedFiles": 31
+    },
+    {
+      "app": "auth",
+      "target": "worker",
+      "sha256": "511cb8a70cc958308119c607166c6cda7f3686e9a6aa3d7ff5a20a7d52d728d0",
+      "state": "finalized",
+      "authorityHash": "sha256:b103af6781d13fd47e10aa7077aa70beb75c9090fc377e8fce18dd1fb9d24fab",
+      "deploymentReceiptHash": "sha256:58a60172317e2092233b2fde101983f1ad804b3be49cf10108f169007788118a",
+      "graphHash": "sha256:a5b28b952027988cd1ec2db80dea77cca3e50873136ebd7ce1996ad101ba9042",
+      "emittedFiles": 102
+    },
+    {
+      "app": "instructor",
+      "target": "client",
+      "sha256": "22b1bc7b2be5ab9d55acd92940fe351fe84630ba3c8b40406b8c17a035e5e5e3",
+      "state": "finalized",
+      "authorityHash": "sha256:07c257a8a2e56ad419ed932e8ce73c3bfbea0d418e06c24e12b182e0a75ead7c",
+      "deploymentReceiptHash": "sha256:f29425c6226d8ada925b8daef983a4bb10aade4e1b6e90629f0879b652071284",
+      "graphHash": "sha256:f6b82722062962d60547382e58e12a34dcf365cb005ff0c26b143a6063d79abb",
+      "emittedFiles": 422
+    },
+    {
+      "app": "instructor",
+      "target": "worker",
+      "sha256": "6cd4b2e5b7f13db207ef5f47b3d230ab77e342eada429c043a0674ef15a9140d",
+      "state": "finalized",
+      "authorityHash": "sha256:07c257a8a2e56ad419ed932e8ce73c3bfbea0d418e06c24e12b182e0a75ead7c",
+      "deploymentReceiptHash": "sha256:f29425c6226d8ada925b8daef983a4bb10aade4e1b6e90629f0879b652071284",
+      "graphHash": "sha256:f7d361752d10a75ed437da3206ca25b82d35fe3609a0bda51325d93af2975e48",
+      "emittedFiles": 519
+    },
+    {
+      "app": "learner",
+      "target": "client",
+      "sha256": "9834243e41ecb24f8eb142307b6d6910be2b052102588110d65436c164030a9d",
+      "state": "finalized",
+      "authorityHash": "sha256:7d0f35477fdad2d9b0eebf282ba6803919fd28ae9c8563639c55ef0f1b2c99c5",
+      "deploymentReceiptHash": "sha256:e91f179bb13e46df6b7a5b9ddd8b475848a7e204ba3322dcc82b853837227894",
+      "graphHash": "sha256:e5044924c0a005376b3f680007d60e6f94bef3f2c09ce9b0bc066cd616b221d2",
+      "emittedFiles": 496
+    },
+    {
+      "app": "learner",
+      "target": "worker",
+      "sha256": "a8cbcb7abe8e0f6c5146789c0ba33fe4786c81068855a9486a19b4217a157b1c",
+      "state": "finalized",
+      "authorityHash": "sha256:7d0f35477fdad2d9b0eebf282ba6803919fd28ae9c8563639c55ef0f1b2c99c5",
+      "deploymentReceiptHash": "sha256:e91f179bb13e46df6b7a5b9ddd8b475848a7e204ba3322dcc82b853837227894",
+      "graphHash": "sha256:edcc89e60a1a96062eddb149edee7c72051090907f1ff0396013b852968f8b6e",
+      "emittedFiles": 566
+    }
+  ],
+  "resources": {
+    "node": "v24.21.0",
+    "versions": {
+      "node": "24.21.0",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "137",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "3.5.8",
+      "simdjson": "4.6.7",
+      "simdutf": "6.4.0",
+      "sqlite": "3.53.4",
+      "tz": "2026c",
+      "undici": "7.29.1",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "13.6.233.17-node.53",
+      "zlib": "1.3.2.1-motley-8002e91",
+      "zstd": "1.5.7"
+    },
+    "arch": "arm64",
+    "platform": "linux",
+    "cpu": [
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 13800,
+          "nice": 110,
+          "sys": 4610,
+          "idle": 88230,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 14110,
+          "nice": 200,
+          "sys": 5380,
+          "idle": 92940,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 15220,
+          "nice": 120,
+          "sys": 4130,
+          "idle": 89770,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 17030,
+          "nice": 300,
+          "sys": 4980,
+          "idle": 92070,
+          "irq": 0
+        }
+      }
+    ],
+    "parallelism": 4,
+    "memory": 8256585728,
+    "storage": {
+      "type": 1481003842,
+      "bsize": 4096,
+      "frsize": 4096,
+      "blocks": 53996283,
+      "bfree": 33225147,
+      "bavail": 33225147,
+      "files": 107997680,
+      "ffree": 105493105
+    },
+    "controls": {
+      "/sys/fs/cgroup/cpu.max": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.max": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.current": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/io.stat": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory/memory.limit_in_bytes": "7516192768",
+      "/sys/fs/cgroup/memory/memory.max_usage_in_bytes": "4883419136",
+      "/sys/fs/cgroup/memory/memory.failcnt": "0",
+      "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1",
+      "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000"
+    }
+  },
+  "memoryAfterQuality": {
+    "capturedAt": "2026-09-10T15:54:34.948Z",
+    "controls": {
+      "/sys/fs/cgroup/memory.events": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.peak": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.current": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory/memory.max_usage_in_bytes": "6712254464",
+      "/sys/fs/cgroup/memory/memory.failcnt": "0",
+      "/sys/fs/cgroup/memory/memory.oom_control": "oom_kill_disable 0\nunder_oom 0\noom_kill 0"
+    }
+  },
+  "timings": [
+    {
+      "name": "Set up job",
+      "conclusion": "success",
+      "seconds": 2.0
+    },
+    {
+      "name": "Run actions/checkout@v6",
+      "conclusion": "success",
+      "seconds": 4.0
+    },
+    {
+      "name": "Run actions/setup-node@v6",
+      "conclusion": "success",
+      "seconds": 4.0
+    },
+    {
+      "name": "Run pnpm/setup@v2.1.0",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run ./.github/actions/configure-npm-auth",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Install locked verifier tools without saving a dependency cache",
+      "conclusion": "success",
+      "seconds": 17.0
+    },
+    {
+      "name": "Pin reviewed library producer and candidate artifact",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run actions/download-artifact@v8",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Recheck producer after artifact download",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Verify and prepare exact candidate package inputs",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Install candidate without Rust compilation",
+      "conclusion": "success",
+      "seconds": 12.0
+    },
+    {
+      "name": "Capture actual runner and candidate resources",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Authorize all five catalogs and export authority",
+      "conclusion": "success",
+      "seconds": 81.0
+    },
+    {
+      "name": "Verify unchanged reuse skips audit and regeneration",
+      "conclusion": "success",
+      "seconds": 42.0
+    },
+    {
+      "name": "Isolate producer state and restore checked-in generation surfaces",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Verify authority import for downstream consumption",
+      "conclusion": "success",
+      "seconds": 41.0
+    },
+    {
+      "name": "Run candidate source quality and runtime contracts",
+      "conclusion": "success",
+      "seconds": 115.0
+    },
+    {
+      "name": "Capture memory counters after source quality",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Run every application test suite with candidate packages",
+      "conclusion": "success",
+      "seconds": 1217.0
+    },
+    {
+      "name": "Load reviewed public build inputs",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Build all four apps in production mode and finalize proofs",
+      "conclusion": "success",
+      "seconds": 747.0
+    },
+    {
+      "name": "Verify locale source and artifact strictness in the actual consumer",
+      "conclusion": "success",
+      "seconds": 130.0
+    },
+    {
+      "name": "Verify all four version-only regeneration regressions",
+      "conclusion": "success",
+      "seconds": 116.0
+    },
+    {
+      "name": "Prepare isolated inputs for repeated CI measurements",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Compare preparation and unchanged reuse on identical runner resources",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Upload acceptance and final artifact evidence",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Post Run pnpm/setup@v2.1.0",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Run actions/setup-node@v6",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Run actions/checkout@v6",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success",
+      "seconds": 0.0
+    }
+  ],
+  "jobSeconds": 2536.0,
+  "runCreatedToJobStartSeconds": 20.0,
+  "scope": "One complete corrected native candidate acceptance run; not an A/B benchmark distribution or ordinary published-package adoption. Finalized proof objects retained; this archive does not retain full emitted application bundles for an independent rebuild."
+}

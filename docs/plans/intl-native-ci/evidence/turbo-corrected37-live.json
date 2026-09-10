@@ -1,0 +1,508 @@
+{
+  "capturedAt": "2026-09-10T15:56:03.486531+00:00",
+  "turboRevision": "cb22e0506772543cf24a384b25e2850d96e2f074",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "classification": "Live incomplete CI; individual completed steps only, not final acceptance or comparative benchmark",
+  "acceptanceRun": 34498093485,
+  "measurementRun": 34498088946,
+  "runs": {
+    "acceptance": {
+      "conclusion": "",
+      "jobs": [
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "databaseId": 102941605246,
+          "name": "Verify native Intl candidate against Turbo",
+          "startedAt": "2026-09-10T15:49:11Z",
+          "status": "in_progress",
+          "steps": [
+            {
+              "completedAt": "2026-09-10T15:49:14Z",
+              "conclusion": "success",
+              "name": "Set up job",
+              "number": 1,
+              "startedAt": "2026-09-10T15:49:12Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:18Z",
+              "conclusion": "success",
+              "name": "Run actions/checkout@v6",
+              "number": 2,
+              "startedAt": "2026-09-10T15:49:14Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:22Z",
+              "conclusion": "success",
+              "name": "Run actions/setup-node@v6",
+              "number": 3,
+              "startedAt": "2026-09-10T15:49:18Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:23Z",
+              "conclusion": "success",
+              "name": "Run pnpm/setup@v2.1.0",
+              "number": 4,
+              "startedAt": "2026-09-10T15:49:22Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:23Z",
+              "conclusion": "success",
+              "name": "Run ./.github/actions/configure-npm-auth",
+              "number": 5,
+              "startedAt": "2026-09-10T15:49:23Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:40Z",
+              "conclusion": "success",
+              "name": "Install locked verifier tools without saving a dependency cache",
+              "number": 6,
+              "startedAt": "2026-09-10T15:49:23Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:41Z",
+              "conclusion": "success",
+              "name": "Pin reviewed library producer and candidate artifact",
+              "number": 7,
+              "startedAt": "2026-09-10T15:49:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:42Z",
+              "conclusion": "success",
+              "name": "Run actions/download-artifact@v8",
+              "number": 8,
+              "startedAt": "2026-09-10T15:49:41Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:42Z",
+              "conclusion": "success",
+              "name": "Recheck producer after artifact download",
+              "number": 9,
+              "startedAt": "2026-09-10T15:49:42Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:43Z",
+              "conclusion": "success",
+              "name": "Verify and prepare exact candidate package inputs",
+              "number": 10,
+              "startedAt": "2026-09-10T15:49:42Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:55Z",
+              "conclusion": "success",
+              "name": "Install candidate without Rust compilation",
+              "number": 11,
+              "startedAt": "2026-09-10T15:49:43Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:55Z",
+              "conclusion": "success",
+              "name": "Capture actual runner and candidate resources",
+              "number": 12,
+              "startedAt": "2026-09-10T15:49:55Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:51:16Z",
+              "conclusion": "success",
+              "name": "Authorize all five catalogs and export authority",
+              "number": 13,
+              "startedAt": "2026-09-10T15:49:55Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:51:58Z",
+              "conclusion": "success",
+              "name": "Verify unchanged reuse skips audit and regeneration",
+              "number": 14,
+              "startedAt": "2026-09-10T15:51:16Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:51:58Z",
+              "conclusion": "success",
+              "name": "Isolate producer state and restore checked-in generation surfaces",
+              "number": 15,
+              "startedAt": "2026-09-10T15:51:58Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:39Z",
+              "conclusion": "success",
+              "name": "Verify authority import for downstream consumption",
+              "number": 16,
+              "startedAt": "2026-09-10T15:51:58Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:54:34Z",
+              "conclusion": "success",
+              "name": "Run candidate source quality and runtime contracts",
+              "number": 17,
+              "startedAt": "2026-09-10T15:52:39Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:54:34Z",
+              "conclusion": "success",
+              "name": "Capture memory counters after source quality",
+              "number": 18,
+              "startedAt": "2026-09-10T15:54:34Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Run every application test suite with candidate packages",
+              "number": 19,
+              "startedAt": "2026-09-10T15:54:34Z",
+              "status": "in_progress"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Load reviewed public build inputs",
+              "number": 20,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Build all four apps in production mode and finalize proofs",
+              "number": 21,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Verify locale source and artifact strictness in the actual consumer",
+              "number": 22,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Verify all four version-only regeneration regressions",
+              "number": 23,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Prepare isolated inputs for repeated CI measurements",
+              "number": 24,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Compare preparation and unchanged reuse on identical runner resources",
+              "number": 25,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Upload acceptance and final artifact evidence",
+              "number": 26,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Post Run pnpm/setup@v2.1.0",
+              "number": 50,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Post Run actions/setup-node@v6",
+              "number": 51,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Post Run actions/checkout@v6",
+              "number": 52,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            }
+          ],
+          "url": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34498093485/job/102941605246"
+        }
+      ],
+      "status": "in_progress"
+    },
+    "measurement": {
+      "conclusion": "",
+      "jobs": [
+        {
+          "completedAt": "0001-01-01T00:00:00Z",
+          "conclusion": "",
+          "databaseId": 102941588507,
+          "name": "Measure Intl preparation",
+          "startedAt": "2026-09-10T15:49:06Z",
+          "status": "in_progress",
+          "steps": [
+            {
+              "completedAt": "2026-09-10T15:49:09Z",
+              "conclusion": "success",
+              "name": "Set up job",
+              "number": 1,
+              "startedAt": "2026-09-10T15:49:07Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:13Z",
+              "conclusion": "success",
+              "name": "Run actions/checkout@v6",
+              "number": 2,
+              "startedAt": "2026-09-10T15:49:09Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:17Z",
+              "conclusion": "success",
+              "name": "Run actions/setup-node@v6",
+              "number": 3,
+              "startedAt": "2026-09-10T15:49:13Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:18Z",
+              "conclusion": "success",
+              "name": "Run pnpm/setup@v2.1.0",
+              "number": 4,
+              "startedAt": "2026-09-10T15:49:17Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:18Z",
+              "conclusion": "success",
+              "name": "Run ./.github/actions/configure-npm-auth",
+              "number": 5,
+              "startedAt": "2026-09-10T15:49:18Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:36Z",
+              "conclusion": "success",
+              "name": "Install locked verifier tools without saving a dependency cache",
+              "number": 6,
+              "startedAt": "2026-09-10T15:49:18Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:37Z",
+              "conclusion": "success",
+              "name": "Pin reviewed library producer and candidate artifact",
+              "number": 7,
+              "startedAt": "2026-09-10T15:49:36Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:38Z",
+              "conclusion": "success",
+              "name": "Run actions/download-artifact@v8",
+              "number": 8,
+              "startedAt": "2026-09-10T15:49:37Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:39Z",
+              "conclusion": "success",
+              "name": "Recheck producer after artifact download",
+              "number": 9,
+              "startedAt": "2026-09-10T15:49:38Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:40Z",
+              "conclusion": "success",
+              "name": "Verify and prepare exact candidate package inputs",
+              "number": 10,
+              "startedAt": "2026-09-10T15:49:39Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:54Z",
+              "conclusion": "success",
+              "name": "Install candidate without Rust compilation",
+              "number": 11,
+              "startedAt": "2026-09-10T15:49:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:49:54Z",
+              "conclusion": "success",
+              "name": "Capture actual runner and candidate resources",
+              "number": 12,
+              "startedAt": "2026-09-10T15:49:54Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:51:17Z",
+              "conclusion": "success",
+              "name": "Authorize all five catalogs and export authority",
+              "number": 13,
+              "startedAt": "2026-09-10T15:49:54Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:51:59Z",
+              "conclusion": "success",
+              "name": "Verify unchanged reuse skips audit and regeneration",
+              "number": 14,
+              "startedAt": "2026-09-10T15:51:17Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:51:59Z",
+              "conclusion": "success",
+              "name": "Isolate producer state and restore checked-in generation surfaces",
+              "number": 15,
+              "startedAt": "2026-09-10T15:51:59Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "success",
+              "name": "Verify authority import for downstream consumption",
+              "number": 16,
+              "startedAt": "2026-09-10T15:51:59Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Run candidate source quality and runtime contracts",
+              "number": 17,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Capture memory counters after source quality",
+              "number": 18,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Run every application test suite with candidate packages",
+              "number": 19,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Load reviewed public build inputs",
+              "number": 20,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Build all four apps in production mode and finalize proofs",
+              "number": 21,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Verify locale source and artifact strictness in the actual consumer",
+              "number": 22,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:40Z",
+              "conclusion": "skipped",
+              "name": "Verify all four version-only regeneration regressions",
+              "number": 23,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-09-10T15:52:52Z",
+              "conclusion": "success",
+              "name": "Prepare isolated inputs for repeated CI measurements",
+              "number": 24,
+              "startedAt": "2026-09-10T15:52:40Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Compare preparation and unchanged reuse on identical runner resources",
+              "number": 25,
+              "startedAt": "2026-09-10T15:52:52Z",
+              "status": "in_progress"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Upload acceptance and final artifact evidence",
+              "number": 26,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Post Run pnpm/setup@v2.1.0",
+              "number": 50,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Post Run actions/setup-node@v6",
+              "number": 51,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            },
+            {
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "name": "Post Run actions/checkout@v6",
+              "number": 52,
+              "startedAt": "0001-01-01T00:00:00Z",
+              "status": "pending"
+            }
+          ],
+          "url": "https://github.com/openmirai/fe-mirai-org-turbo/actions/runs/34498088946/job/102941588507"
+        }
+      ],
+      "status": "in_progress"
+    }
+  }
+}

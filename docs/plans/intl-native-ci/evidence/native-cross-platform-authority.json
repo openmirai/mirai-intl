@@ -1,0 +1,161 @@
+{
+  "status": "passed",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "candidateArtifactId": 10159503087,
+  "candidateVersion": "0.3.30",
+  "fixture": "packed receipt-provider source-analysis fixture: onecatalog, en/thnestedmessages, importedprovider key, one semantically analyzed source",
+  "node": "24.18.0",
+  "producerPlatform": "darwin-arm64",
+  "receiverPlatform": "linux-arm64-gnu",
+  "reverseReceiver": "darwin-arm64",
+  "image": "node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d",
+  "container": {
+    "cpus": 1,
+    "memory": "1GiB",
+    "pids": 128,
+    "network": "none",
+    "rootFilesystem": "read-only",
+    "temporarySnapshotDirectory": "task-owned evidence mount; original /tmp remained noexec",
+    "removedAfterRun": true
+  },
+  "archiveSha256": "2a45ea49d06cde5585179e8f8bc804dad5ba8a9ddb10dfb61d826c8c1a939b70",
+  "archiveBytes": 63488,
+  "archivesByteIdentical": true,
+  "authorityObjectsAndGeneratedPayloadsByteIdentical": true,
+  "nativeManifestSha256": "bb96e3fc9698fdbf46173dea369a6752176fca97faa0f0f3a1b3d6c692c69d38",
+  "darwinTarget": {
+    "bytes": 1611808,
+    "file": "mirai-intl-darwin-arm64.node",
+    "hash": "sha256:2bcb397fe48b0eccecc848cccc2b70aa1e22d951e03e4b5a68d88618d06ef325"
+  },
+  "linuxResult": {
+    "success": true,
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "v24.18.0",
+    "engine": "rust",
+    "commands": [
+      [
+        "authority",
+        "import",
+        "--workspace",
+        "--from",
+        "/input/authority.tar",
+        "--format=json"
+      ],
+      ["verify", "--workspace", "--format=json"]
+    ],
+    "archiveSha256": "2a45ea49d06cde5585179e8f8bc804dad5ba8a9ddb10dfb61d826c8c1a939b70",
+    "nativeManifestSha256": "bb96e3fc9698fdbf46173dea369a6752176fca97faa0f0f3a1b3d6c692c69d38",
+    "target": {
+      "bytes": 1778184,
+      "file": "mirai-intl-linux-arm64-gnu.node",
+      "hash": "sha256:5d705b652c51777aa02aac0b35fce2f207a4b2000d6b1b1fde5de49fd9b23fa1"
+    },
+    "compilerVersion": "0.3.30"
+  },
+  "macProducer": {
+    "command": "check",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "catalogCount": 1,
+      "checkerProjects": 0,
+      "ownerProjects": 1,
+      "projects": [
+        {
+          "findings": 0,
+          "path": "apps/app",
+          "valid": true
+        }
+      ],
+      "semanticAuthorizationRuns": 1,
+      "semanticFilesAnalyzed": 1,
+      "valid": true
+    }
+  },
+  "macVerification": {
+    "command": "verify",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "artifactEmissions": 0,
+      "buildReceiptVerifications": 1,
+      "buildSemanticAnalysisRuns": 0,
+      "catalogCompilations": 0,
+      "valid": true,
+      "verifiedCatalogs": 1
+    }
+  },
+  "linuxImport": {
+    "command": "authority",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "bytes": 43727,
+      "catalogCount": 1,
+      "files": 18,
+      "operation": "import"
+    }
+  },
+  "linuxVerification": {
+    "command": "verify",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "artifactEmissions": 0,
+      "buildReceiptVerifications": 1,
+      "buildSemanticAnalysisRuns": 0,
+      "catalogCompilations": 0,
+      "valid": true,
+      "verifiedCatalogs": 1
+    }
+  },
+  "macReturnImport": {
+    "command": "authority",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "bytes": 43727,
+      "catalogCount": 1,
+      "files": 18,
+      "operation": "import"
+    }
+  },
+  "macReturnVerification": {
+    "command": "verify",
+    "diagnostics": [],
+    "schemaVersion": 1,
+    "success": true,
+    "summary": {
+      "artifactEmissions": 0,
+      "buildReceiptVerifications": 1,
+      "buildSemanticAnalysisRuns": 0,
+      "catalogCompilations": 0,
+      "valid": true,
+      "verifiedCatalogs": 1
+    }
+  },
+  "initialFailure": {
+    "classification": "testcontainer /tmp noexec prevents loader verifiedsnapshot mmap; package binary loads directly; no integritybypass or fallback",
+    "mountAndError": "[\n  'tmpfs /tmp tmpfs rw,nosuid,nodev,noexec,relatime,size=131072k,inode64 0 0'\n]\n/tmp/verified-test.node: failed to map segment from shared object\n",
+    "strictImportMessage": "mirai-intl: Native compiler binding could not be loaded; start a fresh process\n"
+  },
+  "limitations": [
+    "Real Linux kernel/arm64prebuilt on existinglocalDockerVM; not an AWSbenchmark or fullTurbo crossOS proof.",
+    "Mac packagefixture usespnpm11.11; exactpristineinstalledtree copied tobothOS, no platform installation changes between transfers.",
+    "Neither Linux nor reverseMac commands audit/prove/generate; existingverifiedreceipt objects remainbyteidentical.",
+    "CurrentfullTurbo5catalog/899semantic acceptance and fourproductionbuilds are separate evidence."
+  ],
+  "retainedArchive": {
+    "file": "native-cross-platform-authority.zip",
+    "bytes": 139791,
+    "sha256": "51763830af2e24594c924ab9404445783c2fc3bdfbe0ceb792c28a3bbfa770f4",
+    "scope": "fixtureinputs, locks, generated/authorityobjects, commands, twoidenticalarchives and reports; packagecontentsreconstructedfrompinnedcandidate"
+  }
+}

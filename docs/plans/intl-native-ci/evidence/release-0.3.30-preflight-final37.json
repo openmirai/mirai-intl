@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-09-10T16:02:05.899762+00:00",
+  "sourceRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "version": "0.3.30",
+  "command": "corepack pnpm run release:packages:npm:preflight -- 0.3.30",
+  "node": "24.18.0",
+  "status": "passed",
+  "exitCode": 0,
+  "registryReads": "all five version0.3.30 packages pending publication",
+  "publication": false,
+  "npmArgument": "--dry-run appended by explicit --preflight branch in scripts/publish-packages.mjs",
+  "nativeAssets": "all eight verified against current native sourceHash and compiler version; separately downloaded final37 artifact also verified",
+  "log": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-patch-release/.tmp/release-0.3.30-preflight-final37.log",
+  "sha256": "7778a8d7793328eb98bf0adc2b1bedafa242cd335fa63d72c125209f53bedf1a",
+  "limitations": [
+    "Local preflight is not Trusted Publishing execution",
+    "Corrected Turbo full acceptance and repeated performance gates remain pending",
+    "Existing local asset set originally from7599 CI; same verified Rust source/version; final37 artifact independently verified"
+  ]
+}
