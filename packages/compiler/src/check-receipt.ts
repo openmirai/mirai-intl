@@ -8,6 +8,7 @@ import {
   stat,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { withNativeOperation } from "./native-engine";
 
 import type {
   IntlCheckFileIdentityV2,
@@ -65,11 +66,16 @@ import type {
 import {
   buildIntlCheckReceiptV3PersistedAuthorityBinding,
   canonicalIntlCheckReceiptV2Bytes,
-  parseCanonicalIntlCheckReceiptV3,
+  parseCanonicalIntlCheckReceiptV3WithEngine,
+  withReceiptParsingScope,
   parseIntlBuildVerificationCountersV2,
   parseIntlCheckReceiptV2,
 } from "./authorization-snapshot";
 import { parseCanonicalMiraiIntlClassifierAuthorityEnvelopeV3 } from "./classifier-authority";
+import {
+  VerificationReadScope,
+  settleVerificationChecks,
+} from "./verification-reads";
 
 const legacyReceiptName = "check-receipt.v1.json";
 const generationReceiptName = "catalog-generation-receipt.v1.json";
@@ -128,7 +134,10 @@ async function workspaceRoot(packageRoot: string): Promise<string> {
       "bun.lock",
       "bun.lockb",
     ]) {
-      const entry = await lstat(join(directory, marker)).catch(() => undefined);
+      const entry = await lstatOptional(
+        join(directory, marker),
+        "Mirai Intl workspace marker"
+      );
       if (entry?.isFile() && !entry.isSymbolicLink()) {
         return directory;
       }
@@ -471,17 +480,21 @@ async function readImmutableAuthorityBytes(
   return readRegularBytes(join(directory, fileName), context, dependencies);
 }
 
-function parseSelectedReceipt(
+async function parseSelectedReceipt(
   source: string,
   schemaVersion: 2 | 3,
   workspace: string
-): IntlCheckReceipt {
+): Promise<IntlCheckReceipt> {
   if (schemaVersion === 3) {
     try {
-      return parseCanonicalIntlCheckReceiptV3(source, undefined, {
-        readSourceBytes: (sourcePath) =>
-          readWorkspaceSourceBytes(workspace, sourcePath),
-      });
+      return await parseCanonicalIntlCheckReceiptV3WithEngine(
+        source,
+        undefined,
+        {
+          readSourceBytes: (sourcePath) =>
+            readWorkspaceSourceBytes(workspace, sourcePath),
+        }
+      );
     } catch (error) {
       throw new Error("Mirai Intl selected check receipt V3 is invalid", {
         cause: error,
@@ -632,7 +645,7 @@ async function readPackageAuthoritySetReceipt(
       `Mirai Intl selected immutable check receipt V${String(authoritySet.receipt.schemaVersion)} hash is stale or corrupt`
     );
   }
-  let receipt = parseSelectedReceipt(
+  let receipt = await parseSelectedReceipt(
     decodeUtf8Fatal(
       receiptBytes,
       `Mirai Intl selected immutable check receipt V${String(authoritySet.receipt.schemaVersion)}`
@@ -725,18 +738,19 @@ export async function readConventionCheckReceipt(
     dependencies
   );
   if (!selectorEntry) {
-    const [unselectedV3Receipt, unselectedV3Authority] = await Promise.all([
-      lstatOptional(
-        join(directory, INTL_CHECK_RECEIPT_V3_NAME),
-        "Mirai Intl unselected check receipt V3",
-        dependencies
-      ),
-      lstatOptional(
-        join(directory, INTL_CHECK_CLASSIFIER_AUTHORITY_V3_NAME),
-        "Mirai Intl unselected classifier authority V3",
-        dependencies
-      ),
-    ]);
+    const [unselectedV3Receipt, unselectedV3Authority] =
+      await settleVerificationChecks([
+        lstatOptional(
+          join(directory, INTL_CHECK_RECEIPT_V3_NAME),
+          "Mirai Intl unselected check receipt V3",
+          dependencies
+        ),
+        lstatOptional(
+          join(directory, INTL_CHECK_CLASSIFIER_AUTHORITY_V3_NAME),
+          "Mirai Intl unselected classifier authority V3",
+          dependencies
+        ),
+      ]);
     if (unselectedV3Receipt || unselectedV3Authority) {
       throw new Error(
         "Mirai Intl check receipt selector is missing while a V3 authorization artifact exists"
@@ -760,7 +774,7 @@ export async function readConventionCheckReceipt(
     });
     const source = decodeUtf8Fatal(sourceBytes, "Mirai Intl check receipt V2");
     return {
-      receipt: parseSelectedReceipt(source, 2, workspace),
+      receipt: await parseSelectedReceipt(source, 2, workspace),
       receiptHash: sha256(sourceBytes),
       receiptName: INTL_CHECK_RECEIPT_V2_NAME,
       selection: "legacy-v2",
@@ -799,7 +813,7 @@ export async function readConventionCheckReceipt(
     selectedBytes,
     `Mirai Intl selected check receipt V${String(selector.receiptSchemaVersion)}`
   );
-  let receipt = parseSelectedReceipt(
+  let receipt = await parseSelectedReceipt(
     source,
     selector.receiptSchemaVersion,
     workspace
@@ -841,7 +855,12 @@ export async function readConventionCheckReceipt(
 }
 
 async function hashRegular(path: string): Promise<`sha256:${string}`> {
-  const entry = await lstat(path).catch(() => undefined);
+  const entry = await lstat(path).catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  });
   if (!entry || entry.isSymbolicLink() || !entry.isFile()) {
     throw new Error(`Mirai Intl receipt input must be a regular file: ${path}`);
   }
@@ -853,9 +872,10 @@ async function hashRegular(path: string): Promise<`sha256:${string}`> {
 async function verifyFiles(
   root: string,
   entries: ReadonlyArray<IntlCheckFileIdentityV2>,
-  context: string
+  context: string,
+  reads = new VerificationReadScope(hashRegular)
 ): Promise<void> {
-  await Promise.all(
+  await settleVerificationChecks(
     entries
       .filter((entry) => !entry.path.startsWith("@typescript/lib/"))
       .map(async (entry) => {
@@ -863,7 +883,7 @@ async function verifyFiles(
         if (relativePath(root, path) !== entry.path) {
           throw new Error(`${context} path is not canonical: ${entry.path}`);
         }
-        if ((await hashRegular(path)) !== entry.hash) {
+        if ((await reads.hash(path)) !== entry.hash) {
           throw new Error(`${context} is stale or corrupt: ${entry.path}`);
         }
       })
@@ -919,7 +939,7 @@ async function verifyGeneration(
   ) {
     throw new Error("Mirai Intl generation pointer and receipt disagree");
   }
-  const [facadeBytes, lockBytes] = await Promise.all([
+  const [facadeBytes, lockBytes] = await settleVerificationChecks([
     readFile(join(generatedRoot, "index.ts")),
     readFile(join(generatedRoot, "catalog.lock.json")),
   ]);
@@ -961,10 +981,15 @@ async function verifyGeneration(
   ) {
     throw new Error("Mirai Intl generated payload manifest is incomplete");
   }
-  await Promise.all(
+  await settleVerificationChecks(
     generation.payload.manifest.entries.map(async (entry) => {
       const path = resolve(payloadRoot, entry.path);
-      const payloadStat = await lstat(path).catch(() => undefined);
+      const payloadStat = await lstat(path).catch((error: unknown) => {
+        if (isMissingPathError(error)) {
+          return undefined;
+        }
+        throw error;
+      });
       if (
         !payloadStat ||
         payloadStat.isSymbolicLink() ||
@@ -1002,7 +1027,8 @@ function receiptV3Files(
 
 async function verifyClassifierFilesystemV3(
   workspace: string,
-  receipt: IntlCheckReceiptV3
+  receipt: IntlCheckReceiptV3,
+  reads: VerificationReadScope
 ): Promise<void> {
   const classifierPath = (path: string): string => {
     const absolute = resolve(workspace, path);
@@ -1024,9 +1050,10 @@ async function verifyClassifierFilesystemV3(
     receipt.tables.controls.flatMap((control) =>
       receiptV3Files(receipt, control.files, "Mirai Intl V3 control set")
     ),
-    "Mirai Intl classifier control"
+    "Mirai Intl classifier control",
+    reads
   );
-  await Promise.all([
+  await settleVerificationChecks([
     ...receipt.tables.probes.map(async (probe) => {
       if (isSyntheticPath(probe.path)) {
         return;
@@ -1099,6 +1126,7 @@ async function verifyClassifierFilesystemV3(
 
 interface ReceiptVerificationSession {
   immutable: Awaited<ReturnType<typeof computeImmutableIntegrityIdentity>>;
+  initialReads: VerificationReadScope;
   catalogIndex: number;
   finalChecks: Array<{ index: number; verify: () => Promise<void> }>;
 }
@@ -1124,8 +1152,8 @@ async function verifyConventionBuildReceiptV3(
     receipt.application.packageManifest,
     receipt.application.workspaceLockfile,
   ]);
-  const verifyBoundFiles = () =>
-    Promise.all([
+  const verifyBoundFiles = (reads: VerificationReadScope) =>
+    settleVerificationChecks([
       verifyFiles(
         workspace,
         receipt.tables.files.filter(
@@ -1133,11 +1161,14 @@ async function verifyConventionBuildReceiptV3(
             !compilerFiles.has(reference) &&
             !nonRawApplicationFiles.has(reference)
         ),
-        "Mirai Intl V3 bound file"
+        "Mirai Intl V3 bound file",
+        reads
       ),
-      verifyClassifierFilesystemV3(workspace, receipt),
+      verifyClassifierFilesystemV3(workspace, receipt, reads),
     ]);
-  await verifyBoundFiles();
+  await verifyBoundFiles(
+    session?.initialReads ?? new VerificationReadScope(hashRegular)
+  );
   const generationBytes = await readFile(
     join(loaded.outputRoot, generationReceiptName)
   );
@@ -1182,7 +1213,7 @@ async function verifyConventionBuildReceiptV3(
     receipt.generationReceiptHash
   );
   const verifySourceUniverse = async () => {
-    const reconstructedProjects = await Promise.all(
+    const reconstructedProjects = await settleVerificationChecks(
       receipt.projects.map(async (project) => {
         const expandedProject = {
           ...project,
@@ -1288,22 +1319,30 @@ async function verifyConventionBuildReceiptV3(
     receipt.tables.files[receipt.application.packageManifest];
   const workspaceLockfile =
     receipt.tables.files[receipt.application.workspaceLockfile];
-  const expectedManifest = {
-    hash: sha256(await readFile(join(root, "package.json"))),
-    path: relativePath(workspace, join(root, "package.json")),
+  const verifyApplicationBindings = async (
+    observed: Awaited<ReturnType<typeof computeApplicationPackageIdentity>>
+  ) => {
+    const expectedManifest = {
+      hash: await hashRegular(join(root, "package.json")),
+      path: relativePath(workspace, join(root, "package.json")),
+    };
+    const expectedLockfile = observed.lock
+      ? {
+          hash: await hashRegular(join(workspace, observed.lock.name)),
+          path: relativePath(workspace, join(workspace, observed.lock.name)),
+        }
+      : expectedManifest;
+    if (
+      (observed.lock && expectedLockfile.hash !== observed.lock.hash) ||
+      canonicalJson(packageManifest) !== canonicalJson(expectedManifest) ||
+      canonicalJson(workspaceLockfile) !== canonicalJson(expectedLockfile)
+    ) {
+      throw new Error(
+        "Mirai Intl application package or lock identity is stale"
+      );
+    }
   };
-  const expectedLockfile = application.lock
-    ? {
-        hash: application.lock.hash,
-        path: relativePath(workspace, join(workspace, application.lock.name)),
-      }
-    : expectedManifest;
-  if (
-    canonicalJson(packageManifest) !== canonicalJson(expectedManifest) ||
-    canonicalJson(workspaceLockfile) !== canonicalJson(expectedLockfile)
-  ) {
-    throw new Error("Mirai Intl application package or lock identity is stale");
-  }
+  await verifyApplicationBindings(application);
   if (committed.generationInputHash !== canonicalHash(fresh.generationInput)) {
     throw new Error("Mirai Intl generation inputs are stale or corrupt");
   }
@@ -1321,7 +1360,9 @@ async function verifyConventionBuildReceiptV3(
         "Mirai Intl generation inputs changed during verification"
       );
     }
-    await verifyBoundFiles();
+    // Final checks deliberately use a fresh per-catalog scope. A shared cache
+    // from an earlier catalog must not conceal a later filesystem mutation.
+    await verifyBoundFiles(new VerificationReadScope(hashRegular));
     await verifySourceUniverse();
     await verifyGeneratedInventory();
     await verifyCommittedArtifactSnapshot(
@@ -1333,6 +1374,16 @@ async function verifyConventionBuildReceiptV3(
       },
       receipt.generationReceiptHash
     );
+    // Generation excludes release version; it cannot stand in for authorization.
+    // Read full application identity and raw receipt bindings after the other
+    // final checks, using no shared read cache across this return barrier.
+    const finalApplication = await computeApplicationPackageIdentity(root);
+    if (canonicalJson(finalApplication) !== canonicalJson(application)) {
+      throw new Error(
+        "Mirai Intl application package inputs changed during verification"
+      );
+    }
+    await verifyApplicationBindings(finalApplication);
   };
   if (session) {
     session.finalChecks.push({
@@ -1360,6 +1411,19 @@ export async function verifyTransferredConventionBuildReceipt(
   transferredPackageRoot: string,
   generatedRoot = join(transferredPackageRoot, "src/i18n/generated")
 ): Promise<IntlBuildReceiptVerification> {
+  return verifyTransferredReceiptWithIdentity(
+    packageRoot,
+    transferredPackageRoot,
+    generatedRoot
+  );
+}
+
+async function verifyTransferredReceiptWithIdentity(
+  packageRoot: string,
+  transferredPackageRoot: string,
+  generatedRoot = join(transferredPackageRoot, "src/i18n/generated"),
+  session?: ReceiptVerificationSession
+): Promise<IntlBuildReceiptVerification> {
   const root = await realpath(resolve(packageRoot));
   const workspace = await workspaceRoot(root);
   const { receipt, selection } = await readConventionCheckReceipt(
@@ -1376,7 +1440,50 @@ export async function verifyTransferredConventionBuildReceipt(
     root,
     workspace,
     receipt,
-    await realpath(generatedRoot)
+    await realpath(generatedRoot),
+    session
+  );
+}
+
+/** @internal Each call is a separate transfer barrier; never share its session across publication. */
+export async function verifyTransferredConventionBuildReceiptBatch(
+  entries: ReadonlyArray<{
+    packageRoot: string;
+    transferredPackageRoot: string;
+    generatedRoot?: string;
+  }>,
+  workspaceDirectory: string
+): Promise<Array<IntlBuildReceiptVerification>> {
+  const results = await verifyReceiptSession(
+    entries.map((entry) => entry.packageRoot),
+    async (_root, session, index) => {
+      const entry = entries[index];
+      if (!entry) {
+        throw new Error("Missing transfer verification entry");
+      }
+      return verifyTransferredReceiptWithIdentity(
+        entry.packageRoot,
+        entry.transferredPackageRoot,
+        entry.generatedRoot,
+        session
+      );
+    },
+    workspaceDirectory
+  );
+  const failures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : []
+  );
+  if (failures.length === 1) {
+    throw failures[0];
+  }
+  if (failures.length) {
+    throw new AggregateError(
+      failures,
+      "Mirai Intl transfer verification failed"
+    );
+  }
+  return results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : []
   );
 }
 
@@ -1392,9 +1499,34 @@ export async function verifyConventionBuildReceiptBatch(
   packageRoots: ReadonlyArray<string>,
   workspaceDirectory?: string
 ): Promise<Array<PromiseSettledResult<IntlBuildReceiptVerification>>> {
+  return verifyReceiptSession(
+    packageRoots,
+    verifyConventionBuildReceiptWithIdentity,
+    workspaceDirectory
+  );
+}
+
+async function verifyReceiptSession(
+  ...args: Parameters<typeof verifyReceiptSessionWithinOperation>
+): Promise<Array<PromiseSettledResult<IntlBuildReceiptVerification>>> {
+  return withReceiptParsingScope(() =>
+    withNativeOperation(() => verifyReceiptSessionWithinOperation(...args))
+  );
+}
+
+async function verifyReceiptSessionWithinOperation(
+  packageRoots: ReadonlyArray<string>,
+  verify: (
+    root: string,
+    session: ReceiptVerificationSession,
+    index: number
+  ) => Promise<IntlBuildReceiptVerification>,
+  workspaceDirectory?: string
+): Promise<Array<PromiseSettledResult<IntlBuildReceiptVerification>>> {
   const immutable = await computeImmutableIntegrityIdentity();
   const session: ReceiptVerificationSession = {
     immutable,
+    initialReads: new VerificationReadScope(hashRegular),
     catalogIndex: 0,
     finalChecks: [],
   };
@@ -1404,7 +1536,7 @@ export async function verifyConventionBuildReceiptBatch(
     try {
       results.push({
         status: "fulfilled",
-        value: await verifyConventionBuildReceiptWithIdentity(root, session),
+        value: await verify(root, session, index),
       });
     } catch (reason) {
       results.push({ status: "rejected", reason });
@@ -1417,24 +1549,40 @@ export async function verifyConventionBuildReceiptBatch(
       results[check.index] = { status: "rejected", reason };
     }
   }
-  if (
-    canonicalJson(immutable) !==
-    canonicalJson(await computeImmutableIntegrityIdentity())
-  ) {
-    const reason = new Error(
-      "Mirai Intl compiler dependency inputs changed during workspace verification"
-    );
-    return results.map(() => ({ status: "rejected", reason }));
-  }
-  if (
-    workspaceDirectory &&
-    canonicalJson(packageRoots) !==
-      canonicalJson(await discoverWorkspaceCatalogs(workspaceDirectory))
-  ) {
-    const reason = new Error(
-      "Mirai Intl workspace catalog inventory changed during verification"
-    );
-    return results.map(() => ({ status: "rejected", reason }));
+  try {
+    if (
+      canonicalJson(immutable) !==
+      canonicalJson(await computeImmutableIntegrityIdentity())
+    ) {
+      throw new Error(
+        "Mirai Intl compiler dependency inputs changed during workspace verification"
+      );
+    }
+    if (
+      workspaceDirectory &&
+      canonicalJson(packageRoots.toSorted(compareCanonicalStrings)) !==
+        canonicalJson(
+          (await discoverWorkspaceCatalogs(workspaceDirectory)).toSorted(
+            compareCanonicalStrings
+          )
+        )
+    ) {
+      throw new Error(
+        "Mirai Intl workspace catalog inventory changed during verification"
+      );
+    }
+  } catch (reason) {
+    // A final stale-input result must not erase an earlier operational failure.
+    return results.map((result) => ({
+      status: "rejected",
+      reason:
+        result.status === "rejected"
+          ? new AggregateError(
+              [result.reason, reason],
+              "Mirai Intl verification and final barrier failed"
+            )
+          : reason,
+    }));
   }
   return results;
 }
@@ -1486,7 +1634,7 @@ async function verifyConventionBuildReceiptWithIdentity(
     );
   }
   const loaded = await loadConventionCatalog(root);
-  await Promise.all([
+  await settleVerificationChecks([
     verifyFiles(
       workspace,
       receipt.projects.flatMap((project) => project.configManifest),
@@ -1523,7 +1671,7 @@ async function verifyConventionBuildReceiptWithIdentity(
     receipt
   );
   await verifyLoadedConventionCatalog(loaded, { collectEnvironment: false });
-  const reconstructedProjects = await Promise.all(
+  const reconstructedProjects = await settleVerificationChecks(
     receipt.projects.map(async (project) => ({
       project,
       rootFiles: await reconstructProjectRootFiles(workspace, project, root),

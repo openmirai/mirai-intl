@@ -24,6 +24,7 @@ import {
 import { composeCatalog } from "./compose";
 import type { CompositionResult } from "./compose";
 import { parseMessage } from "./parser";
+import { memoizeMessageSemantics } from "./message-semantics";
 import type { ParsedMessage } from "./parser";
 import type { CatalogSource, MessageSource } from "./source";
 import compilerPackage from "../package.json" with { type: "json" };
@@ -216,14 +217,56 @@ function normalizedFormatterIds(
   return actual;
 }
 
+type SemanticTemplate = Omit<
+  RuntimeMessage,
+  | "argumentSchema"
+  | "resultSchema"
+  | "id"
+  | "path"
+  | "provenanceRef"
+  | "validatorId"
+>;
+
 function compileMessage(
   message: MessageSource,
   locales: ReadonlyArray<string>,
   validatorId: number,
   formatterVersions: Readonly<Record<string, string>>
 ): RuntimeMessage {
-  const translations = exactLocaleEntries(message, locales);
+  // Keep identity and composition outside the pure semantic template. Full raw
+  // declarations participate in the key, including unused formatter versions.
+  const template = memoizeMessageSemantics(
+    "compiled",
+    [
+      message.translations,
+      locales,
+      message.kind,
+      message.valuesSchema,
+      message.resultSchema,
+      message.tags,
+      message.formatterIds,
+      formatterVersions,
+    ],
+    () => compileMessageTemplate(message, locales, formatterVersions)
+  );
   const id = `msg_${sha256(message.path).slice(7, 23)}`;
+  return {
+    ...template,
+    argumentSchema: message.valuesSchema,
+    resultSchema: message.resultSchema,
+    id,
+    path: message.path,
+    provenanceRef: `message:${id}`,
+    validatorId,
+  };
+}
+
+function compileMessageTemplate(
+  message: MessageSource,
+  locales: ReadonlyArray<string>,
+  formatterVersions: Readonly<Record<string, string>>
+): SemanticTemplate {
+  const translations = exactLocaleEntries(message, locales);
   if (message.kind === "value") {
     const formatterIds = normalizedFormatterIds(message, [], formatterVersions);
     if (message.valuesSchema.required.length > 0) {
@@ -242,16 +285,10 @@ function compileMessage(
       localeValues[locale] = result.value;
     }
     return {
-      argumentSchema: message.valuesSchema,
       formatterIds,
-      id,
       kind: message.kind,
       localeValues,
-      path: message.path,
-      provenanceRef: `message:${id}`,
-      resultSchema: message.resultSchema,
       tags: [],
-      validatorId,
     };
   }
 
@@ -270,18 +307,12 @@ function compileMessage(
     formatterVersions
   );
   return {
-    argumentSchema: message.valuesSchema,
     formatterIds,
-    id,
     kind: message.kind,
     localeNodes: Object.fromEntries(
       parsed.map(([locale, value]) => [locale, value.nodes])
     ),
-    path: message.path,
-    provenanceRef: `message:${id}`,
-    resultSchema: message.resultSchema,
     tags: [...(message.tags ?? [])].toSorted(),
-    validatorId,
   };
 }
 

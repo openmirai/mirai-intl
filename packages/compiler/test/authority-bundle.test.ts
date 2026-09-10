@@ -11,11 +11,13 @@ import {
   symlink,
   rename,
   truncate,
+  realpath,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import type * as FileSystem from "node:fs/promises";
 import { create, extract } from "tar";
 
 import { proveConventionCatalog } from "../src/proof";
@@ -36,12 +38,92 @@ import {
 import {
   exportAuthorityBundle,
   importAuthorityBundle,
+  reuseAuthorityBundle,
   verifyConventionBuildReceipt,
 } from "../src/verify";
 
 const temporaryRoots: Array<string> = [];
 
+const faults = vi.hoisted(() => ({
+  source: "",
+  archive: "",
+  root: "",
+  denySource: false,
+  sourceProbesBeforeFailure: 0,
+  denyArchive: false,
+  mutateAfterInstall: false,
+  failRollback: false,
+  failCleanup: false,
+}));
+
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof FileSystem>();
+  const ioError = () =>
+    Object.assign(new Error("Injected filesystem failure"), { code: "EACCES" });
+  return {
+    ...actual,
+    lstat: async (...args: Parameters<typeof actual.lstat>) => {
+      if (faults.denySource && String(args[0]) === faults.source) {
+        if (faults.sourceProbesBeforeFailure > 0) {
+          faults.sourceProbesBeforeFailure--;
+          return actual.lstat(...args);
+        }
+        throw ioError();
+      }
+      return actual.lstat(...args);
+    },
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      if (
+        faults.denySource &&
+        faults.sourceProbesBeforeFailure === 0 &&
+        String(args[0]) === faults.source
+      ) {
+        throw ioError();
+      }
+      return actual.readFile(...args);
+    },
+    open: async (...args: Parameters<typeof actual.open>) => {
+      if (faults.denyArchive && String(args[0]).endsWith("/bundle.tar")) {
+        throw ioError();
+      }
+      return actual.open(...args);
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      if (faults.failRollback && String(args[0]).includes("/backup/")) {
+        throw ioError();
+      }
+      await actual.rename(...args);
+      if (
+        faults.mutateAfterInstall &&
+        String(args[0]).includes("/stage/") &&
+        String(args[1]) === `${faults.root}/apps/app/.mirai-intl`
+      ) {
+        faults.mutateAfterInstall = false;
+        await actual.writeFile(
+          faults.source,
+          "export const changedDuringInstall = true;\n"
+        );
+      }
+    },
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      if (
+        faults.failCleanup &&
+        String(args[0]).startsWith(`${faults.root}/.mirai-intl-transfer-`)
+      ) {
+        throw ioError();
+      }
+      return actual.rm(...args);
+    },
+  };
+});
+
 afterEach(async () => {
+  faults.denySource = false;
+  faults.sourceProbesBeforeFailure = 0;
+  faults.denyArchive = false;
+  faults.mutateAfterInstall = false;
+  faults.failRollback = false;
+  faults.failCleanup = false;
   for (const root of temporaryRoots.splice(0)) {
     await rm(root, { recursive: true, force: true });
   }
@@ -102,6 +184,189 @@ it("transfers complete selected V3 authority into a clean relocated checkout", a
     "export const answer = 42;\n"
   );
 }, 60_000);
+
+it("reuses valid unchanged authority without generating or authorizing again", async () => {
+  const { root, consumer, archive } = await workspaceFixture();
+  await exportAuthorityBundle({ root, archive });
+  const result = await reuseAuthorityBundle({ root: consumer, archive });
+  expect(result).toMatchObject({
+    status: "reused",
+    bundle: { catalogs: ["apps/app"] },
+  });
+  const verified = await verifyConventionBuildReceipt(
+    join(consumer, "apps/app")
+  );
+  expect(verified).toMatchObject({
+    buildSemanticAnalysisRuns: 0,
+    catalogCompilations: 0,
+    artifactEmissions: 0,
+  });
+});
+
+it.each(["missing", "malformed", "stale"])(
+  "returns a safely cleaned reuse miss for a %s candidate",
+  async (kind) => {
+    const { root, consumer, archive } = await workspaceFixture();
+    if (kind === "malformed") {
+      await writeFile(archive, "truncated authority");
+    } else if (kind === "stale") {
+      await exportAuthorityBundle({ root, archive });
+      await writeFile(
+        join(consumer, "apps/app/src/page.ts"),
+        "export const changed = 1;\n"
+      );
+    }
+    expect(
+      await reuseAuthorityBundle({ root: consumer, archive })
+    ).toMatchObject({
+      status: "miss",
+      reason: kind === "missing" ? "missing" : "candidate-rejected",
+      recoverySafe: true,
+    });
+    expect(
+      (await readdir(consumer)).filter(
+        (name) =>
+          name.startsWith(".mirai-intl-transfer-") ||
+          name.endsWith("authority-transfer.lock")
+      )
+    ).toEqual([]);
+    await expect(
+      readFile(
+        join(consumer, "apps/app/.mirai-intl/check-receipt.current.json")
+      )
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    // A new independent authorization, rather than salvaged cached state, can
+    // now grant authority to these valid current inputs.
+    await proveConventionCatalog(join(consumer, "apps/app"));
+    await expect(
+      verifyConventionBuildReceipt(join(consumer, "apps/app"))
+    ).resolves.toMatchObject({ verifiedCatalogs: 1 });
+  }
+);
+
+it("a rejected cache cannot turn invalid current translations into authority", async () => {
+  const { consumer, archive } = await workspaceFixture();
+  await writeFile(archive, "bad archive");
+  await writeFile(
+    join(consumer, "apps/app/src/locales/th.json"),
+    '{"greeting":""}'
+  );
+  expect(await reuseAuthorityBundle({ root: consumer, archive })).toMatchObject(
+    { status: "miss" }
+  );
+  await expect(
+    proveConventionCatalog(join(consumer, "apps/app"))
+  ).rejects.toThrow(/./u);
+});
+
+it.each(["transfer lock", "publication recovery"])(
+  "does not permit clean-audit fallback over existing %s state, even with a missing candidate",
+  async (kind) => {
+    const { consumer, archive } = await workspaceFixture();
+    const path =
+      kind === "transfer lock"
+        ? join(consumer, ".mirai-intl-authority-transfer.lock")
+        : join(consumer, "apps/app/src/i18n/generated/.catalog-publication");
+    await mkdir(join(consumer, "apps/app/src/i18n/generated"), {
+      recursive: true,
+    });
+    await writeFile(path, "preserve recovery evidence");
+    await expect(
+      reuseAuthorityBundle({ root: consumer, archive })
+    ).rejects.toThrow(/./u);
+    expect(await readFile(path, "utf8")).toBe("preserve recovery evidence");
+  }
+);
+
+it.each(["archive", "source", "config", "cleanup"])(
+  "does not classify %s filesystem failure as a recoverable cache miss",
+  async (kind) => {
+    const { root, consumer, archive } = await workspaceFixture();
+    if (kind === "config") {
+      for (const workspace of [root, consumer]) {
+        await writeFile(
+          join(workspace, "apps/app/mirai-intl.config.json"),
+          JSON.stringify({
+            checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+          })
+        );
+        await writeFile(
+          join(workspace, "apps/app/tsconfig.json"),
+          JSON.stringify({
+            extends: "./tsconfig.base.json",
+            include: ["src/**/*.ts"],
+          })
+        );
+        await writeFile(
+          join(workspace, "apps/app/tsconfig.base.json"),
+          JSON.stringify({ compilerOptions: { strict: true } })
+        );
+      }
+      await proveConventionCatalog(join(root, "apps/app"));
+    }
+    await exportAuthorityBundle({ root, archive });
+    faults.root = await realpath(consumer);
+    faults.source = join(
+      faults.root,
+      kind === "config" ? "apps/app/tsconfig.base.json" : "apps/app/src/page.ts"
+    );
+    faults.denySource = kind === "source" || kind === "config";
+    // Resolve the distinct base config successfully, then fail its next lstat
+    // in transitive manifest traversal, before any readFile can mask the bug.
+    faults.sourceProbesBeforeFailure = kind === "config" ? 1 : 0;
+    faults.denyArchive = kind === "archive";
+    faults.failCleanup = kind === "cleanup";
+    if (kind === "cleanup") {
+      await writeFile(archive, "broken candidate");
+    }
+    await expect(
+      reuseAuthorityBundle({ root: consumer, archive })
+    ).rejects.toMatchObject({ code: "EACCES" });
+  }
+);
+
+it.each([false, true])(
+  "permits recovery only after successful rollback (failed rollback=%s)",
+  async (failRollback) => {
+    const { root, consumer, archive } = await workspaceFixture();
+    await exportAuthorityBundle({ root, archive });
+    await importAuthorityBundle({ root: consumer, archive });
+    const pointer = join(consumer, "apps/app/src/i18n/generated/current.json");
+    const selector = join(
+      consumer,
+      "apps/app/.mirai-intl/check-receipt.current.json"
+    );
+    const before = [await readFile(pointer), await readFile(selector)];
+    faults.root = await realpath(consumer);
+    faults.source = join(faults.root, "apps/app/src/page.ts");
+    faults.mutateAfterInstall = true;
+    faults.failRollback = failRollback;
+    if (failRollback) {
+      await expect(
+        reuseAuthorityBundle({ root: consumer, archive })
+      ).rejects.toThrow(/rollback failed/u);
+      expect(
+        await readFile(join(consumer, ".mirai-intl-authority-transfer.lock"))
+      ).toBeDefined();
+      expect(
+        (await readdir(consumer)).filter((name) =>
+          name.startsWith(".mirai-intl-transfer-")
+        )
+      ).toHaveLength(1);
+    } else {
+      await expect(
+        reuseAuthorityBundle({ root: consumer, archive })
+      ).resolves.toMatchObject({
+        status: "miss",
+        stage: "checkout",
+        recoverySafe: true,
+      });
+      expect([await readFile(pointer), await readFile(selector)]).toEqual(
+        before
+      );
+    }
+  }
+);
 
 it.each(["receipts", "classifiers"])(
   "refuses export when selected %s are missing",
@@ -453,4 +718,55 @@ it("runs the documented workspace export/import CLI without private-path copying
     success: true,
     summary: { buildReceiptVerifications: 1, buildSemanticAnalysisRuns: 0 },
   });
+  expect(
+    await run(consumer, [
+      "authority",
+      "reuse",
+      "--workspace",
+      "--from",
+      archive,
+    ])
+  ).toMatchObject({
+    success: true,
+    summary: {
+      reuseStatus: "reused",
+      authorityAccepted: true,
+      catalogs: [{ path: "apps/app" }],
+    },
+  });
 }, 60_000);
+
+it("reports a reuse miss with exit 2, never as accepted authority", async () => {
+  const { consumer, archive } = await workspaceFixture();
+  const result = await promisify(execFile)(
+    process.execPath,
+    [
+      "--import",
+      import.meta.resolve("tsx"),
+      resolve("packages/compiler/src/cli.ts"),
+      "authority",
+      "reuse",
+      "--workspace",
+      "--from",
+      archive,
+      "--format=json",
+    ],
+    { cwd: consumer }
+  ).catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && "stdout" in error) {
+      return { code: error.code, stdout: String(error.stdout) };
+    }
+    throw error;
+  });
+  expect(result).toHaveProperty("code", 2);
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    success: false,
+    summary: {
+      operation: "reuse",
+      reuseStatus: "miss",
+      authorityAccepted: false,
+      reason: "missing",
+      recoverySafe: true,
+    },
+  });
+});

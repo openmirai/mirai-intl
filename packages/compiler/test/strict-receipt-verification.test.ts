@@ -3,27 +3,46 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import type * as Catalog from "../src/catalog";
 import type * as Compile from "../src/compile";
 import type * as Emit from "../src/emit";
 import type * as FileSystem from "node:fs/promises";
 
 const work = vi.hoisted(() => ({ compile: 0, emit: 0 }));
 const mutation = vi.hoisted(() => ({
+  freshLoads: 0,
   skipGenerationReads: 0,
   afterGenerationRead: undefined as (() => Promise<void>) | undefined,
+  afterRead: undefined as ((path: string) => Promise<void>) | undefined,
 }));
+vi.mock("../src/catalog", async (original) => {
+  const actual = await original<typeof Catalog>();
+  return {
+    ...actual,
+    loadFreshConventionCatalogGenerationInput: async (
+      ...args: Parameters<
+        typeof actual.loadFreshConventionCatalogGenerationInput
+      >
+    ) => {
+      mutation.freshLoads++;
+      return actual.loadFreshConventionCatalogGenerationInput(...args);
+    },
+  };
+});
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof FileSystem>();
   return {
     ...actual,
     readFile: async (...args: Parameters<typeof actual.readFile>) => {
       const bytes = await actual.readFile(...args);
+      await mutation.afterRead?.(String(args[0]));
       if (
         String(args[0]).endsWith("/catalog-generation-receipt.v1.json") &&
         mutation.afterGenerationRead
@@ -69,8 +88,10 @@ import {
 
 const roots: Array<string> = [];
 afterEach(async () => {
+  mutation.freshLoads = 0;
   mutation.afterGenerationRead = undefined;
   mutation.skipGenerationReads = 0;
+  mutation.afterRead = undefined;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
   );
@@ -135,9 +156,16 @@ it("rejects a new catalog added during workspace verification", async () => {
   );
 });
 
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "intl-strict-verify-"));
-  roots.push(root);
+async function fixture(inWorkspace = false, withLock = false) {
+  const container = await mkdtemp(join(tmpdir(), "intl-strict-verify-"));
+  roots.push(container);
+  const root = inWorkspace ? join(container, "apps/a") : container;
+  if (inWorkspace) {
+    await writeFile(
+      join(container, "pnpm-workspace.yaml"),
+      "packages:\n  - apps/*\n"
+    );
+  }
   await mkdir(join(root, "src/locales"), { recursive: true });
   await writeFile(
     join(root, "package.json"),
@@ -153,6 +181,12 @@ async function fixture() {
     join(root, "src/locales/th.json"),
     '{"greeting":"สวัสดี {name}"}'
   );
+  if (withLock) {
+    await writeFile(
+      join(container, "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n"
+    );
+  }
   await proveConventionCatalog(root);
   return root;
 }
@@ -206,6 +240,70 @@ it("verifies every catalog in a bounded workspace session and rejects stale memb
   await expect(verifyWorkspaceBuildReceipts(workspace)).rejects.toThrow(
     /workspace verification failed/u
   );
+});
+
+it("rereads a shared source when it changes between catalog final checks", async () => {
+  const workspace = await realpath(
+    await mkdtemp(join(tmpdir(), "intl-final-catalog-scope-"))
+  );
+  roots.push(workspace);
+  await writeFile(
+    join(workspace, "pnpm-workspace.yaml"),
+    "packages:\n  - apps/*\n"
+  );
+  const shared = join(workspace, "shared.ts");
+  await writeFile(shared, "export const shared = 42;\n");
+  for (const name of ["a", "b"]) {
+    const app = join(workspace, "apps", name);
+    await mkdir(join(app, "src/locales"), { recursive: true });
+    await writeFile(
+      join(app, "package.json"),
+      JSON.stringify({
+        name: `final-scope-${name}`,
+        version: "1.0.0",
+        dependencies: { vite: "8.1.4" },
+      })
+    );
+    await writeFile(
+      join(app, "tsconfig.json"),
+      '{"include":["src/**/*.ts","../../shared.ts"]}'
+    );
+    await writeFile(join(app, "src/page.ts"), "export const answer = 42;\n");
+    await writeFile(join(app, "src/locales/en.json"), '{"hello":"Hello"}');
+    await writeFile(join(app, "src/locales/th.json"), '{"hello":"สวัสดี"}');
+    await proveConventionCatalog(app);
+  }
+  let lastCatalogInitialized = false;
+  let changed = false;
+  mutation.afterRead = async (path) => {
+    if (
+      path ===
+      join(
+        workspace,
+        "apps/b/src/i18n/generated/catalog-generation-receipt.v1.json"
+      )
+    ) {
+      lastCatalogInitialized = true;
+    }
+    if (path === shared && lastCatalogInitialized && !changed) {
+      // The first final check receives the bytes it just read; the next catalog
+      // must observe the edited file rather than reuse that earlier hash.
+      changed = true;
+      await writeFile(shared, "export const shared = 43;\n");
+    }
+  };
+  const failure = await verifyWorkspaceBuildReceipts(workspace).catch(
+    (error: unknown) => error
+  );
+  expect(changed).toBe(true);
+  expect(failure).toBeInstanceOf(AggregateError);
+  if (!(failure instanceof AggregateError)) {
+    throw new Error("The later catalog must reject the shared-file edit");
+  }
+  expect(failure.errors).toHaveLength(1);
+  expect(failure.errors[0]).toMatchObject({
+    message: expect.stringContaining(join(workspace, "apps/b")),
+  });
 });
 
 it.each([
@@ -264,4 +362,108 @@ it("rejects extra generated builds without deleting them", async () => {
     /unexplained/u
   );
   expect(await readdir(extra)).toEqual([]);
+});
+
+it.each(["standalone", "batch", "transfer"] as const)(
+  "rejects a version-only mutation after final classifier checks (%s)",
+  async (mode) => {
+    const root = await fixture(true);
+    const path = join(root, "package.json");
+    const manifest = JSON.parse(await readFile(path, "utf8"));
+    let changed = false;
+    mutation.freshLoads = 0;
+    mutation.afterRead = async (readPath) => {
+      if (
+        mutation.freshLoads >= 2 &&
+        readPath.endsWith("/catalog-generation-receipt.v1.json")
+      ) {
+        mutation.afterRead = undefined;
+        await writeFile(
+          path,
+          JSON.stringify({ ...manifest, version: "1.0.1" })
+        );
+        changed = true;
+      }
+    };
+    const verify = async () => {
+      const {
+        verifyConventionBuildReceiptBatch,
+        verifyTransferredConventionBuildReceiptBatch,
+      } = await import("../src/check-receipt");
+      if (mode === "standalone") {
+        return verifyConventionBuildReceipt(root);
+      }
+      if (mode === "transfer") {
+        return verifyTransferredConventionBuildReceiptBatch(
+          [{ packageRoot: root, transferredPackageRoot: root }],
+          join(root, "../..")
+        );
+      }
+      const results = await verifyConventionBuildReceiptBatch([root]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+      }
+      return results;
+    };
+    await expect(verify()).rejects.toThrow(
+      /application package.*changed|application package or lock.*stale/u
+    );
+    expect(changed).toBe(true);
+  }
+);
+
+it("rejects raw manifest formatting changes after final classifier checks", async () => {
+  const root = await fixture();
+  const path = join(root, "package.json");
+  const bytes = await readFile(path, "utf8");
+  let changed = false;
+  mutation.freshLoads = 0;
+  mutation.afterRead = async (readPath) => {
+    if (
+      mutation.freshLoads >= 2 &&
+      readPath.endsWith("/catalog-generation-receipt.v1.json")
+    ) {
+      mutation.afterRead = undefined;
+      await writeFile(path, `${bytes}\n`);
+      changed = true;
+    }
+  };
+  await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+    /application package or lock identity is stale/u
+  );
+  expect(changed).toBe(true);
+});
+
+it("rereads raw lock bytes after the final full application identity capture", async () => {
+  const root = await fixture(false, true);
+  const path = join(root, "pnpm-lock.yaml");
+  let armed = false;
+  let capturedLock = false;
+  let changed = false;
+  mutation.freshLoads = 0;
+  mutation.afterRead = async (readPath) => {
+    if (
+      mutation.freshLoads >= 2 &&
+      readPath.endsWith("/catalog-generation-receipt.v1.json")
+    ) {
+      armed = true;
+    }
+    if (armed && readPath.endsWith("/pnpm-lock.yaml")) {
+      capturedLock = true;
+    }
+    if (capturedLock && readPath.endsWith("/package.json")) {
+      mutation.afterRead = undefined;
+      await writeFile(
+        path,
+        "lockfileVersion: '9.0'\n# changed after identity read\n"
+      );
+      changed = true;
+    }
+  };
+  await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+    /application package or lock identity is stale/u
+  );
+  expect(changed).toBe(true);
 });

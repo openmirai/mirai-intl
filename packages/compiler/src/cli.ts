@@ -6,6 +6,18 @@ import { availableParallelism, totalmem } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { compileCatalog } from "./compile";
+import { withNativeOperation } from "./native-engine";
+import { withReceiptParsingScope } from "./authorization-snapshot";
+import { createMessageSemanticsSession } from "./message-semantics";
+import {
+  createMessageSemanticsTransfer,
+  messageSemanticsCompilerIdentity,
+  receiveInheritedMessageSemanticsSession,
+  sendMessageSemanticsFrame,
+  MESSAGE_SEMANTICS_PARENT_ENV,
+  MESSAGE_SEMANTICS_SESSION_ENV,
+} from "./message-semantics-channel";
+import type { MessageSemanticsTransfer } from "./message-semantics-channel";
 import type { IntlBuildReceiptVerification } from "./check-receipt";
 import {
   discoverWorkspaceCatalogs,
@@ -441,6 +453,38 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
     ).map(({ index, lanes }) => [index, lanes])
   );
   const ioThreads = defaultWorkspaceCatalogIoThreads(workerCount, availableCpu);
+  // The compiler coordinator derives successful pure semantics once. Every
+  // child still discovers and reads its own raw inputs and grants its own proof.
+  let semanticsTransfer: MessageSemanticsTransfer | undefined;
+  if (ordered.length > 1 && ordered.some((entry) => entry.packagePriority)) {
+    const compilerIdentity = await messageSemanticsCompilerIdentity();
+    const semantics = createMessageSemanticsSession({
+      maxEntries: 50_000,
+      maxBytes: 8 * 1024 * 1024,
+    });
+    await semantics.run(async () => {
+      for (const entry of ordered) {
+        if (!entry.packagePriority) {
+          continue;
+        }
+        try {
+          await loadConventionCatalog(entry.root);
+        } catch {
+          // Preloading grants no authority. The normal child run retains exact
+          // catalog diagnostics; only individually successful work is memoized.
+        }
+      }
+    });
+    if ((await messageSemanticsCompilerIdentity(true)) !== compilerIdentity) {
+      throw new Error(
+        "Message semantics compiler identity changed during preload"
+      );
+    }
+    semanticsTransfer = createMessageSemanticsTransfer(
+      semantics.serialize(),
+      compilerIdentity
+    );
+  }
   if (ordered.length === 1) {
     const [entry] = ordered;
     if (entry) {
@@ -463,7 +507,8 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
             entry.root,
             workspaceRoot,
             resourcePlan.get(entry.index) ?? 1,
-            ioThreads
+            ioThreads,
+            semanticsTransfer
           );
         }
       })
@@ -578,7 +623,8 @@ async function authorizeWorkspaceCatalogChild(
   root: string,
   workspaceRoot: string,
   resourceLanes = 1,
-  ioThreads = 1
+  ioThreads = 1,
+  semanticsTransfer?: MessageSemanticsTransfer
 ): Promise<{
   authorization?: IntlSemanticAuthorizationObservationV2 &
     Readonly<{ checkerProjects: number; ownerProjects: number }>;
@@ -606,16 +652,42 @@ async function authorizeWorkspaceCatalogChild(
         ...process.env,
         MIRAI_INTL_CATALOG_CPU_LANES: String(resourceLanes),
         MIRAI_INTL_WORKSPACE_CHILD: "1",
+        ...(semanticsTransfer
+          ? {
+              [MESSAGE_SEMANTICS_SESSION_ENV]: semanticsTransfer.session,
+              [MESSAGE_SEMANTICS_PARENT_ENV]: String(process.pid),
+            }
+          : {}),
         // Semantic work remains process-scoped. The bounded I/O pool overlaps
         // hashing and mutation-barrier reads without multiplying Programs.
         UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE ?? String(ioThreads),
       },
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [
+        "ignore",
+        "pipe",
+        "pipe",
+        ...(semanticsTransfer ? ["pipe" as const] : []),
+      ],
     }
   );
+  if (!child.stdout || !child.stderr) {
+    child.kill();
+    throw new Error("Authorization worker requires piped stdout and stderr");
+  }
   let stdout = "";
   let stderr = "";
+  let transferFailure: unknown;
+  const channel = child.stdio[3];
+  const transmission =
+    semanticsTransfer && channel && "write" in channel
+      ? sendMessageSemanticsFrame(channel, semanticsTransfer).catch(
+          (error: unknown) => {
+            transferFailure = error;
+            child.kill();
+          }
+        )
+      : Promise.resolve();
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
@@ -630,6 +702,10 @@ async function authorizeWorkspaceCatalogChild(
     child.once("error", reject);
     child.once("exit", (code, signal) => resolveStatus({ code, signal }));
   });
+  await transmission;
+  if (transferFailure !== undefined) {
+    stderr += ` Message semantics transfer failed: ${String(transferFailure)}`;
+  }
   let childReport: CliReport | undefined;
   try {
     childReport = JSON.parse(stdout) as CliReport;
@@ -651,6 +727,7 @@ async function authorizeWorkspaceCatalogChild(
     })
   );
   if (
+    transferFailure !== undefined ||
     status.code !== 0 ||
     status.signal !== null ||
     childReport?.success !== true
@@ -977,6 +1054,19 @@ async function main(): Promise<void> {
     );
   }
   activeCommand = command;
+  if (
+    process.argv
+      .slice(3)
+      .some((argument) =>
+        /^--(?:message-semantics|semantics-snapshot|trust-ir)(?:[=-]|$)/u.test(
+          argument
+        )
+      )
+  ) {
+    throw new CliUsageError(
+      "Message semantics snapshots are private compiler-coordinator state, not CLI input"
+    );
+  }
   activeReportFile = singleOption("--report-file");
   assertConventionOnly();
   assertNoSourceBypass();
@@ -986,10 +1076,12 @@ async function main(): Promise<void> {
     const operation = process.argv[3];
     if (
       !hasFlag("--workspace") ||
-      (operation !== "export" && operation !== "import")
+      (operation !== "export" &&
+        operation !== "import" &&
+        operation !== "reuse")
     ) {
       throw new CliUsageError(
-        "Use authority export --workspace --out <archive> or authority import --workspace --from <archive>"
+        "Use authority export --workspace --out <archive> or authority import|reuse --workspace --from <archive>"
       );
     }
     const archive = singleOption(operation === "export" ? "--out" : "--from");
@@ -1001,12 +1093,68 @@ async function main(): Promise<void> {
         "Authority transfer requires exactly one operation-specific archive path"
       );
     }
-    const { exportAuthorityBundle, importAuthorityBundle } =
-      await import("./authority-bundle");
+    const {
+      exportAuthorityBundle,
+      importAuthorityBundle,
+      reuseAuthorityBundle,
+    } = await import("./authority-bundle");
     const options = {
       root: await nearestWorkspaceRoot(process.cwd()),
       archive,
     };
+    if (operation === "reuse") {
+      const result = await reuseAuthorityBundle(options);
+      const reused = result.status === "reused";
+      await emitReport(
+        {
+          command,
+          schemaVersion: 1,
+          success: reused,
+          diagnostics:
+            result.status === "miss"
+              ? [
+                  {
+                    code: "INTL_AUTHORITY_REUSE_MISS",
+                    severity: "warning",
+                    message: result.diagnostic,
+                    hint: "The candidate was rejected and import state was cleaned or restored. The producer may run one fresh full audit; consumers must not audit independently.",
+                  },
+                ]
+              : [],
+          summary:
+            result.status === "reused"
+              ? {
+                  operation,
+                  reuseStatus: result.status,
+                  authorityAccepted: true,
+                  catalogCount: result.bundle.catalogs.length,
+                  catalogs: result.bundle.catalogs.map((path) => ({ path })),
+                  files: result.bundle.files,
+                  bytes: result.bundle.bytes,
+                }
+              : {
+                  operation,
+                  reuseStatus: result.status,
+                  authorityAccepted: false,
+                  reason: result.reason,
+                  stage: result.stage,
+                  recoverySafe: result.recoverySafe,
+                },
+        },
+        reporter,
+        reused
+          ? successfulSummary(
+              command,
+              "reuse · accepted unchanged authority",
+              reporter.color
+            )
+          : "mirai-intl authority · reuse miss · clean producer audit required"
+      );
+      // Distinct from success and operational/usage failure. Orchestrators must
+      // also check the structured report, never use any nonzero exit as a miss.
+      process.exitCode = reused ? 0 : 2;
+      return;
+    }
     const result = await (operation === "export"
       ? exportAuthorityBundle(options)
       : importAuthorityBundle(options));
@@ -1304,7 +1452,23 @@ function validationFailure(command: Command, message: string): boolean {
   );
 }
 
-await main().catch(async (error: unknown) => {
+async function runWithInheritedSemantics(): Promise<void> {
+  const semantics = await receiveInheritedMessageSemanticsSession();
+  if (semantics) {
+    if (process.argv[2] !== "prove" || hasFlag("--workspace")) {
+      throw new CliUsageError(
+        "Private message semantics sessions require a catalog prove child"
+      );
+    }
+    await semantics.run(main);
+  } else {
+    await main();
+  }
+}
+
+await withReceiptParsingScope(() =>
+  withNativeOperation(runWithInheritedSemantics)
+).catch(async (error: unknown) => {
   const message =
     error instanceof Error ? error.message : "mirai-intl failed unexpectedly";
   if (

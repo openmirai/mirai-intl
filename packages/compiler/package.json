@@ -11,7 +11,8 @@
     "mirai-intl": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "native"
   ],
   "type": "module",
   "sideEffects": false,

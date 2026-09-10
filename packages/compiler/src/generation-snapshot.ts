@@ -63,6 +63,10 @@ export type CatalogPayloadManifestV1 = Readonly<{
 }>;
 
 export type CatalogGenerationInputIdentityV1 = Readonly<{
+  // This generation-only ledger may contain the domain-separated manifest
+  // projection declared in generationOptions.applicationIdentity. Full package
+  // identity remains independently required by the source authorization receipt.
+  // Legacy callers without that option retain their original full identity.
   application: ApplicationPackageIdentity;
   artifactAbi: string;
   compiler: CompilerImplementationIdentity;

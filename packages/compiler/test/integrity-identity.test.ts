@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { canonicalHash } from "../src/canonical";
 import {
+  computeApplicationPackageIdentities,
   computeApplicationPackageIdentity,
   computeCompilerImplementationIdentity,
   computeResolvedPackageIdentity,
@@ -242,5 +243,48 @@ describe("application package identity", () => {
     expect((await computeApplicationPackageIdentity(first)).hash).not.toBe(
       afterPackageMutation.hash
     );
+  });
+});
+
+describe("generation versus release identity", () => {
+  it("excludes only the top-level version and keeps full authorization provenance", async () => {
+    const root = await temporaryRoot("release-generation");
+    const manifest = {
+      name: "example",
+      version: "1.0.0",
+      dependencies: { provider: "1.0.0" },
+      miraiIntl: { requiredLocales: ["en", "th"] },
+    };
+    await write(join(root, "package.json"), JSON.stringify(manifest));
+    const before = await computeApplicationPackageIdentities(root);
+    expect(before.authorization).toEqual(
+      await computeApplicationPackageIdentity(root)
+    );
+    expect(before.generation).not.toEqual(before.authorization);
+    await write(
+      join(root, "package.json"),
+      JSON.stringify({ ...manifest, version: "1.0.1" })
+    );
+    const bumped = await computeApplicationPackageIdentities(root);
+    expect(bumped.generation).toEqual(before.generation);
+    expect(bumped.authorization).not.toEqual(before.authorization);
+    expect(await computeApplicationPackageIdentities(root)).toEqual(bumped);
+    for (const changed of [
+      { ...manifest, name: "renamed" },
+      { ...manifest, dependencies: { provider: "1.0.1" } },
+      { ...manifest, miraiIntl: { requiredLocales: ["en"] } },
+      { ...manifest, exports: { ".": "./changed.js" } },
+      { ...manifest, scripts: { build: "changed" } },
+    ]) {
+      await write(join(root, "package.json"), JSON.stringify(changed));
+      const identities = await computeApplicationPackageIdentities(root);
+      expect(identities.generation).not.toEqual(before.generation);
+      expect(identities.authorization).not.toEqual(before.authorization);
+    }
+    await write(join(root, "package.json"), JSON.stringify(manifest));
+    await write(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    expect(
+      (await computeApplicationPackageIdentities(root)).generation
+    ).not.toEqual(before.generation);
   });
 });

@@ -1,7 +1,8 @@
 import { readdir } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { compareCanonicalStrings } from "./canonical";
+import { nativeDiscoverSources } from "./native-engine";
 
 const SKIP_DIRECTORY_NAMES = new Set([
   ".git",
@@ -20,6 +21,13 @@ export async function collectConventionSourceFiles(
   root: string,
   generatedRelative: string
 ): Promise<Array<string>> {
+  // Preserve the legacy path representation for unusual relative caller roots.
+  if (isAbsolute(root) && resolve(root) === root) {
+    const native = await nativeDiscoverSources(root, generatedRelative);
+    if (native) {
+      return native.toSorted(compareCanonicalStrings);
+    }
+  }
   const generatedPrefix = generatedRelative.split(/[\\/]/u).join(sep);
   const files: Array<string> = [];
 

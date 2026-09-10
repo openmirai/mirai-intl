@@ -1,3 +1,7 @@
+import {
+  verifyNativeRelease,
+  verifyPackedNative,
+} from "../native/scripts/release.mjs";
 import { spawnSync } from "node:child_process";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -156,6 +160,9 @@ function isPublished(name, releaseVersion) {
   return true;
 }
 
+// Fail before registry reads or publication, including resumed/already-published releases.
+const nativeRelease = await verifyNativeRelease(root);
+
 const publicationStates = manifests.map(({ directory, manifest }) => ({
   directory,
   manifest,
@@ -199,6 +206,17 @@ if (pendingPublications.length === 0) {
         publishDirectory,
       ]);
 
+      const tarballName = `${manifest.name.replace("@", "").replace("/", "-")}-${version}.tgz`;
+      if (manifest.name === "@openmirai/intl-compiler") {
+        await verifyPackedNative(
+          resolve(publishDirectory, tarballName),
+          nativeRelease
+        );
+      }
+    }
+    // Every pending archive is packed and the compiler archive checked before
+    // the first npm publication, preventing a partial release on gate failure.
+    for (const { manifest } of pendingPublications) {
       const tarballName = `${manifest.name.replace("@", "").replace("/", "-")}-${version}.tgz`;
       const publishArguments = [
         "publish",

@@ -21,6 +21,41 @@ paths, file count and uncompressed byte count. `root` is a workspace root;
 every convention-discovered catalog is mandatory. Existing output archives are
 never overwritten.
 
+## Reusing a previous producer authority
+
+After installing frozen dependencies, an inactive producer can try a trusted
+candidate before performing a new audit:
+
+```sh
+pnpm exec mirai-intl authority reuse --workspace --from intl-authority.tar \
+  --format=json --report-file=intl-reuse.json
+```
+
+Exit 0 and `summary.reuseStatus: "reused"` mean the complete authority was
+accepted against the current checkout. Reuse performs no semantic audit,
+catalog compilation or artifact generation. Keep the workspace verification
+and final build proofs.
+
+Exit 2 is recoverable only when the structured report also contains
+`summary.reuseStatus: "miss"` and `summary.recoverySafe: true`. A missing,
+malformed, corrupt, incomplete or stale candidate is isolated; any temporary
+installation is rolled back before this result is returned. The producer may
+then perform exactly one clean audit and export. Invalid current inputs still
+fail that audit. Every other exit or invalid report is fatal, including I/O
+failures, active publication, unsafe rollback and failed cleanup. Never reset
+authored files or tracked generated changes to manufacture a passing audit.
+
+The API `reuseAuthorityBundle({ root, archive })` returns a discriminated
+`reused` or safely recoverable `miss` result. `importAuthorityBundle` remains
+strict and throws on rejected candidates. Downstream consumers must use strict
+import; they do not recover by auditing or generating their own authority.
+
+Select candidates from a bounded set of trusted producer runs and pin their
+run, attempt, artifact ID and digest. A branch, commit label or matching cache
+key only locates a candidate; native closure verification establishes whether
+it still authorizes the current inputs. Cache corruption alone does not require
+a source change or another push.
+
 ## What is transferred
 
 The archive contains a canonical inventory plus exactly the selected native

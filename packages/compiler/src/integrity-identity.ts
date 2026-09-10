@@ -11,6 +11,7 @@ import {
   canonicalJson,
   compareCanonicalStrings,
 } from "./canonical";
+import { readNativeAssets } from "./native-assets";
 
 export interface IntegrityManifestEntry {
   readonly hash: Sha256;
@@ -274,6 +275,14 @@ export async function computeCompilerImplementationIdentity(
       manifestEntry(root, path)
     )
   );
+  const native = await readNativeAssets(root);
+  if (native) {
+    entries.push({
+      path: "native/engine-manifest.json",
+      hash: native.manifestHash,
+      size: native.manifestBytes,
+    });
+  }
   const modules = createIntegrityManifest(entries);
   return {
     hash: canonicalHash({ modulesHash: modules.hash }),
@@ -442,9 +451,18 @@ async function findWorkspaceLock(
   }
 }
 
-export async function computeApplicationPackageIdentity(
+/** Capture generation and authorization projections from the same observed bytes.
+ * Only the top-level release version is excluded from generation. Every other
+ * manifest field and the complete lock remain bound; authorization binds all fields.
+ */
+export async function computeApplicationPackageIdentities(
   applicationRoot: string
-): Promise<ApplicationPackageIdentity> {
+): Promise<
+  Readonly<{
+    authorization: ApplicationPackageIdentity;
+    generation: ApplicationPackageIdentity;
+  }>
+> {
   const root = resolve(applicationRoot);
   const rootStat = await lstat(root);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
@@ -465,7 +483,36 @@ export async function computeApplicationPackageIdentity(
         };
   const inputs =
     lock === undefined ? { packageJsonHash } : { lock, packageJsonHash };
-  return { ...inputs, hash: canonicalHash(inputs) };
+  if (
+    packageJson === null ||
+    typeof packageJson !== "object" ||
+    Array.isArray(packageJson)
+  ) {
+    throw new TypeError("Application package.json must contain an object");
+  }
+  const generationManifest = Object.fromEntries(
+    Object.entries(packageJson).filter(([key]) => key !== "version")
+  );
+  // Domain separation prevents confusing this projection with a full manifest.
+  const generationPackageJsonHash = canonicalHash({
+    manifest: generationManifest,
+    projection: "application-generation-without-release-version:v1",
+  });
+  const generationInputs =
+    lock === undefined
+      ? { packageJsonHash: generationPackageJsonHash }
+      : { lock, packageJsonHash: generationPackageJsonHash };
+  return {
+    authorization: { ...inputs, hash: canonicalHash(inputs) },
+    generation: { ...generationInputs, hash: canonicalHash(generationInputs) },
+  };
+}
+
+export async function computeApplicationPackageIdentity(
+  applicationRoot: string
+): Promise<ApplicationPackageIdentity> {
+  return (await computeApplicationPackageIdentities(applicationRoot))
+    .authorization;
 }
 
 /**

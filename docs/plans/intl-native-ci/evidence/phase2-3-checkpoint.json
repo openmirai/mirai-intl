@@ -1,0 +1,56 @@
+{
+  "timestamp": "2026-09-10T06:22:01.774244+00:00",
+  "baseline": "1aac3ee03b6f88a72f361ff5e0ad5066381ca1aa",
+  "phase": "2/3 checkpoint; not end-goal completion",
+  "combinedCommand": "corepack pnpm exec vitest run packages/compiler/test/authority-bundle.test.ts packages/compiler/test/strict-receipt-verification.test.ts packages/compiler/test/cli.test.ts packages/compiler/test/verification-reads.test.ts packages/compiler/test/transferred-verification-batch.test.ts packages/compiler/test/workspace-discovery-errors.test.ts packages/compiler/test/receipt-canonical-cache.test.ts packages/compiler/test/authorization-snapshot-v3.test.ts --maxWorkers=2",
+  "combinedResult": {
+    "filesPassed": 8,
+    "testsPassed": 170,
+    "durationSeconds": 32.24
+  },
+  "typecheck": "passed after stat-size type correction",
+  "build": "passed",
+  "performance": "not measured; test durations are not benchmark claims",
+  "reviews": [
+    "Recovery catalog config EACCES propagation regression fixed",
+    "Mixed failures preserved; nested receipt reads drained",
+    "Canonical inventory ordering fixed; fresh final catalog read scopes retained"
+  ],
+  "coverage": [
+    "valid reuse performs no audit/compile/emission",
+    "safe malformed/missing/stale misses",
+    "invalid current translations still rejected",
+    "EACCES not safe miss",
+    "failed rollback/cleanup fatal",
+    "source and artifact mutation barriers",
+    "new catalogs and files rejected",
+    "receipt trusted-cache live source revalidation"
+  ],
+  "logs": {
+    "phase2-3-combined-tests.log": {
+      "sha256": "4c798b8a6b6461d052f11bb9a6c349ec78d3d12e4168ecdd93306d02fcb872a2",
+      "bytes": 589,
+      "storage": "ignored local raw log"
+    },
+    "dedup-typecheck.log": {
+      "sha256": "54fa562e707ae1c02fcb7ca7cd3511b25fe19bbd793f99565d94aa06a4d78770",
+      "bytes": 396,
+      "storage": "ignored local raw log"
+    },
+    "phase2-3-build.log": {
+      "sha256": "3ca9c01e18b6e5b5ba938897ef00429214890bb097ab85205a71dc7bb21b0401",
+      "bytes": 14397,
+      "storage": "ignored local raw log"
+    },
+    "discovery-order-red.log": {
+      "sha256": "1237d40d09979637d621e5f8de6d71332b8e8b3bf3540f55acdabb1a3ce1f7c3",
+      "bytes": 5520,
+      "storage": "ignored local raw log"
+    },
+    "discovery-order-tests.log": {
+      "sha256": "66e9b764a6a7831a3ed94a59b1ea90f761d845fb30ac44cc197355d6c6fdb271",
+      "bytes": 583,
+      "storage": "ignored local raw log"
+    }
+  }
+}

@@ -271,6 +271,59 @@ describe("compiler-owned catalog snapshots", () => {
     instrumentation.trackedRoot = undefined;
   });
 
+  it("requires fresh authorization after a version-only bump without rewriting output", async () => {
+    const root = await createConventionApp();
+    try {
+      const before = await authorizeConventionCatalog(root, {
+        collectEnvironment: false,
+      });
+      const output = join(root, "src/i18n/generated");
+      const controls = [
+        "catalog-generation-receipt.v1.json",
+        "catalog.lock.json",
+        "current.json",
+        "index.ts",
+      ];
+      const bytesBefore = await Promise.all(
+        controls.map((name) => readFile(join(output, name), "utf8"))
+      );
+      const packagePath = join(root, "package.json");
+      const manifest = JSON.parse(await readFile(packagePath, "utf8"));
+      await writeJson(packagePath, { ...manifest, version: "1.0.1" });
+      await expect(verifyConventionCheckReceipt(root)).rejects.toThrow(
+        /stale|corrupt/iu
+      );
+      instrumentation.compileCalls = 0;
+      instrumentation.analysisCalls = 0;
+      const after = await authorizeConventionCatalog(root, {
+        collectEnvironment: false,
+      });
+      // The producer still reconstructs catalog semantics for its source audit;
+      // generation reuse alone is never source authorization.
+      expect(instrumentation.compileCalls).toBe(1);
+      expect(instrumentation.analysisCalls).toBe(1);
+      expect(after.receipt).not.toEqual(before.receipt);
+      expect(after.verification.write.contentHash).toBe(
+        before.verification.write.contentHash
+      );
+      expect(
+        await Promise.all(
+          controls.map((name) => readFile(join(output, name), "utf8"))
+        )
+      ).toEqual(bytesBefore);
+      await expect(verifyConventionCheckReceipt(root)).resolves.toEqual(
+        after.receipt
+      );
+      // Stable output is no exemption from the next manifest change.
+      await writeJson(packagePath, { ...manifest, version: "1.0.2" });
+      await expect(verifyConventionCheckReceipt(root)).rejects.toThrow(
+        /stale|corrupt/iu
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("reuses the ensure snapshot and preserves receipt, report, and artifact bytes", async () => {
     const root = await createConventionApp();
     try {

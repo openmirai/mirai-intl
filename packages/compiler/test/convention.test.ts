@@ -125,7 +125,7 @@ describe("convention-first catalog discovery", () => {
       const loaded = await loadConventionCatalog(root);
       expect(loaded.config).toMatchObject({
         catalog: {
-          buildId: "1.2.3",
+          buildId: "content-v1",
           id: "@example/dashboard",
           locales: ["en", "th"],
           package: "@example/dashboard-intl-catalog",

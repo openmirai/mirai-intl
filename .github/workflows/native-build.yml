@@ -1,0 +1,116 @@
+name: Native prebuilt release matrix
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+    outputs:
+      artifact_id:
+        value: ${{ jobs.assemble.outputs.artifact_id }}
+      artifact_digest:
+        value: ${{ jobs.assemble.outputs.artifact_digest }}
+
+# Preserve identical checked-out source bytes on Windows and Unix.
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: core.autocrlf
+  GIT_CONFIG_VALUE_0: "false"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: Native ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-14, arch: arm64 }
+          - { target: darwin-x64, runner: macos-15-intel, arch: x64 }
+          - { target: linux-arm64-gnu, runner: ubuntu-24.04-arm, arch: arm64 }
+          - { target: linux-x64-gnu, runner: ubuntu-24.04, arch: x64 }
+          - { target: linux-arm64-musl, runner: ubuntu-24.04-arm, arch: arm64 }
+          - { target: linux-x64-musl, runner: ubuntu-24.04, arch: x64 }
+          - { target: win32-arm64, runner: windows-11-arm, arch: arm64 }
+          - { target: win32-x64, runner: windows-2022, arch: x64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
+          architecture: ${{ matrix.arch }}
+          package-manager-cache: false
+      - name: Build and runtime-test exact source on target
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          mkdir -p .tmp/native-upload
+          node native/scripts/build-target.mjs "$NATIVE_TARGET" "$SOURCE_SHA" ".tmp/native-upload/$NATIVE_TARGET"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ inputs.source_sha }}-${{ github.run_attempt }}-${{ matrix.target }}
+          path: .tmp/native-upload/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          overwrite: false
+
+  assemble:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
+          package-manager-cache: false
+      - name: Test release verification contracts
+        run: node --test native/scripts/release.test.mjs
+      - name: Pin all eight successful producer artifacts
+        id: pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: node native/scripts/artifact-pins.mjs "$SOURCE_SHA"
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.pins.outputs.ids }}
+          path: .tmp/native-incoming
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Assemble one portable all-target manifest
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: node native/scripts/assemble.mjs .tmp/native-incoming .tmp/native-bundle "$SOURCE_SHA"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: native-release-${{ inputs.source_sha }}-${{ github.run_attempt }}
+          path: .tmp/native-bundle/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          overwrite: false

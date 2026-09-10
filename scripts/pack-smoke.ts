@@ -692,6 +692,95 @@ if (
 ) {
   throw new Error("Packed build verifier did not consume V3 without semantics");
 }
+// Exercise the published CLI boundary: generation stability is separate from
+// current package/source authorization, including after a clean consumer clone.
+const versionBumpApp = join(temporaryRoot, "version-bump-app");
+await cp(receiptAppRoot, versionBumpApp, { recursive: true });
+async function generatedByteIdentity(app: string): Promise<string> {
+  const generated = join(app, "src/i18n/generated");
+  const entries = await readdir(generated, {
+    recursive: true,
+    withFileTypes: true,
+  });
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name))
+    .toSorted();
+  const hash = createHash("sha256");
+  for (const file of files) {
+    hash.update(
+      JSON.stringify(relative(generated, file).replaceAll("\\", "/"))
+    );
+    hash.update(
+      createHash("sha256")
+        .update(await readFile(file))
+        .digest()
+    );
+  }
+  return hash.digest("hex");
+}
+const versionGeneratedBefore = await generatedByteIdentity(versionBumpApp);
+const versionManifestPath = join(versionBumpApp, "package.json");
+const versionManifest = JSON.parse(
+  await readFile(versionManifestPath, "utf8")
+) as Record<string, unknown>;
+await writeFile(
+  versionManifestPath,
+  `${JSON.stringify({ ...versionManifest, version: "0.0.1" }, null, 2)}\n`
+);
+runFailure(
+  process.execPath,
+  ["verify-receipt.mjs", versionBumpApp],
+  installRoot,
+  /stale|corrupt/iu
+);
+run(process.execPath, [installedIntlCli, "generate"], versionBumpApp, 60_000);
+if ((await generatedByteIdentity(versionBumpApp)) !== versionGeneratedBefore) {
+  throw new Error("Packed CLI regenerated output for an app version-only bump");
+}
+runFailure(
+  process.execPath,
+  ["verify-receipt.mjs", versionBumpApp],
+  installRoot,
+  /stale|corrupt/iu
+);
+run(
+  process.execPath,
+  [installedIntlCli, "prove", "--format=stylish", "--no-color"],
+  versionBumpApp,
+  60_000
+);
+run(
+  process.execPath,
+  ["verify-receipt.mjs", versionBumpApp],
+  installRoot,
+  60_000
+);
+if ((await generatedByteIdentity(versionBumpApp)) !== versionGeneratedBefore) {
+  throw new Error(
+    "Packed fresh authorization changed version-only generated output"
+  );
+}
+const versionAuthority = await readFile(
+  await selectedAuthorityReceiptPath(versionBumpApp),
+  "utf8"
+);
+if (versionAuthority === (await readFile(receiptPath, "utf8"))) {
+  throw new Error(
+    "Packed fresh authorization did not bind the changed app manifest"
+  );
+}
+run(process.execPath, [installedIntlCli, "generate"], versionBumpApp, 60_000);
+if ((await generatedByteIdentity(versionBumpApp)) !== versionGeneratedBefore) {
+  throw new Error("Packed identical rerun changed generated output");
+}
+const generationIdentityEvidence = {
+  identicalRerunStable: true,
+  versionOnlyGeneratedHash: versionGeneratedBefore,
+  oldAuthorizationRejectedBeforeAndAfterGenerate: true,
+  freshAuthorizationVerified: true,
+};
+
 type PackedReceipt = Readonly<{
   providerClosures: ReadonlyArray<
     Readonly<{ declarations: ReadonlyArray<number> }>
@@ -972,6 +1061,7 @@ await writeFile(
             buildVerification.buildSemanticAnalysisRuns,
         },
         negativeMatrix: receiptNegativeMatrix,
+        generationIdentity: generationIdentityEvidence,
       },
       installed: true,
       isolatedInstall: true,
@@ -1010,6 +1100,7 @@ process.stdout.write(
         buildSemanticAnalysisRuns: buildVerification.buildSemanticAnalysisRuns,
       },
       negativeMatrix: receiptNegativeMatrix,
+      generationIdentity: generationIdentityEvidence,
     },
     isolatedInstall: true,
     otelDependencyResolvedTransitively: true,
