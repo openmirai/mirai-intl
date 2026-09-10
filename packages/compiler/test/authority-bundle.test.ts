@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import assert from "node:assert/strict";
 import { promisify } from "node:util";
 import {
   cp,
@@ -12,11 +13,21 @@ import {
   rename,
   truncate,
   realpath,
+  lstat,
+  chmod,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type * as FileSystem from "node:fs/promises";
 import { create, extract } from "tar";
 
@@ -56,13 +67,47 @@ const faults = vi.hoisted(() => ({
   failCleanup: false,
 }));
 
+const transactionFault = vi.hoisted(() => ({
+  active: false,
+  path: "",
+  boundary: "",
+  pending: false,
+  fired: false,
+  rollbackPath: "",
+  rollbackOperation: "",
+  rollbackFired: false,
+  events: [] as Array<{ operation: string; path: string }>,
+}));
+
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof FileSystem>();
   const ioError = () =>
     Object.assign(new Error("Injected filesystem failure"), { code: "EACCES" });
+  // A completed rename must resolve normally so the real transaction records
+  // it. Fail the next actual I/O, not a fictional rejected-but-completed rename.
+  const failPending = () => {
+    if (transactionFault.active && transactionFault.pending) {
+      transactionFault.pending = false;
+      transactionFault.fired = true;
+      throw ioError();
+    }
+  };
   return {
     ...actual,
+    mkdir: async (...args: Parameters<typeof actual.mkdir>) => {
+      failPending();
+      return actual.mkdir(...args);
+    },
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      failPending();
+      return actual.readdir(...args);
+    },
+    stat: async (...args: Parameters<typeof actual.stat>) => {
+      failPending();
+      return actual.stat(...args);
+    },
     lstat: async (...args: Parameters<typeof actual.lstat>) => {
+      failPending();
       if (faults.denySource && String(args[0]) === faults.source) {
         if (faults.sourceProbesBeforeFailure > 0) {
           faults.sourceProbesBeforeFailure--;
@@ -73,6 +118,7 @@ vi.mock("node:fs/promises", async (original) => {
       return actual.lstat(...args);
     },
     readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      failPending();
       if (
         faults.denySource &&
         faults.sourceProbesBeforeFailure === 0 &&
@@ -83,16 +129,61 @@ vi.mock("node:fs/promises", async (original) => {
       return actual.readFile(...args);
     },
     open: async (...args: Parameters<typeof actual.open>) => {
+      failPending();
       if (faults.denyArchive && String(args[0]).endsWith("/bundle.tar")) {
         throw ioError();
       }
       return actual.open(...args);
     },
     rename: async (...args: Parameters<typeof actual.rename>) => {
+      failPending();
+      const from = String(args[0]);
+      const to = String(args[1]);
+      let operation: string | undefined;
+      if (to.includes("/backup/")) {
+        operation = "backup";
+      } else if (from.includes("/stage/")) {
+        operation = "install";
+      } else if (from.includes("/backup/")) {
+        operation = "restore";
+      }
+      const target = operation === "backup" ? from : to;
+      const path = target.slice(faults.root.length + 1);
+      const observed =
+        transactionFault.active && target.startsWith(`${faults.root}/`);
+      if (
+        observed &&
+        !transactionFault.fired &&
+        operation === "backup" &&
+        transactionFault.boundary === "before-backup" &&
+        transactionFault.path === path
+      ) {
+        transactionFault.fired = true;
+        throw ioError();
+      }
+      if (
+        observed &&
+        operation === "restore" &&
+        transactionFault.rollbackOperation === "restore" &&
+        transactionFault.rollbackPath === path
+      ) {
+        transactionFault.rollbackFired = true;
+        throw ioError();
+      }
       if (faults.failRollback && String(args[0]).includes("/backup/")) {
         throw ioError();
       }
       await actual.rename(...args);
+      if (observed && operation) {
+        transactionFault.events.push({ operation, path });
+        if (
+          !transactionFault.fired &&
+          transactionFault.path === path &&
+          transactionFault.boundary === `after-${operation}`
+        ) {
+          transactionFault.pending = true;
+        }
+      }
       if (
         faults.mutateAfterInstall &&
         String(args[0]).includes("/stage/") &&
@@ -106,18 +197,40 @@ vi.mock("node:fs/promises", async (original) => {
       }
     },
     rm: async (...args: Parameters<typeof actual.rm>) => {
+      failPending();
+      const target = String(args[0]);
+      const path = target.slice(faults.root.length + 1);
+      const observed =
+        transactionFault.active &&
+        transactionFault.fired &&
+        target.startsWith(`${faults.root}/`) &&
+        !path.startsWith(".mirai-intl-transfer-") &&
+        !path.endsWith("authority-transfer.lock");
+      if (
+        observed &&
+        transactionFault.rollbackOperation === "remove" &&
+        transactionFault.rollbackPath === path
+      ) {
+        transactionFault.rollbackFired = true;
+        throw ioError();
+      }
       if (
         faults.failCleanup &&
         String(args[0]).startsWith(`${faults.root}/.mirai-intl-transfer-`)
       ) {
         throw ioError();
       }
-      return actual.rm(...args);
+      await actual.rm(...args);
+      if (observed) {
+        transactionFault.events.push({ operation: "remove", path });
+      }
     },
   };
 });
 
 afterEach(async () => {
+  transactionFault.active = false;
+  transactionFault.pending = false;
   faults.denySource = false;
   faults.sourceProbesBeforeFailure = 0;
   faults.denyArchive = false;
@@ -367,6 +480,306 @@ it.each([false, true])(
     }
   }
 );
+
+describe("transfer transaction boundary fault injection", () => {
+  // Workspace authority requires exactly five packages. These independent
+  // catalogs expose first, middle and final installs in both directory groups.
+  const catalogs = ["apps/app", "apps/b", "apps/c", "apps/d", "apps/e"];
+  const installPaths = [
+    ...catalogs.map((catalog) => `${catalog}/src/i18n/generated`),
+    ...catalogs.map((catalog) => `${catalog}/.mirai-intl`),
+    ".mirai-intl/workspace-authority",
+  ];
+  let fixture: Awaited<ReturnType<typeof workspaceFixture>>;
+
+  // Compare every file byte, directory and permission, rather than just the
+  // selected pointers. Prior-only authority files and distinct generated modes
+  // make a partial restore visible without invalidating the generated inventory.
+  async function snapshotTree(root: string): Promise<Record<string, string>> {
+    const snapshot: Record<string, string> = {};
+    async function visit(path: string): Promise<void> {
+      const absolute = join(root, path);
+      const entry = await lstat(absolute);
+      if (entry.isDirectory()) {
+        snapshot[path] = `directory:${entry.mode}`;
+        for (const name of (await readdir(absolute)).toSorted()) {
+          await visit(path ? `${path}/${name}` : name);
+        }
+      } else {
+        expect(entry.isFile()).toBe(true);
+        snapshot[path] =
+          `file:${entry.mode}:${sha256(await readFile(absolute))}`;
+      }
+    }
+    await visit("");
+    return snapshot;
+  }
+
+  beforeAll(async () => {
+    fixture = await workspaceFixture();
+    // This shared immutable seed lives until this describe finishes; each case
+    // gets its own copied receiving checkout and real import transaction.
+    temporaryRoots.splice(
+      temporaryRoots.indexOf(resolve(fixture.root, "..")),
+      1
+    );
+    for (const catalog of catalogs.slice(1)) {
+      await cp(
+        join(fixture.consumer, "apps/app"),
+        join(fixture.root, catalog),
+        {
+          recursive: true,
+        }
+      );
+      await proveConventionCatalog(join(fixture.root, catalog));
+    }
+    const packages = await Promise.all(
+      catalogs.map(async (catalog) => {
+        const app = join(fixture.root, catalog);
+        const selected = await readConventionCheckReceipt(app);
+        if (
+          !selected.authoritySetHash ||
+          selected.receipt.schemaVersion !== 3
+        ) {
+          throw new Error("fixture requires V3 authority");
+        }
+        const authoritySet = parseCanonicalPackageAuthoritySetV1(
+          await readFile(
+            conventionPackageAuthoritySetPath(app, selected.authoritySetHash),
+            "utf8"
+          )
+        );
+        const generated = parseCanonicalCatalogGenerationReceipt(
+          await readFile(
+            join(app, "src/i18n/generated/catalog-generation-receipt.v1.json"),
+            "utf8"
+          )
+        );
+        return {
+          authoritySet,
+          authoritySetHash: selected.authoritySetHash,
+          catalogContentHash: generated.payload.contentHash,
+          generationReceiptHash: selected.receipt.generationReceiptHash,
+          sourceAuthorizationHash: selected.receipt.sourceAuthorizationHash,
+        };
+      })
+    );
+    const bytes = canonicalWorkspaceAuthorityV1Bytes(
+      buildWorkspaceAuthorityV1({
+        packages,
+        gitTreeHash: sha256("boundary fixture tree"),
+        snapshotHash: sha256("boundary fixture snapshot"),
+        toolchainHash: sha256("boundary fixture toolchain"),
+        workspaceLock: {
+          path: "pnpm-lock.yaml",
+          hash: sha256(await readFile(join(fixture.root, "pnpm-lock.yaml"))),
+        },
+      })
+    );
+    const hash = sha256(bytes);
+    const manifest = join(fixture.root, workspaceAuthorityManifestPath(hash));
+    await mkdir(join(manifest, ".."), { recursive: true });
+    await writeFile(manifest, bytes);
+    await writeFile(
+      join(fixture.root, ".mirai-intl/workspace-authority/current.json"),
+      canonicalWorkspaceAuthorityRootPointerV1Bytes(
+        buildWorkspaceAuthorityRootPointerV1(hash)
+      )
+    );
+    assert.deepEqual((await exportAuthorityBundle(fixture)).catalogs, catalogs);
+    // Copy authored inputs, then establish the prior state through the public
+    // importer, including the workspace selector. Never mock publication itself.
+    for (const catalog of catalogs.slice(1)) {
+      await cp(
+        join(fixture.consumer, "apps/app"),
+        join(fixture.consumer, catalog),
+        { recursive: true }
+      );
+    }
+    await importAuthorityBundle({
+      root: fixture.consumer,
+      archive: fixture.archive,
+    });
+    for (const [index, path] of installPaths.entries()) {
+      if (path.endsWith("/generated")) {
+        // The generated inventory is closed, including unselected builds.
+        // Readable prior permissions differ from the staged archive's defaults.
+        await chmod(join(fixture.consumer, path), 0o700);
+        await chmod(join(fixture.consumer, path, "index.ts"), 0o600);
+      } else {
+        await writeFile(
+          join(fixture.consumer, path, `prior-only-${index}.txt`),
+          `prior state ${path}\n`
+        );
+      }
+    }
+    for (const catalog of catalogs) {
+      assert.equal(
+        (await verifyConventionBuildReceipt(join(fixture.consumer, catalog)))
+          .verifiedCatalogs,
+        1
+      );
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    transactionFault.active = false;
+    if (fixture) {
+      await rm(resolve(fixture.root, ".."), { recursive: true, force: true });
+    }
+  });
+
+  const boundaries = installPaths.flatMap((path, index) =>
+    ["before-backup", "after-backup", "after-install"].map((boundary) => ({
+      path,
+      index,
+      boundary,
+    }))
+  );
+  const rollbackBoundaries = installPaths.flatMap((rollbackPath) =>
+    ["remove", "restore"].map((rollbackOperation) => ({
+      rollbackPath,
+      rollbackOperation,
+    }))
+  );
+
+  async function receivingCheckout() {
+    const directory = await mkdtemp(join(tmpdir(), "intl-transfer-boundary-"));
+    temporaryRoots.push(directory);
+    const root = join(directory, "consumer");
+    await cp(fixture.consumer, root, { recursive: true });
+    faults.root = await realpath(root);
+    Object.assign(transactionFault, {
+      active: false,
+      pending: false,
+      fired: false,
+      rollbackFired: false,
+      rollbackOperation: "",
+      rollbackPath: "",
+      events: [],
+    });
+    return { root, before: await snapshotTree(root), archive: fixture.archive };
+  }
+
+  it.each(boundaries)(
+    "restores every prior byte after $boundary at $path",
+    async ({ path, index, boundary }) => {
+      const { root, before, archive } = await receivingCheckout();
+      Object.assign(transactionFault, { active: true, path, boundary });
+      await expect(
+        reuseAuthorityBundle({ root, archive })
+      ).rejects.toMatchObject({ code: "EACCES" });
+      transactionFault.active = false;
+      expect(transactionFault.fired).toBe(true);
+      expect(transactionFault.pending).toBe(false);
+      expect(
+        transactionFault.events
+          .filter((event) => event.operation === "install")
+          .map((event) => event.path)
+      ).toEqual(
+        installPaths.slice(0, index + (boundary === "after-install" ? 1 : 0))
+      );
+      expect(
+        transactionFault.events
+          .filter((event) => event.operation === "backup")
+          .map((event) => event.path)
+      ).toEqual(
+        installPaths.slice(0, index + (boundary === "before-backup" ? 0 : 1))
+      );
+      expect(await snapshotTree(root)).toEqual(before);
+      expect(
+        (await readdir(root)).filter(
+          (name) =>
+            name.startsWith(".mirai-intl-transfer-") ||
+            name.endsWith("authority-transfer.lock")
+        )
+      ).toEqual([]);
+      for (const catalog of catalogs) {
+        await expect(
+          verifyConventionBuildReceipt(join(root, catalog))
+        ).resolves.toMatchObject({
+          verifiedCatalogs: 1,
+          catalogCompilations: 0,
+          artifactEmissions: 0,
+          buildSemanticAnalysisRuns: 0,
+        });
+      }
+    },
+    30_000
+  );
+
+  it.each(rollbackBoundaries)(
+    "preserves explicit recovery when rollback $rollbackOperation fails at $rollbackPath",
+    async ({ rollbackPath, rollbackOperation }) => {
+      const { root, archive } = await receivingCheckout();
+      const priorTrees = await Promise.all(
+        installPaths.map((path) => snapshotTree(join(root, path)))
+      );
+      Object.assign(transactionFault, {
+        active: true,
+        path: installPaths.at(-1),
+        boundary: "after-install",
+        rollbackPath,
+        rollbackOperation,
+      });
+      const outcome = await reuseAuthorityBundle({ root, archive }).then(
+        (result) => ({ result, error: undefined }),
+        (error: unknown) => ({ result: undefined, error })
+      );
+      transactionFault.active = false;
+      expect(outcome.result).toBeUndefined();
+      expect(outcome.error).toMatchObject({
+        name: "AuthorityImportRecoveryError",
+      });
+      expect(outcome.error).not.toHaveProperty("recoverySafe", true);
+      expect(transactionFault.fired).toBe(true);
+      expect(transactionFault.rollbackFired).toBe(true);
+      expect(
+        transactionFault.events
+          .filter((event) => event.operation === "install")
+          .map((event) => event.path)
+      ).toEqual(installPaths);
+      const retained = (await readdir(root)).filter((name) =>
+        name.startsWith(".mirai-intl-transfer-")
+      );
+      expect(retained).toHaveLength(1);
+      const retainedDirectory = retained[0];
+      if (!retainedDirectory) {
+        throw new Error("Missing recovery directory");
+      }
+      const backup = join(root, retainedDirectory, "backup");
+      expect(outcome.error).toMatchObject({
+        message: expect.stringContaining(backup),
+      });
+      const lock = join(root, ".mirai-intl-authority-transfer.lock");
+      expect((await lstat(lock)).isFile()).toBe(true);
+      for (const [index, path] of installPaths.entries()) {
+        // Each complete old tree must still exist either in backup or already
+        // restored at its target, independent of the rollback's iteration order.
+        const saved = join(backup, path);
+        const present = await lstat(saved).catch((error: unknown) => {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            return undefined;
+          }
+          throw error;
+        });
+        expect(await snapshotTree(present ? saved : join(root, path))).toEqual(
+          priorTrees[index]
+        );
+      }
+      const recovery = await snapshotTree(root);
+      await expect(
+        reuseAuthorityBundle({ root, archive })
+      ).rejects.toMatchObject({ code: "EEXIST" });
+      expect(await snapshotTree(root)).toEqual(recovery);
+    },
+    30_000
+  );
+});
 
 it.each(["receipts", "classifiers"])(
   "refuses export when selected %s are missing",
