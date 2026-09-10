@@ -1,6 +1,6 @@
 {
-  "recordedAt": "2026-09-10T08:47:09.824801+00:00",
-  "status": "identity split and final barriers implemented; packed consumer and all four historical Turbo probes pass; current-staging builds and final CI adoption pending",
+  "recordedAt": "2026-09-10T09:31:24.540553+00:00",
+  "status": "Identity separation, packed consumer, four historical version probes and four current-staging production builds pass; repeated workspace study and Turbo CI adoption active",
   "runtime": "Node 24.18.0; forced Rust; macOS arm64 local single-platform candidate",
   "incident": "72dd09fd3b6e95e71ec7fbcf997f62313b624cfc",
   "tests": {
@@ -88,7 +88,7 @@
     "scope": "Final f71bbc8 compiler with full-application return barrier; local Darwin-only candidate assets. All8-target candidate separately passed library CI."
   },
   "gaps": [
-    "Current-staging version probes and four production-mode builds pending",
+    "Current-staging version probes and archived final proofs in candidate CI pending",
     "Repeated identical-input end-to-end benchmarks pending",
     "Turbo candidate CI adoption pending",
     "Patch publication/merge approvals still required; no publication or merge"
@@ -174,5 +174,6 @@
     "forcedRustPackedConsumer": "success",
     "artifactId": 10143630998,
     "artifactDigest": "sha256:1e79ca7e554539334f00b03b4d2f9365a427c25221bd3881f2c689b22cbc4393"
-  }
+  },
+  "currentBuildEvidence": "current-production-builds.json"
 }

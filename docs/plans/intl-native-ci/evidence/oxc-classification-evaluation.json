@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-10T10:06:15.561075+00:00",
+  "status": "measured-record-verified",
+  "kind": "parse-only-evaluation-not-classifier-parity",
+  "runtime": {
+    "node": "v24.18.0",
+    "typescriptVersion": "6.0.3"
+  },
+  "inputs": {
+    "root": "/private/tmp/intl-native-current-consumer-1uw94sgu",
+    "compilerEntry": "/private/tmp/intl-native-current-consumer-1uw94sgu/node_modules/.pnpm/@openmirai+intl-compiler@file+.intl-candidate+packs-v3-all-targets+openmirai-intl-compiler-0.3.29.tgz/node_modules/@openmirai/intl-compiler/dist/index.js",
+    "compilerEntrySha256": "437dc600148981b184b83d95f18c301f7cfa62aac1259f19f31ea0b0995b7011",
+    "nativeManifestSha256": "db9439c6d8423bfbdd001552efccd220b9be299e46445fd60c8e065d46daea18",
+    "nativeSourceHash": "sha256:d05fb9f3df6d9c69beb83fa192419eba3bb658992f3547573c4abe05fa45e9c6",
+    "files": 2561,
+    "bytes": 12836645,
+    "corpusSha256": "08cd6305ee7c14ce64a08d7fbf134039db69a7ec1ce98778bfc95ce1e039393e"
+  },
+  "filesByCatalogRoot": {
+    "apps/admin": 1244,
+    "apps/auth": 117,
+    "apps/instructor": 538,
+    "apps/learner": 650,
+    "packages/i18n": 12
+  },
+  "counts": {
+    "nativeOperationSuccesses": 2561,
+    "nativeOperationFailures": 0,
+    "nativeSyntaxAccepted": 2561,
+    "nativeSyntaxRejected": 0,
+    "typescriptSyntaxAccepted": 2561,
+    "typescriptSyntaxRejected": 0,
+    "acceptanceDisagreements": 0,
+    "nativeDiagnosticCount": 0,
+    "typescriptDiagnosticCount": 0,
+    "statementCountDisagreements": 1,
+    "requiresTypeScriptTrue": 2561,
+    "safeTypeScriptSkips": 0
+  },
+  "observedAggregateTimes": {
+    "passes": 1,
+    "classification": "n=1 exploratory parse-only observation; not CI or a speedup gate",
+    "nativeTransportAndParseMs": 132.97086800000147,
+    "typescriptInProcessParseMs": 456.09686000000363,
+    "orderCounts": {
+      "native-first": 1281,
+      "ts-first": 1280
+    },
+    "warning": "Different timing boundaries. Sums exclude inventory, disk reads, setup and final checks; do not infer production speedup or statistical confidence."
+  },
+  "bounds": {
+    "childTimeoutMs": 120000,
+    "childOutputBytes": 4194304,
+    "visitedEntryLimit": 50000,
+    "fileCountLimit": 10000,
+    "singleSourceByteLimit": 1048576,
+    "sourceTotalByteLimit": 67108864,
+    "directoryDepthExclusiveLimit": 128,
+    "nativeWorkers": 1,
+    "sequential": true,
+    "inventoryScope": "Four app roots plus packages/i18n; source regex \\.[cm]?[jt]sx?$, hidden directories/node_modules/dist/coverage/generated roots excluded; no symlink traversal",
+    "mutationChecks": "Execution script checked per-file hashes after parsing and again at final barrier; native manifest checked again. This summary only validates stored evidence, without rereading or executing D."
+  },
+  "decision": {
+    "retainTypeScript": true,
+    "selectOxcAsProductionClassifier": false,
+    "reason": "Every successful Oxc response still requires TypeScript; Oxc adds a parse pass without resolver/frontier/semantic proof. Native scanning/hash/receipt adoption is independent and remains unchanged."
+  },
+  "limitations": [
+    "One bounded sequential pass, alternating parser order; not a statistically qualified performance benchmark.",
+    "Native elapsed includes serialization/AsyncTask dispatch and result decoding; TS elapsed is in-process parse only.",
+    "No resolver, semantic checker, classifier frontier, facade or authority decisions compared.",
+    "Diagnostic counts and AST statement counts are observations, not equivalent grammars or classifier outputs.",
+    "requiresTypeScript:true makes Oxc an additional pass; no safe skip inference.",
+    "Inventory covers five catalog roots, not all transitive compiler project inputs.",
+    "No linguistic-quality conclusion.",
+    "No repeated samples or CI acceptance measurement."
+  ],
+  "evidence": [
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/oxc-final-evaluation/result.json",
+      "sha256": "5066e38c3f2dab1a349faf0ca5a8518be784106e913ff26a3e8abc0a68adaefa"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/oxc-final-evaluation/evaluate.mjs",
+      "sha256": "85a1dbcb2c85e61a0e6a24e8099921d5eab46c5d29f9fae6f2cf2c6322f723b9"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/oxc-final-evaluation/README.md",
+      "sha256": "bf811b768b127579d20e21f92ce931f0542badd71ec3a84e226fba5e131168bb"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/oxc-final-evaluation/preparation.json",
+      "sha256": "b063b9776fa75d72e5b160155b255622b096e52872d6262b17713bb7343936f8"
+    }
+  ],
+  "verification": {
+    "rowCountsChecked": true,
+    "corpusHashRecomputed": true,
+    "perRowResponsesAndFiniteTimesChecked": true,
+    "disagreementListRecomputed": true,
+    "executedD": false,
+    "reranEvaluation": false
+  },
+  "command": "PATH=/Users/kentakoong/.nvm/versions/node/v24.18.0/bin:$PATH node .tmp/oxc-final-evaluation/evaluate.mjs --run result.json"
+}

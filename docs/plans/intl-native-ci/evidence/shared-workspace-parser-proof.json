@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-10T09:45:54.737478+00:00",
+  "root": "/private/tmp/intl-native-current-consumer-1uw94sgu",
+  "success": true,
+  "measurement": "actual ICU parse calls keyed by SHA256 of exact UTF-16LE raw strings",
+  "sharedKeys": 3931,
+  "sharedLocaleEntries": 7862,
+  "sharedUniqueRawStrings": 5718,
+  "sharedHashSetSha256": "a7c23390bdcbcbe28dafee6003502c48fa4f346b89e702573b19bfd90dfd5423",
+  "eachSharedHashParentCalls": 1,
+  "eachSharedHashEachChildCalls": 0,
+  "parent": {
+    "pid": 38850,
+    "totalParseCalls": 5718,
+    "identity": {
+      "node": "v24.18.0",
+      "parserPath": "/private/tmp/intl-native-current-consumer-1uw94sgu/node_modules/.pnpm/@formatjs+icu-messageformat-parser@3.5.14/node_modules/@formatjs/icu-messageformat-parser/index.js",
+      "parserHash": "0935efc41271d6339425363bc7b10bc284fb40d7f06e5285682e4c8e42ca5198",
+      "compilerPath": "/private/tmp/intl-native-current-consumer-1uw94sgu/node_modules/.pnpm/@openmirai+intl-compiler@file+.intl-candidate+packs-v3-all-targets+openmirai-intl-compiler-0.3.29.tgz/node_modules/@openmirai/intl-compiler/dist/index.js",
+      "compilerHash": "437dc600148981b184b83d95f18c301f7cfa62aac1259f19f31ea0b0995b7011"
+    }
+  },
+  "children": [
+    {
+      "pid": 38912,
+      "catalog": "packages/i18n",
+      "totalParseCalls": 0,
+      "sharedParseCalls": 0
+    },
+    {
+      "pid": 38913,
+      "catalog": "apps/admin",
+      "totalParseCalls": 6996,
+      "sharedParseCalls": 0
+    },
+    {
+      "pid": 38914,
+      "catalog": "apps/learner",
+      "totalParseCalls": 3520,
+      "sharedParseCalls": 0
+    },
+    {
+      "pid": 38915,
+      "catalog": "apps/instructor",
+      "totalParseCalls": 3469,
+      "sharedParseCalls": 0
+    },
+    {
+      "pid": 38916,
+      "catalog": "apps/auth",
+      "totalParseCalls": 103,
+      "sharedParseCalls": 0
+    }
+  ],
+  "workspaceSummary": {
+    "catalogCount": 5,
+    "checkerProjects": 0,
+    "ownerProjects": 5,
+    "projects": [
+      {
+        "findings": 0,
+        "path": "apps/admin",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "apps/auth",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "apps/instructor",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "apps/learner",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "packages/i18n",
+        "valid": true
+      }
+    ],
+    "semanticAuthorizationRuns": 1,
+    "semanticFilesAnalyzed": 172,
+    "valid": true
+  },
+  "authority": {
+    "state": "current after successful instrumented check --workspace",
+    "catalogs": 5,
+    "pointers": [
+      {
+        "catalog": "packages/i18n",
+        "path": "/private/tmp/intl-native-current-consumer-1uw94sgu/packages/i18n/.mirai-intl/check-receipt.current.json",
+        "sha256": "1392bd5796c9e8ec7423a2bf92b89d1b5a83f2daef94b87a94b5174d5e265b3d"
+      },
+      {
+        "catalog": "apps/admin",
+        "path": "/private/tmp/intl-native-current-consumer-1uw94sgu/apps/admin/.mirai-intl/check-receipt.current.json",
+        "sha256": "1e097cb045454afe1d5602de941f105340a346a502ac80823cff6afcf3ae9e65"
+      },
+      {
+        "catalog": "apps/auth",
+        "path": "/private/tmp/intl-native-current-consumer-1uw94sgu/apps/auth/.mirai-intl/check-receipt.current.json",
+        "sha256": "0712177726f120a0a61d3884438c92ebf1e36dd086504d5803c7e77bf72121b2"
+      },
+      {
+        "catalog": "apps/instructor",
+        "path": "/private/tmp/intl-native-current-consumer-1uw94sgu/apps/instructor/.mirai-intl/check-receipt.current.json",
+        "sha256": "130a7b8d23e09b3d6726a24d6e63a6ce83c1bf8c7e30d66b851ef40897aa0153"
+      },
+      {
+        "catalog": "apps/learner",
+        "path": "/private/tmp/intl-native-current-consumer-1uw94sgu/apps/learner/.mirai-intl/check-receipt.current.json",
+        "sha256": "4c6574af778f41d6ae3178d9ae70369a0d661d05c6f5466d0fb1cdcad1601da6"
+      }
+    ],
+    "subsequentUninstrumentedVerificationRun": false
+  },
+  "installedNative": {
+    "manifestPath": "/private/tmp/intl-native-current-consumer-1uw94sgu/node_modules/.pnpm/@openmirai+intl-compiler@file+.intl-candidate+packs-v3-all-targets+openmirai-intl-compiler-0.3.29.tgz/node_modules/@openmirai/intl-compiler/native/engine-manifest.json",
+    "manifestSha256": "db9439c6d8423bfbdd001552efccd220b9be299e46445fd60c8e065d46daea18",
+    "manifest": {
+      "compilerVersion": "0.3.29",
+      "engineAbi": "mirai-intl-native-v1",
+      "schemaVersion": 1,
+      "sourceHash": "sha256:d05fb9f3df6d9c69beb83fa192419eba3bb658992f3547573c4abe05fa45e9c6",
+      "targets": {
+        "darwin-arm64": {
+          "bytes": 1611808,
+          "file": "mirai-intl-darwin-arm64.node",
+          "hash": "sha256:2bcb397fe48b0eccecc848cccc2b70aa1e22d951e03e4b5a68d88618d06ef325"
+        },
+        "darwin-x64": {
+          "bytes": 1672984,
+          "file": "mirai-intl-darwin-x64.node",
+          "hash": "sha256:401c60ff11f91aed80226146ac6d928c63dcc2c5bdec380a40afe235d068bb56"
+        },
+        "linux-arm64-gnu": {
+          "bytes": 1778184,
+          "file": "mirai-intl-linux-arm64-gnu.node",
+          "hash": "sha256:5d705b652c51777aa02aac0b35fce2f207a4b2000d6b1b1fde5de49fd9b23fa1"
+        },
+        "linux-arm64-musl": {
+          "bytes": 1709960,
+          "file": "mirai-intl-linux-arm64-musl.node",
+          "hash": "sha256:6e5c434126fa8997abb484ae6995ee50e1a5d6a319d2ceb4922ab73e26162b33"
+        },
+        "linux-x64-gnu": {
+          "bytes": 1839544,
+          "file": "mirai-intl-linux-x64-gnu.node",
+          "hash": "sha256:7b9132856d5459efe3f692c85ec8574eb0829de3e428714324a50461a8f45a2d"
+        },
+        "linux-x64-musl": {
+          "bytes": 1828752,
+          "file": "mirai-intl-linux-x64-musl.node",
+          "hash": "sha256:8f60f09aafd7367b2aff5ccb70c478abaa682bcccbba20ab3edbc5d195935f2c"
+        },
+        "win32-arm64": {
+          "bytes": 1479680,
+          "file": "mirai-intl-win32-arm64.node",
+          "hash": "sha256:cf2c713f43162bfc4249cb13148402e762254442c56e9cc55425f0aa889497ba"
+        },
+        "win32-x64": {
+          "bytes": 1655296,
+          "file": "mirai-intl-win32-x64.node",
+          "hash": "sha256:48b0f23000dd313b7ea68c5679fa75d697a14a3d12afcc188b3bceca89cb2269"
+        }
+      }
+    }
+  },
+  "rawRecords": [
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv/38850-0.json",
+      "sha256": "d62390388851718ea28565657c4f1fb383ecf6924e8101520ad808267a01d99d"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv/38912-0.json",
+      "sha256": "8fc9ffa8fd9e5a093dd1711bb17c44f3201f4bb45df59c3df0152db851250e6f"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv/38913-0.json",
+      "sha256": "f08c4c7f81674426c4f246bdc18b8c32bc1883fcad05c3dbff72d646f950e2cb"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv/38914-0.json",
+      "sha256": "d644ce787e6687418ee27f8e2c5798be59fa5de318b076de8a78d014a2650c68"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv/38915-0.json",
+      "sha256": "fd4a7a4b4719027b1091e6d027e0ae8c58b17796d2b95d55ddc70ac9ac28d2c2"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv/38916-0.json",
+      "sha256": "d9144c114fb38b4c5200acbce33d814b823932f58c593148180c557c79a770d8"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/result.json",
+      "sha256": "0a5d4994e1e0806841133bbd32d79b46e429317dcd48686249c601a9db514822"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/workspace.json",
+      "sha256": "18cf97aa3c46b80b0b3115a14b8e4fc6fe882265e067a7dc998b3d3f7aafb1ef"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/workspace.stderr",
+      "sha256": "442778cf7d71d31a417dfb0a03d3d133d4d3b4a44301ff2630b73180bb52b456"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/shared-inventory.json",
+      "sha256": "53051dccf0551cf345bb2b6b61ef1ebb636db763b8a682033e5a93200832d234"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/count-icu-hashes.mjs",
+      "sha256": "3588797273d6a98dd400529f964903cb67144e4b9b04925dda6d6750197d1d50"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/analyze.mjs",
+      "sha256": "c39390570accd7c9f55e123ea847be95ece427c090f7c3b986179b41bf1612b9"
+    },
+    {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/launch-rejected.stderr",
+      "sha256": "2dcf6c829f7eab6b0152f38abd5f4d5265a8f7b95d173ba7cc2650b10af3b265"
+    }
+  ],
+  "command": "MIRAI_INTL_ENGINE=rust INTL_SHARED_PROOF_OUTPUT=/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/raw-execargv /Users/kentakoong/.nvm/versions/node/v24.18.0/bin/node --experimental-test-module-mocks --import /Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine/.tmp/shared-final-proof/count-icu-hashes.mjs apps/admin/node_modules/@openmirai/intl/dist/cli.js check --workspace --format=json",
+  "scope": {
+    "instrumentedAuditsExecuted": 1,
+    "earlierLaunchRejectedBeforeAudit": true,
+    "compilerEdits": false,
+    "consumerSourceEdits": false,
+    "authorityUpdatedByAudit": true,
+    "performanceMeasurement": false,
+    "linguisticQualityClaim": false,
+    "oxcReplacesTypeScriptClaim": false
+  },
+  "limitations": [
+    "Raw string hashes establish shared parsing reuse, not linguistic quality.",
+    "Oxc classification always requires TypeScript; actual classifier measurement is a separate gate.",
+    "Instrumentation overhead excludes timing/performance claims."
+  ],
+  "consumerIdentityFiles": [
+    {
+      "path": "/private/tmp/intl-native-current-consumer-1uw94sgu/.intl-candidate/readiness.json",
+      "sha256": "bd740a517160edaaee9dae39e890c351282b0ea6be6cdc7a0ff323bf4070e00a"
+    }
+  ]
+}

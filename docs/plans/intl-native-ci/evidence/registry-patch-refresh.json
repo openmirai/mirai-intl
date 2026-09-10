@@ -1,0 +1,35 @@
+{
+  "observedAt": "2026-09-10T10:55:33.104Z",
+  "entries": [
+    {
+      "name": "@openmirai/intl-abi",
+      "latest": "0.3.29",
+      "patch030Exists": false,
+      "latestTime": "2026-09-09T08:54:13.739Z"
+    },
+    {
+      "name": "@openmirai/intl-compiler",
+      "latest": "0.3.29",
+      "patch030Exists": false,
+      "latestTime": "2026-09-09T08:56:58.697Z"
+    },
+    {
+      "name": "@openmirai/intl",
+      "latest": "0.3.29",
+      "patch030Exists": false,
+      "latestTime": "2026-09-09T08:54:31.881Z"
+    },
+    {
+      "name": "@openmirai/intl-i18next",
+      "latest": "0.3.29",
+      "patch030Exists": false,
+      "latestTime": "2026-09-09T08:57:15.521Z"
+    },
+    {
+      "name": "@openmirai/intl-runtime",
+      "latest": "0.3.29",
+      "patch030Exists": false,
+      "latestTime": "2026-09-09T08:54:24.826Z"
+    }
+  ]
+}
