@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-09-10T04:17:30.646646+00:00",
+  "goal_thread": "01a085bb-1a52-7ff1-8b5c-d1414c45edab",
+  "library_base": "1aac3ee03b6f88a72f361ff5e0ad5066381ca1aa",
+  "turbo_base": "1f57e8dda0065674abce36ef51359686038259e7",
+  "published_version": "0.3.29",
+  "compiler_integrity": "sha512-Wj/DVacy3aUa687eu8xqxK/ekIQiKiz8T83Pz54bWLpG2R4ikYdzJejifa8Kxq2eqnQHjx0NRbkhQ8/ayDC4Uw==",
+  "intl_integrity": "sha512-ekYESqG9ToYjNEwlH6lSZlf6O99YZ3uaGxmnuswe7BGtNeGp9WqniL6H1A0qtAMo95hKlVEMTBsN4PQNu8lzaA==",
+  "original_run": 34335793386,
+  "original_job": 102415588031,
+  "original_tested_merge": "ba5caf2685fb12f71d17ddc2f37026c34709aa1f",
+  "final_pr_head": "12fa062f26e8117ae0f3fd1eda60b5d7a46682b2",
+  "final_pr_tested_merge": "b973ed91903912d36805096654e93f8bf7d29908",
+  "library_ci": 34331228647,
+  "library_publish_ci": 34331281450,
+  "research_dir": "/Users/kentakoong/.codex/visualizations/2026/09/09/01a085bb-1a52-7ff1-8b5c-d1414c45edab/intl-ci-research",
+  "raw_research_dir": "/private/tmp/intl-ci-research-20260910",
+  "research_files": {
+    "plan.mdx": "0ad85796396ddff5b70c96f156f315204fa75eed4a47ef93ae2c9384fb3e5377",
+    "research.md": "aabcea16f24e7b72e200c9f3791f36267d8e9aac1c938449fa0415c9ef9b5a7c",
+    "native-and-recovery.md": "588c42e0a1500d6ae269e13a685501e387b3547fd420ac15a8adfdc9788e2498",
+    "shared-compilation.md": "eebe788f6284665a871b8cfa51a565ea090b483755c4a5201295e508aecbcd7d",
+    "benchmark-results.md": "743297d15abf06417a28d6389d0b38859e2525fa13037301490fee5bb6f1704b",
+    "shared-artifact-inspection.json": "8438ea131f57fee302196cb59fd8fa233cc3ae62a8f2d169531ef3dace47c1e4"
+  }
+}

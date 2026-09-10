@@ -42,11 +42,12 @@ import type {
   CatalogGenerationSnapshot,
 } from "./generation-snapshot";
 import {
-  computeApplicationPackageIdentity,
+  computeApplicationPackageIdentities,
   computeImmutableIntegrityIdentity,
   createIntegrityManifest,
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
+import type { computeApplicationPackageIdentity } from "./integrity-identity";
 import { inferMessageContract, inspectMessageSyntax } from "./parser";
 import type { CatalogSource, MessageSource } from "./source";
 import { verifyArtifactSet, writeArtifactSet } from "./writer";
@@ -2598,7 +2599,12 @@ async function checkProjectConfigManifest(
     if (!path || visited.has(path)) {
       continue;
     }
-    const entry = await lstat(path).catch(() => undefined);
+    const entry = await lstat(path).catch((error: unknown) => {
+      if (fileSystemErrorCode(error) === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    });
     if (!entry || entry.isSymbolicLink() || !entry.isFile()) {
       throw new Error(
         `Check project ${project.path} transitive config must be a readable regular file`
@@ -2956,11 +2962,7 @@ async function loadConventionCatalogSnapshot(
     "package.json"
   );
   const packageName = requiredString(packageJson, "name", "package.json");
-  const packageVersionValue = requiredString(
-    packageJson,
-    "version",
-    "package.json"
-  );
+  requiredString(packageJson, "version", "package.json");
   const jsonConfigPath = join(repositoryRoot, "mirai-intl.config.json");
   const hasJsonConfig = await regularFileExists(
     jsonConfigPath,
@@ -3112,7 +3114,9 @@ async function loadConventionCatalogSnapshot(
   );
   let config: ResolvedCatalogConfig = {
     catalog: {
-      buildId: packageVersionValue,
+      // Convention output follows translation content, not the app release.
+      // Explicit CatalogSource.buildId remains unchanged for direct callers.
+      buildId: "content-v1",
       id: packageName,
       locales,
       package: catalogPackage,
@@ -3373,24 +3377,31 @@ function normalizedGenerationConfig(
 async function generationInputEnvironment(repositoryRoot: string): Promise<
   Readonly<{
     application: Awaited<ReturnType<typeof computeApplicationPackageIdentity>>;
+    generationApplication: Awaited<
+      ReturnType<typeof computeApplicationPackageIdentity>
+    >;
     immutable: Awaited<ReturnType<typeof getImmutableIntegrityIdentity>>;
   }>
 > {
   const [immutable, application] = await Promise.all([
     getImmutableIntegrityIdentity(),
-    computeApplicationPackageIdentity(repositoryRoot),
+    computeApplicationPackageIdentities(repositoryRoot),
   ]);
-  return { application, immutable };
+  return {
+    application: application.authorization,
+    generationApplication: application.generation,
+    immutable,
+  };
 }
 
 async function generationInputIdentity(
   loaded: LoadedConventionCatalog,
   environment = generationInputEnvironment(loaded.repositoryRoot)
 ): Promise<CatalogGenerationInputIdentityV1> {
-  const { application, immutable } = await environment;
+  const { generationApplication, immutable } = await environment;
   const normalizedConfig = canonicalJson(normalizedGenerationConfig(loaded));
   return buildCatalogGenerationInputIdentity({
-    application,
+    application: generationApplication,
     artifactAbi: catalogArtifactAbi,
     compiler: immutable.compiler,
     config: createIntegrityManifest([
@@ -3405,6 +3416,7 @@ async function generationInputIdentity(
       typescriptLibs: canonicalIdentityValue(immutable.typescriptLibs),
     },
     generationOptions: {
+      applicationIdentity: "application-generation-without-release-version:v1",
       compact: true,
       representation: loaded.config.representation,
     },
@@ -3581,8 +3593,12 @@ export async function loadFreshConventionCatalogGenerationInput(
   const [integrity, loaded] = await Promise.all([
     Promise.all([
       immutableIdentity ?? computeImmutableIntegrityIdentity(),
-      computeApplicationPackageIdentity(root),
-    ]).then(([immutable, application]) => ({ application, immutable })),
+      computeApplicationPackageIdentities(root),
+    ]).then(([immutable, application]) => ({
+      application: application.authorization,
+      generationApplication: application.generation,
+      immutable,
+    })),
     loadConventionCatalogSnapshot(root, false),
   ]);
   return {

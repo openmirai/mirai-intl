@@ -1,0 +1,60 @@
+{
+  "capturedAt": "2026-09-10T16:25:36.292175+00:00",
+  "baseRevision": "cb22e0506772543cf24a384b25e2850d96e2f074",
+  "files": [
+    {
+      "path": ".github/scripts/benchmark-intl-workspace.mjs",
+      "sha256": "c0d6b943cbec62eb0a8a80d310e157d0be70763d94c95f0b809f5875c032b7e6"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-workspace.test.mjs",
+      "sha256": "aac02627568677d422b68749991d56f678ffbccd0680110fdbb0242de11d8cbb"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-ci.mjs",
+      "sha256": "02c885db77f1c6fcb4fb70a45c5e3401f6f141668f9676ab93ab65405f3bf937"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-ci.test.mjs",
+      "sha256": "94cd71007a0806b4bf0afbaaeec0915ce9178bcada2ecb5a9092a579c460b32f"
+    },
+    {
+      "path": ".github/workflows/intl-candidate.yml",
+      "sha256": "26a6c3ed5621a87e65404568bbf5b1daa914328faab6d1c0783c3069db25939c"
+    }
+  ],
+  "validation": {
+    "intlHelperTests": 93,
+    "focusedIndependentReviewTests": 20,
+    "postLintFixSchedulingTests": 13,
+    "rootLint": "passed",
+    "actionlint": "passed",
+    "initialLintFailure": "two prefer-template findings in main-owned workflow test, fixed with scoped repository formatter/linter",
+    "initialLintFailureRetained": ".tmp/workspace-final-lint.log"
+  },
+  "actualBenchmark": false,
+  "protocolEvidence": "Mock compiler API, real fresh processes and persistent Node driver protocol; all8cells2reverseblocks n10",
+  "plan": {
+    "samplesPerCell": 10,
+    "cells": 8,
+    "reverseBlocks": 2,
+    "modes": ["fresh-process", "persistent-node-api-driver"],
+    "engines": ["node", "rust"],
+    "operations": ["verify", "reuse"],
+    "helperBudgetMs": 2520000,
+    "stepMinutes": 45,
+    "jobMinutes": 55,
+    "existingCodeBuildMinutes": 60
+  },
+  "retainedGuards": [
+    "current source inventory and all installed package bytes",
+    "reviewed source/tree candidate pins",
+    "immutable harness and helper hashes",
+    "fresh public API operation calls and five-catalog zero-work counters",
+    "frozen archive and exact forwarded bytes",
+    "raw result operation/engine/status/counters and worker lifecycle",
+    "incomplete or mutated input profile fails, never repairs"
+  ],
+  "sourceChangeScope": "additive benchmark helper exports and separate profile on same existing job; full acceptance unchanged",
+  "review": "Independent Standard review: no actionable blocker; actual installed-API measurement is still required"
+}

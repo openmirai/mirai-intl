@@ -4,6 +4,7 @@ dist/
 coverage/
 .tmp/
 .mirai-intl/
+packages/compiler/native/
 *.tsbuildinfo
 *.tgz
 *.log

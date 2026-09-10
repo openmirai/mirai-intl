@@ -1,0 +1,2036 @@
+{
+  "status": "diagnostic-complete-with-attribution-gaps",
+  "consumerRevision": "911339ca7ac0df9cc37acf2201898ac55505291f",
+  "sourceRevision": "1324a5ebe03865128f4f1468ea671442cd708367",
+  "sourceTree": "6cf328a934ac7ddb6a550e0f4e292c301ee2ef50",
+  "node": "24.18.0",
+  "pnpm": "12.1.0",
+  "candidateVersion": "0.3.30",
+  "privateEvidenceRoot": "/private/tmp/intl-current37-attribution-x_ywnomv",
+  "baseline": {
+    "verified": true,
+    "files": 7721,
+    "includes": "all archived authored/generated inputs and installed candidate workspace/lock files",
+    "sha256": "7726f0e64cb13bd5f2704a063f74e100eb162d0740fcca2ae8737ec55d112094"
+  },
+  "identities": {
+    "verified": true,
+    "results": [
+      {
+        "engine": "node",
+        "compilerHash": "sha256:cd942f38b68dba31ec95078d55b3c473ababb756761995800d11ce17864c751c",
+        "typescriptHash": "sha256:569177652966bd528c319171c7dd22860dbf72bde116cbc4f644f1d02bb12e39",
+        "parserHash": "sha256:0935efc41271d6339425363bc7b10bc284fb40d7f06e5285682e4c8e42ca5198",
+        "nativeManifestHash": "sha256:bb96e3fc9698fdbf46173dea369a6752176fca97faa0f0f3a1b3d6c692c69d38",
+        "compilerInventoryFilesVerified": 68
+      },
+      {
+        "engine": "rust",
+        "compilerHash": "sha256:cd942f38b68dba31ec95078d55b3c473ababb756761995800d11ce17864c751c",
+        "typescriptHash": "sha256:569177652966bd528c319171c7dd22860dbf72bde116cbc4f644f1d02bb12e39",
+        "parserHash": "sha256:0935efc41271d6339425363bc7b10bc284fb40d7f06e5285682e4c8e42ca5198",
+        "nativeManifestHash": "sha256:bb96e3fc9698fdbf46173dea369a6752176fca97faa0f0f3a1b3d6c692c69d38",
+        "compilerInventoryFilesVerified": 68
+      }
+    ]
+  },
+  "operations": [
+    {
+      "engine": "node",
+      "operation": "check",
+      "status": "success",
+      "attempts": 1,
+      "boundSeconds": 180,
+      "diagnosticWallSeconds": 17.194126625,
+      "cliSummary": {
+        "catalogCount": 5,
+        "checkerProjects": 0,
+        "ownerProjects": 5,
+        "projects": [
+          {
+            "findings": 0,
+            "path": "apps/admin",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "apps/auth",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "apps/instructor",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "apps/learner",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "packages/i18n",
+            "valid": true
+          }
+        ],
+        "semanticAuthorizationRuns": 1,
+        "semanticFilesAnalyzed": 899,
+        "valid": true
+      },
+      "recordedProcesses": 6,
+      "cpuProfileFiles": 15,
+      "observedProgramApiCalls": 1,
+      "sampledContextsContainingCreateProgram": 10,
+      "exactAllContextProgramCount": null,
+      "observedCreateSourceFileCalls": 5322,
+      "jsObservedReads": 31496,
+      "jsObservedReadBytes": 1876955019,
+      "jsObservedHashConstructors": 174009,
+      "jsObservedHashUpdates": 10574207,
+      "jsObservedHashInputBytes": 3141765207,
+      "summedUniqueProcessResourceCpuSeconds": 105.204991,
+      "largestIndividualProcessMaxRssBytes": 2641641472,
+      "simultaneousProcessTreePeakRssBytes": null,
+      "officialTimeAccounting": null,
+      "sampledSelfTimeUsBySourceGroup": {
+        "other": 13478753,
+        "node-internals": 11588826,
+        "gc": 4740879,
+        "typescript": 23417908,
+        "instrumentation": 122381,
+        "compiler": 21438085,
+        "idle": 41683628
+      },
+      "programInclusiveSampleUs": 3905043,
+      "cpuSampleInterpretation": "sampled stack time, not exclusive CPU phase accounting or constructor counts"
+    },
+    {
+      "engine": "node",
+      "operation": "export",
+      "status": "success",
+      "attempts": 1,
+      "boundSeconds": 180,
+      "diagnosticWallSeconds": 10.075002375,
+      "cliSummary": {
+        "bytes": 96815118,
+        "catalogCount": 5,
+        "files": 90,
+        "operation": "export"
+      },
+      "recordedProcesses": 1,
+      "cpuProfileFiles": 1,
+      "observedProgramApiCalls": 0,
+      "sampledContextsContainingCreateProgram": 0,
+      "exactAllContextProgramCount": null,
+      "observedCreateSourceFileCalls": 0,
+      "jsObservedReads": 25872,
+      "jsObservedReadBytes": 746202250,
+      "jsObservedHashConstructors": 45274,
+      "jsObservedHashUpdates": 45274,
+      "jsObservedHashInputBytes": 938477278,
+      "summedUniqueProcessResourceCpuSeconds": 12.792345,
+      "largestIndividualProcessMaxRssBytes": 807518208,
+      "simultaneousProcessTreePeakRssBytes": null,
+      "officialTimeAccounting": null,
+      "sampledSelfTimeUsBySourceGroup": {
+        "other": 1290498,
+        "node-internals": 1101547,
+        "gc": 534872,
+        "typescript": 12583,
+        "instrumentation": 25371,
+        "compiler": 5480753,
+        "idle": 1582543
+      },
+      "programInclusiveSampleUs": 0,
+      "cpuSampleInterpretation": "sampled stack time, not exclusive CPU phase accounting or constructor counts"
+    },
+    {
+      "engine": "node",
+      "operation": "verify",
+      "status": "success",
+      "attempts": 1,
+      "boundSeconds": 180,
+      "diagnosticWallSeconds": 8.5855275,
+      "cliSummary": {
+        "artifactEmissions": 0,
+        "buildReceiptVerifications": 5,
+        "buildSemanticAnalysisRuns": 0,
+        "catalogCompilations": 0,
+        "valid": true,
+        "verifiedCatalogs": 5
+      },
+      "recordedProcesses": 1,
+      "cpuProfileFiles": 1,
+      "observedProgramApiCalls": 0,
+      "sampledContextsContainingCreateProgram": 0,
+      "exactAllContextProgramCount": null,
+      "observedCreateSourceFileCalls": 0,
+      "jsObservedReads": 22018,
+      "jsObservedReadBytes": 362754124,
+      "jsObservedHashConstructors": 37880,
+      "jsObservedHashUpdates": 37880,
+      "jsObservedHashInputBytes": 578618662,
+      "summedUniqueProcessResourceCpuSeconds": 11.203886,
+      "largestIndividualProcessMaxRssBytes": 849100800,
+      "simultaneousProcessTreePeakRssBytes": null,
+      "officialTimeAccounting": null,
+      "sampledSelfTimeUsBySourceGroup": {
+        "other": 1013285,
+        "node-internals": 871952,
+        "gc": 448895,
+        "typescript": 11333,
+        "compiler": 5200618,
+        "idle": 969710,
+        "instrumentation": 21707
+      },
+      "programInclusiveSampleUs": 0,
+      "cpuSampleInterpretation": "sampled stack time, not exclusive CPU phase accounting or constructor counts"
+    },
+    {
+      "engine": "rust",
+      "operation": "check",
+      "status": "success",
+      "attempts": 1,
+      "boundSeconds": 180,
+      "diagnosticWallSeconds": 19.16088525,
+      "cliSummary": {
+        "catalogCount": 5,
+        "checkerProjects": 0,
+        "ownerProjects": 5,
+        "projects": [
+          {
+            "findings": 0,
+            "path": "apps/admin",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "apps/auth",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "apps/instructor",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "apps/learner",
+            "valid": true
+          },
+          {
+            "findings": 0,
+            "path": "packages/i18n",
+            "valid": true
+          }
+        ],
+        "semanticAuthorizationRuns": 1,
+        "semanticFilesAnalyzed": 899,
+        "valid": true
+      },
+      "recordedProcesses": 6,
+      "cpuProfileFiles": 15,
+      "observedProgramApiCalls": 1,
+      "sampledContextsContainingCreateProgram": 10,
+      "exactAllContextProgramCount": null,
+      "observedCreateSourceFileCalls": 5322,
+      "jsObservedReads": 31502,
+      "jsObservedReadBytes": 1886625867,
+      "jsObservedHashConstructors": 174039,
+      "jsObservedHashUpdates": 10574237,
+      "jsObservedHashInputBytes": 3170794611,
+      "summedUniqueProcessResourceCpuSeconds": 106.363016,
+      "largestIndividualProcessMaxRssBytes": 2721939456,
+      "simultaneousProcessTreePeakRssBytes": null,
+      "officialTimeAccounting": null,
+      "sampledSelfTimeUsBySourceGroup": {
+        "other": 16996153,
+        "node-internals": 12067215,
+        "gc": 5250319,
+        "typescript": 26178617,
+        "compiler": 22504292,
+        "idle": 45681245,
+        "instrumentation": 130742
+      },
+      "programInclusiveSampleUs": 4091793,
+      "cpuSampleInterpretation": "sampled stack time, not exclusive CPU phase accounting or constructor counts"
+    },
+    {
+      "engine": "rust",
+      "operation": "export",
+      "status": "success",
+      "attempts": 1,
+      "boundSeconds": 180,
+      "diagnosticWallSeconds": 9.319920333999999,
+      "cliSummary": {
+        "bytes": 96815118,
+        "catalogCount": 5,
+        "files": 90,
+        "operation": "export"
+      },
+      "recordedProcesses": 1,
+      "cpuProfileFiles": 1,
+      "observedProgramApiCalls": 0,
+      "sampledContextsContainingCreateProgram": 0,
+      "exactAllContextProgramCount": null,
+      "observedCreateSourceFileCalls": 0,
+      "jsObservedReads": 25873,
+      "jsObservedReadBytes": 747814058,
+      "jsObservedHashConstructors": 45279,
+      "jsObservedHashUpdates": 45279,
+      "jsObservedHashInputBytes": 943315512,
+      "summedUniqueProcessResourceCpuSeconds": 11.874605,
+      "largestIndividualProcessMaxRssBytes": 1085292544,
+      "simultaneousProcessTreePeakRssBytes": null,
+      "officialTimeAccounting": null,
+      "sampledSelfTimeUsBySourceGroup": {
+        "other": 1289550,
+        "node-internals": 1075996,
+        "gc": 511788,
+        "typescript": 9958,
+        "instrumentation": 23251,
+        "compiler": 5125839,
+        "idle": 1230827
+      },
+      "programInclusiveSampleUs": 0,
+      "cpuSampleInterpretation": "sampled stack time, not exclusive CPU phase accounting or constructor counts"
+    },
+    {
+      "engine": "rust",
+      "operation": "verify",
+      "status": "success",
+      "attempts": 1,
+      "boundSeconds": 180,
+      "diagnosticWallSeconds": 8.416903332999999,
+      "cliSummary": {
+        "artifactEmissions": 0,
+        "buildReceiptVerifications": 5,
+        "buildSemanticAnalysisRuns": 0,
+        "catalogCompilations": 0,
+        "valid": true,
+        "verifiedCatalogs": 5
+      },
+      "recordedProcesses": 1,
+      "cpuProfileFiles": 1,
+      "observedProgramApiCalls": 0,
+      "sampledContextsContainingCreateProgram": 0,
+      "exactAllContextProgramCount": null,
+      "observedCreateSourceFileCalls": 0,
+      "jsObservedReads": 22019,
+      "jsObservedReadBytes": 364365932,
+      "jsObservedHashConstructors": 37885,
+      "jsObservedHashUpdates": 37885,
+      "jsObservedHashInputBytes": 583456896,
+      "summedUniqueProcessResourceCpuSeconds": 10.6028,
+      "largestIndividualProcessMaxRssBytes": 1228292096,
+      "simultaneousProcessTreePeakRssBytes": null,
+      "officialTimeAccounting": null,
+      "sampledSelfTimeUsBySourceGroup": {
+        "other": 1222785,
+        "node-internals": 905743,
+        "gc": 414155,
+        "typescript": 11125,
+        "instrumentation": 21959,
+        "compiler": 4886096,
+        "idle": 901762
+      },
+      "programInclusiveSampleUs": 0,
+      "cpuSampleInterpretation": "sampled stack time, not exclusive CPU phase accounting or constructor counts"
+    }
+  ],
+  "producerPhases": [
+    {
+      "engine": "node",
+      "project": "packages/i18n",
+      "semanticFiles": 288,
+      "lexicalFiles": 2570,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 2,
+      "classifierFullResolverRequests": 2,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 1137.2847499999998,
+      "authorizationMilliseconds": 10234.915625,
+      "authorizationPhases": [
+        {
+          "milliseconds": 501.12541599999986,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 1426.2075840000002,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 5743.049832999999,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 224.58812500000022,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1365.9567920000009,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 957.1479159999999,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 16.817124999999578,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 57.81899999999996,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 1483.3279579999999,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 4195.8432920000005,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 3.324707999999646,
+        "reference-boundary-resolution": 681.2614170000002,
+        "candidate-proof-and-parity": 139.90350000000035,
+        "portable-proof-evidence": 106.33016700000007,
+        "total": 937.3032499999999
+      },
+      "publicationWindowObservedCombinedMilliseconds": 973.9650409999995
+    },
+    {
+      "engine": "node",
+      "project": "apps/admin",
+      "semanticFiles": 325,
+      "lexicalFiles": 1244,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 98,
+      "classifierFullResolverRequests": 98,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 3072.696708,
+      "authorizationMilliseconds": 12207.640875000001,
+      "authorizationPhases": [
+        {
+          "milliseconds": 820.1929169999999,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 986.2641670000003,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 7099.9198750000005,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 620.6078749999997,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1817.4309159999993,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 844.6989169999997,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 18.49987500000134,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 58.25920899999983,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 1220.6295410000002,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 5817.3544999999995,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 12.61462500000016,
+        "reference-boundary-resolution": 523.1555410000001,
+        "candidate-proof-and-parity": 148.19704199999978,
+        "portable-proof-evidence": 110.20408299999963,
+        "total": 797.4815829999998
+      },
+      "publicationWindowObservedCombinedMilliseconds": 863.198792000001
+    },
+    {
+      "engine": "node",
+      "project": "apps/auth",
+      "semanticFiles": 9,
+      "lexicalFiles": 117,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 5,
+      "classifierFullResolverRequests": 5,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 1249.655584,
+      "authorizationMilliseconds": 1761.325875,
+      "authorizationPhases": [
+        {
+          "milliseconds": 332.765167,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 257.064625,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 695.9724999999999,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 22.79325000000017,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 84.26879099999996,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 360.29258400000026,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 8.15383299999985,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 5.445749999999862,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 112.66470800000025,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 577.0542499999997,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 1.4120419999999285,
+        "reference-boundary-resolution": 51.95945800000027,
+        "candidate-proof-and-parity": 15.264458000000104,
+        "portable-proof-evidence": 7.709833999999773,
+        "total": 77.2790829999999
+      },
+      "publicationWindowObservedCombinedMilliseconds": 368.4464170000001
+    },
+    {
+      "engine": "node",
+      "project": "apps/instructor",
+      "semanticFiles": 135,
+      "lexicalFiles": 538,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 45,
+      "classifierFullResolverRequests": 45,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 2258.4541249999997,
+      "authorizationMilliseconds": 9662.821084,
+      "authorizationPhases": [
+        {
+          "milliseconds": 577.9500840000001,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 423.33258300000034,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 6379.923083,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 414.83779200000026,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1061.9596249999995,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 789.3070830000015,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 15.494999999998981,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 19.868124999999964,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 462.65608399999974,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 5895.673583,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 3.0036660000000666,
+        "reference-boundary-resolution": 186.3717499999998,
+        "candidate-proof-and-parity": 63.63520900000003,
+        "portable-proof-evidence": 35.1840000000002,
+        "total": 290.57387500000004
+      },
+      "publicationWindowObservedCombinedMilliseconds": 804.8020830000005
+    },
+    {
+      "engine": "node",
+      "project": "apps/learner",
+      "semanticFiles": 142,
+      "lexicalFiles": 650,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 24,
+      "classifierFullResolverRequests": 24,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 2248.541834,
+      "authorizationMilliseconds": 9768.767542000001,
+      "authorizationPhases": [
+        {
+          "milliseconds": 573.8149579999999,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 564.8060420000002,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 6243.539208,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 470.70216699999946,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1119.8820830000004,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 782.2569169999988,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 13.7484170000007,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 24.419041000000107,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 589.5355420000001,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 5627.800832999999,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 1.7592500000000655,
+        "reference-boundary-resolution": 282.353709,
+        "candidate-proof-and-parity": 67.71866599999976,
+        "portable-proof-evidence": 45.96370900000056,
+        "total": 399.7816249999996
+      },
+      "publicationWindowObservedCombinedMilliseconds": 796.0053339999995
+    },
+    {
+      "engine": "rust",
+      "project": "packages/i18n",
+      "semanticFiles": 288,
+      "lexicalFiles": 2570,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 2,
+      "classifierFullResolverRequests": 2,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 1037.817,
+      "authorizationMilliseconds": 10822.980625,
+      "authorizationPhases": [
+        {
+          "milliseconds": 426.2744170000001,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 1318.2468330000002,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 6214.305125000001,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 232.24441699999988,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1466.5224159999998,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 1145.6796249999989,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 19.537334000000556,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 55.764916999999514,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 1662.7093750000004,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 4492.107207999999,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 1.5114579999999478,
+        "reference-boundary-resolution": 696.6532499999994,
+        "candidate-proof-and-parity": 163.83470900000066,
+        "portable-proof-evidence": 118.25645799999984,
+        "total": 988.3352919999998
+      },
+      "publicationWindowObservedCombinedMilliseconds": 1165.2169589999994
+    },
+    {
+      "engine": "rust",
+      "project": "apps/admin",
+      "semanticFiles": 325,
+      "lexicalFiles": 1244,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 98,
+      "classifierFullResolverRequests": 98,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 2725.7729580000005,
+      "authorizationMilliseconds": 13300.136084,
+      "authorizationPhases": [
+        {
+          "milliseconds": 824.6729170000003,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 1246.6722499999996,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 7801.3475419999995,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 643.335000000001,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1873.6622079999997,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 894.0747500000016,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 16.35216699999728,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 58.20854200000031,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 1475.4484159999993,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 6262.665625000001,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 4.638875000000553,
+        "reference-boundary-resolution": 650.8677499999994,
+        "candidate-proof-and-parity": 169.05262500000026,
+        "portable-proof-evidence": 131.75804199999948,
+        "total": 959.551958
+      },
+      "publicationWindowObservedCombinedMilliseconds": 910.4269169999989
+    },
+    {
+      "engine": "rust",
+      "project": "apps/auth",
+      "semanticFiles": 9,
+      "lexicalFiles": 117,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 5,
+      "classifierFullResolverRequests": 5,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 1110.058208,
+      "authorizationMilliseconds": 1496.709875,
+      "authorizationPhases": [
+        {
+          "milliseconds": 283.3603330000001,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 166.82004199999983,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 648.5510830000003,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 21.1111249999999,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 81.60629199999994,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 289.22437500000024,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 6.021832999999788,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 4.71029099999987,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 102.38000000000011,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 540.6393749999997,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 2.1442500000002838,
+        "reference-boundary-resolution": 47.74766699999964,
+        "candidate-proof-and-parity": 11.974500000000262,
+        "portable-proof-evidence": 6.6258749999997235,
+        "total": 69.09554200000002
+      },
+      "publicationWindowObservedCombinedMilliseconds": 295.246208
+    },
+    {
+      "engine": "rust",
+      "project": "apps/instructor",
+      "semanticFiles": 135,
+      "lexicalFiles": 538,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 45,
+      "classifierFullResolverRequests": 45,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 1971.0460830000002,
+      "authorizationMilliseconds": 10619.362042,
+      "authorizationPhases": [
+        {
+          "milliseconds": 529.8042089999999,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 408.05287499999986,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 7124.676165999999,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 444.9115839999995,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1170.2098330000008,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 927.3877919999995,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 14.301708000000872,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 20.362708999999995,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 481.2561660000001,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 6617.879875,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 2.756915999999819,
+        "reference-boundary-resolution": 207.2889170000003,
+        "candidate-proof-and-parity": 60.23029200000019,
+        "portable-proof-evidence": 41.50983299999916,
+        "total": 313.53150000000005
+      },
+      "publicationWindowObservedCombinedMilliseconds": 941.6895000000004
+    },
+    {
+      "engine": "rust",
+      "project": "apps/learner",
+      "semanticFiles": 142,
+      "lexicalFiles": 650,
+      "ownerProjects": 1,
+      "checkerProjects": 0,
+      "classifierCandidateRequests": 24,
+      "classifierFullResolverRequests": 24,
+      "classifierOwnerFallbacks": 0,
+      "ensureMilliseconds": 1928.4339999999997,
+      "authorizationMilliseconds": 10825.730333,
+      "authorizationPhases": [
+        {
+          "milliseconds": 527.2624999999998,
+          "phase": "verify-and-resolve-universe"
+        },
+        {
+          "milliseconds": 580.072291,
+          "phase": "snapshot-and-input-ledger"
+        },
+        {
+          "milliseconds": 6935.160500000001,
+          "phase": "classifier-and-semantic-analysis"
+        },
+        {
+          "milliseconds": 498.9434169999986,
+          "phase": "provider-frontiers-and-snapshot-input"
+        },
+        {
+          "milliseconds": 1305.607833,
+          "phase": "v3-receipt-and-authority-binding"
+        },
+        {
+          "milliseconds": 965.5853750000006,
+          "phase": "publication-precommit-verification"
+        },
+        {
+          "milliseconds": 13.083042000000205,
+          "phase": "selector-commit"
+        }
+      ],
+      "analysisPhases": [
+        {
+          "milliseconds": 26.52870800000028,
+          "phase": "lexical-source-analysis"
+        },
+        {
+          "milliseconds": 586.3335000000002,
+          "phase": "classifier:tsconfig.intl.json"
+        },
+        {
+          "milliseconds": 6320.752333999999,
+          "phase": "semantic:tsconfig.intl.json"
+        }
+      ],
+      "classifierSubspans": {
+        "facade-package-topology": 1.5247080000003734,
+        "reference-boundary-resolution": 295.7040419999994,
+        "candidate-proof-and-parity": 67.02412500000082,
+        "portable-proof-evidence": 39.9057499999999,
+        "total": 405.9202500000006
+      },
+      "publicationWindowObservedCombinedMilliseconds": 978.6684170000008
+    }
+  ],
+  "builtInMarkerCounts": {
+    "MIRAI_INTL_V3_CACHE_PROFILE": 16,
+    "MIRAI_INTL_ENSURE_PROFILE": 10,
+    "MIRAI_INTL_CLASSIFIER_PROFILE": 10,
+    "MIRAI_INTL_ANALYZE_PROFILE": 10,
+    "MIRAI_INTL_V3_NORMALIZE_PROFILE": 10,
+    "MIRAI_INTL_V3_PROFILE": 10,
+    "MIRAI_INTL_V3_ASSEMBLY_PROFILE": 10,
+    "MIRAI_INTL_AUTHORIZATION_PROFILE": 10,
+    "MIRAI_INTL_V3_PARSE_PROFILE": 20
+  },
+  "historicalComparison": {
+    "priorFailure": "20-second internal dormant V3 publication window expired; original full workspace exit1 and standalone Auth exit1",
+    "priorStandaloneAuthSeconds": 88.24224305152893,
+    "priorStandaloneOuterBoundSeconds": 180,
+    "current": "Both engines completed producer/export/standalone verify once within unchanged 180-second operation bounds; the internal 20-second deadline was not altered.",
+    "sameDeclaredSourceTree": true,
+    "samePackedArtifacts": false,
+    "sameNativeManifest": false,
+    "sameWorkspaceLock": false,
+    "causeConclusion": "Current bounded success does not explain historical failure or establish host-load causation; packed/native and lock identities also differ."
+  },
+  "gaps": [
+    "No exclusive cross-phase accounting: built-in wall spans nest and child/worker contexts overlap. CPU sampler stack time is sampling attribution, not exact CPU or invocation counts.",
+    "Program factory hook counts one Auth createProgram per engine. Nine semantic-worker contexts are absent from operation-hook records; CPU samples show ten Program execution contexts per producer. Exact total calls, separate Program setup/checker/type-query time and worker read/hash counts are unavailable.",
+    "Only authorization, analyze, classifier and V3 built-in flags were enabled. Optional transform/fusion profiles were not enabled; the one-attempt constraint precludes a new run to obtain those finer spans.",
+    "JS read/hash hooks observe readFile/readFileSync and createHash/update in instrumented main threads, including bootstrap/module loading. They miss uninstrumented workers, FileHandle/streams/other APIs and Rust-internal I/O/hashes. Counts are partial operation-level observations, not totals or per-phase counts.",
+    "Publication-precommit-verification combines work since the previous mark, including preparation/staging and live verification. selector-commit includes remaining frontier and final selector work. There is no separate staging/live-fingerprint/frontier duration, exact deadline-arm timestamp or remaining-slack event; historical failure had no emitted success-only authorization span.",
+    "Process-tree ps polling and time(1) preflight were unavailable in this sandbox. Own CPU is summed once per recorded PID (including its threads); maxRSS is the largest individual process high-water, not simultaneous tree memory. Native Rust stack detail and per-phase memory are absent.",
+    "No current failure path was exercised because all six operations succeeded. Historical failure JSON/command records are preserved; existing success-only spans cannot retroactively attribute that failure. Partial snapshots would retain coarse evidence on a current failure.",
+    "Single sequential instrumented runs with uncleared caches and uncontrolled host conditions are not a speed benchmark or causal load experiment."
+  ],
+  "completedSharedProofUnchanged": true,
+  "authoredInputsUnchanged": true,
+  "speedBenchmark": false,
+  "runtimeChanges": false,
+  "remoteOrWorkflowChanges": false,
+  "durableArchive": {
+    "repository": "private Turbo consumer repository only",
+    "path": "docs/plans/intl-native-ci/evidence/current37-phase-attribution.zip",
+    "sha256": "7a340a11f6de88ae3abdea9077512b45b84c025df97e37bc2d01940fdc18a7a4",
+    "bytes": 12969668,
+    "compressedByteLimit": 100000000,
+    "withinCompressedLimit": true,
+    "memberCount": 156,
+    "cpuProfileCount": 34,
+    "memberManifest": [
+      {
+        "path": "MANIFEST.json",
+        "bytes": 29501,
+        "compressedBytes": 8001,
+        "sha256": "64fcf7e3674eac69321843200cdd4905b16ac2a89812b6616cd55fc2a9076552"
+      },
+      {
+        "path": "REPRODUCTION.json",
+        "bytes": 3656,
+        "compressedBytes": 1841,
+        "sha256": "9587b37ecc6a962d1f44e1843af260476ad7fb346ba29bb3c57b43c9d7cbc138"
+      },
+      {
+        "path": "analyze.py",
+        "bytes": 15201,
+        "compressedBytes": 5814,
+        "sha256": "aee43f708a78675ed17b7c4b965c89144290de8f31c771893531fa742edd8f62"
+      },
+      {
+        "path": "baseline-equality.json",
+        "bytes": 221,
+        "compressedBytes": 163,
+        "sha256": "9d78b8f9a169398f79332c66f1fd4b771dd177f30f415ef2a993a336086b1e91"
+      },
+      {
+        "path": "candidate-packs/candidate.json",
+        "bytes": 32322,
+        "compressedBytes": 8619,
+        "sha256": "ccd718dbb22eed3ecd43fcb9b9f2c13ecf8e82e564e21200cd8a27ff7ed15661"
+      },
+      {
+        "path": "commands.jsonl",
+        "bytes": 3452,
+        "compressedBytes": 468,
+        "sha256": "5860be8addd0446c802ff8847d726359925109712822b82ccb450289705e8e02"
+      },
+      {
+        "path": "cpu-analysis.json",
+        "bytes": 222280,
+        "compressedBytes": 11495,
+        "sha256": "947e6d8771380e636626b41219b33672d13704fa45b0e547cba26d717e3b5a00"
+      },
+      {
+        "path": "diagnostic-commands.json",
+        "bytes": 13849,
+        "compressedBytes": 1093,
+        "sha256": "77d083c9a48979caa5e8caf640760a1bc1605c3da92a8f7a0d5167fc03faabb5"
+      },
+      {
+        "path": "historical-deadline-diagnosis.md",
+        "bytes": 8069,
+        "compressedBytes": 3764,
+        "sha256": "90cbdf285af0693d4f8d9c0d466b667f2fb2b76049c13980fe34c747252924e0"
+      },
+      {
+        "path": "historical-failure/auth-serial/standalone-command.json",
+        "bytes": 438,
+        "compressedBytes": 269,
+        "sha256": "0a601d89e3eee07a8827e2e14fa268967bc28f1377ecb3608136949ae2e0df60"
+      },
+      {
+        "path": "historical-failure/auth-serial/standalone-prove.json",
+        "bytes": 282,
+        "compressedBytes": 212,
+        "sha256": "5cf2cb1a3665bffec93b32d58640f87fb755e2ed1f5c66894143ef3405899f6a"
+      },
+      {
+        "path": "historical-failure/candidate-comparison.json",
+        "bytes": 581,
+        "compressedBytes": 261,
+        "sha256": "18c5131f985aa93ec23cdbb361a335e897db9e956f8421145d2c349aa1de92ed"
+      },
+      {
+        "path": "historical-failure/input-identity-comparison.json",
+        "bytes": 1177,
+        "compressedBytes": 452,
+        "sha256": "6f69c3c09696a8634a87bb54fe9d1b42fb91fb13859e85ba1120f32e3e3f01a9"
+      },
+      {
+        "path": "historical-failure/producer-command.json",
+        "bytes": 594,
+        "compressedBytes": 370,
+        "sha256": "12db0056c6dfad66e38b0623e7f34557d1f874e8161619257748be77ebe6e107"
+      },
+      {
+        "path": "historical-failure/producer.json",
+        "bytes": 1032,
+        "compressedBytes": 359,
+        "sha256": "9e8be7de0cc86f20437cf5f66e6205e42bf88cd219cc8882469930db17d16827"
+      },
+      {
+        "path": "location-assets-equality.json",
+        "bytes": 19544,
+        "compressedBytes": 8860,
+        "sha256": "486c01aa02e0ec7d8639687ead04cfbf1115a4198d9e788f7a2a039cae0a9240"
+      },
+      {
+        "path": "metadata/original-SHA256SUMS",
+        "bytes": 17235,
+        "compressedBytes": 6820,
+        "sha256": "8c53da6af53bdd45cb5ee6c5e7b177c5b3881b690c011dabf3f3cedcc1ed12c1"
+      },
+      {
+        "path": "metadata/original-evidence-manifest.json",
+        "bytes": 26776,
+        "compressedBytes": 7547,
+        "sha256": "ccfcdeccbc07058801701aaac322aedf4e3726d9b287e7ac4016d7de6f5551f3"
+      },
+      {
+        "path": "node/check/command.stderr",
+        "bytes": 484,
+        "compressedBytes": 266,
+        "sha256": "160239b7f511da692f0b15356aa0982dce9aead906327d33de7611a319c87b31"
+      },
+      {
+        "path": "node/check/command.stdout",
+        "bytes": 470,
+        "compressedBytes": 219,
+        "sha256": "67904a1bc5ee24e82debb374cc58e9d4d6895b81b410e4c6353b581fb97235b8"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011658.60857.0.001.cpuprofile",
+        "bytes": 421124,
+        "compressedBytes": 32217,
+        "sha256": "5d3cff7b6e82b6048da33385565f8332f85ddc714d9aeb28f03c0ed576bd2d1a"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011659.60864.0.001.cpuprofile",
+        "bytes": 8331807,
+        "compressedBytes": 346800,
+        "sha256": "fc09de5e1847fac7818cf74e0382163134dfa53550e10d38ab5dcd14575e8ffc"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011659.60865.0.001.cpuprofile",
+        "bytes": 7922410,
+        "compressedBytes": 327958,
+        "sha256": "da1248916aa0296901fe008f6dab7843e8c12c2015354b25ea4496af7814af2e"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011659.60866.0.001.cpuprofile",
+        "bytes": 5683941,
+        "compressedBytes": 243427,
+        "sha256": "867dd5e69864131928fc661f2c710ab56b98ae4bff0b09185b1cb3f4bc69baea"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011659.60867.0.001.cpuprofile",
+        "bytes": 4780868,
+        "compressedBytes": 208704,
+        "sha256": "e22656d6395324291a0e1dc8f5f5ccc0d88fa09f8cf665d84217458758768173"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011659.60868.0.001.cpuprofile",
+        "bytes": 3224352,
+        "compressedBytes": 162133,
+        "sha256": "e3597deb091381182e08d1f581d5ba7dab489b5b16c90a7a9141a4681bd553d2"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011703.60867.1.003.cpuprofile",
+        "bytes": 13283985,
+        "compressedBytes": 603071,
+        "sha256": "0dba6e6fe9d974675db0ff5e080279965005bbe680b4791ed87b4c960e962c71"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011703.60867.2.002.cpuprofile",
+        "bytes": 9853344,
+        "compressedBytes": 462234,
+        "sha256": "46a77c837e155dc7f89e438d406ff958428fdf775a0285eb6a199ec4b14657dc"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011704.60864.1.003.cpuprofile",
+        "bytes": 6381262,
+        "compressedBytes": 310138,
+        "sha256": "5f13465d36fa670015460ade03cf436d744d781f92dff6e249142593eb2bb2e6"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011704.60864.2.002.cpuprofile",
+        "bytes": 7289141,
+        "compressedBytes": 358474,
+        "sha256": "ba68a8ab03f1f7d514dbc227a4ddd56dd646740e1394e518c1b85327038cb9ba"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011704.60866.1.002.cpuprofile",
+        "bytes": 11574711,
+        "compressedBytes": 568857,
+        "sha256": "ef2b4b921f8424fef40d7a5966c871e5b5d729c43cf1544cd766f27500a29dc5"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011704.60866.2.003.cpuprofile",
+        "bytes": 10249480,
+        "compressedBytes": 499925,
+        "sha256": "f87f3c2e31063d70ede3fb7969b6e61a5e7e703857f7ebf49983fca942b1905d"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011706.60865.1.002.cpuprofile",
+        "bytes": 8982129,
+        "compressedBytes": 438416,
+        "sha256": "41efffd917471ef54e1096232914f551db992e1389528314e55986dd056f484d"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011706.60865.2.003.cpuprofile",
+        "bytes": 11715873,
+        "compressedBytes": 557810,
+        "sha256": "7c466159d286e5c5e74725354a595e7f551a7702aecf1a4a5398e1622f10b77d"
+      },
+      {
+        "path": "node/check/cpu/CPU.20260911.011706.60865.3.004.cpuprofile",
+        "bytes": 8358131,
+        "compressedBytes": 400835,
+        "sha256": "e0d86249c20a6be7efe075bb790990b1707781252525a7bee35ba89f9fe89524"
+      },
+      {
+        "path": "node/check/operation.json",
+        "bytes": 8843,
+        "compressedBytes": 2588,
+        "sha256": "221e70d58c9eaf4ce1c0850ae9d88d34547709734cfbf844f667a59065d3a940"
+      },
+      {
+        "path": "node/check/operations/60857-0.json",
+        "bytes": 122303,
+        "compressedBytes": 8396,
+        "sha256": "b091ca6f53cd1833a5959cb708d6b782d7ec01627be408ee1544cad60c9676e8"
+      },
+      {
+        "path": "node/check/operations/60857-0.partial.json",
+        "bytes": 1304,
+        "compressedBytes": 679,
+        "sha256": "1e481abc0f09c69964c37e6b6dbe7dbdea29094fe11f4a42d406fdec911d34d6"
+      },
+      {
+        "path": "node/check/operations/60857-0.stderr",
+        "bytes": 484,
+        "compressedBytes": 266,
+        "sha256": "160239b7f511da692f0b15356aa0982dce9aead906327d33de7611a319c87b31"
+      },
+      {
+        "path": "node/check/operations/60864-0.json",
+        "bytes": 562778,
+        "compressedBytes": 42544,
+        "sha256": "1a2f9aac40511231f1fdf9ac7d0366c888bd2615dd529cbf6c01d9f9bf9bb45a"
+      },
+      {
+        "path": "node/check/operations/60864-0.partial.json",
+        "bytes": 1336,
+        "compressedBytes": 708,
+        "sha256": "196ebd4219edf94e68fc7b146b654335051749e3c188f62020ab9a9bbebcc001"
+      },
+      {
+        "path": "node/check/operations/60864-0.stderr",
+        "bytes": 2953,
+        "compressedBytes": 1159,
+        "sha256": "a5a2ef4dd8ef6e3acad558fb278dd3fdc54a61050ca10d86a615782de16bd167"
+      },
+      {
+        "path": "node/check/operations/60865-0.json",
+        "bytes": 520254,
+        "compressedBytes": 37069,
+        "sha256": "e47011c1cbac800ddfe3f02d734028a8c6f0d566144fa508257c0aa27e3a0eaa"
+      },
+      {
+        "path": "node/check/operations/60865-0.partial.json",
+        "bytes": 1336,
+        "compressedBytes": 704,
+        "sha256": "38740a82339ac5170ec979b8bceae0c2afc4e3ef8fa7b0bf8006af5f0addcfd7"
+      },
+      {
+        "path": "node/check/operations/60865-0.stderr",
+        "bytes": 2946,
+        "compressedBytes": 1151,
+        "sha256": "fb308c101ce52a55d721536d9ff65ad0fbc931894e21663017df8b1541399ee7"
+      },
+      {
+        "path": "node/check/operations/60866-0.json",
+        "bytes": 368340,
+        "compressedBytes": 27423,
+        "sha256": "e3ef1cef6123733c73f516f2eaac0bc4d68b96a65c1d609e4c34891ea7c409b6"
+      },
+      {
+        "path": "node/check/operations/60866-0.partial.json",
+        "bytes": 1334,
+        "compressedBytes": 700,
+        "sha256": "eab7c5738bcff0b55a3bd309ee66429daff59f294696b8c66f7bde69da4997c7"
+      },
+      {
+        "path": "node/check/operations/60866-0.stderr",
+        "bytes": 2930,
+        "compressedBytes": 1150,
+        "sha256": "e742452c664c0a035ba6804a8ae083f60873f8f1d118b06fec79580e12a3bc0f"
+      },
+      {
+        "path": "node/check/operations/60867-0.json",
+        "bytes": 351867,
+        "compressedBytes": 24741,
+        "sha256": "96d90ea4136a1343d6e734896615f9d972d30fb509ecc9d5321d58bbc06146be"
+      },
+      {
+        "path": "node/check/operations/60867-0.partial.json",
+        "bytes": 1338,
+        "compressedBytes": 698,
+        "sha256": "4a7965a92deddb1306306f20c80abf4af2f293491b4d22f9bf1d02dbe169498b"
+      },
+      {
+        "path": "node/check/operations/60867-0.stderr",
+        "bytes": 2941,
+        "compressedBytes": 1160,
+        "sha256": "7219919ff3cf1b5865e2b78a93f9798afc5661532a9c2838a2d5e8f11c92c282"
+      },
+      {
+        "path": "node/check/operations/60868-0.json",
+        "bytes": 198585,
+        "compressedBytes": 13673,
+        "sha256": "9bf27f66436e23c7014ac0c71d74675a0c888fe45138c8f0126e8c7df2c215b3"
+      },
+      {
+        "path": "node/check/operations/60868-0.stderr",
+        "bytes": 2929,
+        "compressedBytes": 1136,
+        "sha256": "45f3c6ea47783cdf716d27c42fa218e886c8f0178c3205a4fdacbd65a05dbf1b"
+      },
+      {
+        "path": "node/check/supervisor.stderr",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "node/check/supervisor.stdout",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "node/export/command.stderr",
+        "bytes": 2069,
+        "compressedBytes": 635,
+        "sha256": "8f9d8b231dc4273542fb67eb9841283efc6ce98a6c7678e55d08559b66121934"
+      },
+      {
+        "path": "node/export/command.stdout",
+        "bytes": 152,
+        "compressedBytes": 126,
+        "sha256": "4ed588ae1225654151ead8ac0617ad529c7173ff49e1815981315bf2b29defe0"
+      },
+      {
+        "path": "node/export/cpu/CPU.20260911.011715.60960.0.001.cpuprofile",
+        "bytes": 916730,
+        "compressedBytes": 62315,
+        "sha256": "b7c164a464bbb31126e47f30796bd98c1ea44c10e6a67445c85ba4b7ea835f59"
+      },
+      {
+        "path": "node/export/operation.json",
+        "bytes": 9084,
+        "compressedBytes": 2610,
+        "sha256": "ce90478222a0ebd2f238a5a06d6e19496d2cbe41e4241628eb6ff4f79c6bdcf4"
+      },
+      {
+        "path": "node/export/operations/60960-0.json",
+        "bytes": 1333619,
+        "compressedBytes": 102861,
+        "sha256": "e057fc45cd66e088abf85f35dfa257ba1fd81fb568f82aeafc1081533c9e3008"
+      },
+      {
+        "path": "node/export/operations/60960-0.partial.json",
+        "bytes": 1308,
+        "compressedBytes": 675,
+        "sha256": "ee768151f035006276cf5d6e79a840f51335047c4d83eb9c25634356f4db3f77"
+      },
+      {
+        "path": "node/export/operations/60960-0.stderr",
+        "bytes": 2069,
+        "compressedBytes": 635,
+        "sha256": "8f9d8b231dc4273542fb67eb9841283efc6ce98a6c7678e55d08559b66121934"
+      },
+      {
+        "path": "node/export/supervisor.stderr",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "node/export/supervisor.stdout",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "node/verify/command.stderr",
+        "bytes": 2076,
+        "compressedBytes": 629,
+        "sha256": "2dcc72c1d5df32bd0b0f20af8831328f14d915d10ae95423d6aef43bc995be4a"
+      },
+      {
+        "path": "node/verify/command.stdout",
+        "bytes": 223,
+        "compressedBytes": 158,
+        "sha256": "f28745354aaa8b3e5efe46cd68bad93ca193b7f402b0eb041473e95da45873e9"
+      },
+      {
+        "path": "node/verify/cpu/CPU.20260911.011726.61019.0.001.cpuprofile",
+        "bytes": 806603,
+        "compressedBytes": 53407,
+        "sha256": "8dc1932bb96f1659ab22108c1457fb1ff3ace023ca27ccabfb8ccfdf21cf0e55"
+      },
+      {
+        "path": "node/verify/operation.json",
+        "bytes": 8829,
+        "compressedBytes": 2586,
+        "sha256": "724a75e084d15dbed76e4ba36e8b8d2afb90e0c81a1fb421fc4d51e52cdcd6bb"
+      },
+      {
+        "path": "node/verify/operations/61019-0.json",
+        "bytes": 1297393,
+        "compressedBytes": 100063,
+        "sha256": "ad508561461bf3fb5f8c86620d3013b27ce90fac544fbcf4ac13f21656e54ee7"
+      },
+      {
+        "path": "node/verify/operations/61019-0.partial.json",
+        "bytes": 1311,
+        "compressedBytes": 680,
+        "sha256": "e1d15882eb6b4997a0cbef25b7b21b03695de3d511fa9bb073c48f8a8c930444"
+      },
+      {
+        "path": "node/verify/operations/61019-0.stderr",
+        "bytes": 2076,
+        "compressedBytes": 629,
+        "sha256": "2dcc72c1d5df32bd0b0f20af8831328f14d915d10ae95423d6aef43bc995be4a"
+      },
+      {
+        "path": "node/verify/supervisor.stderr",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "node/verify/supervisor.stdout",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "preparation-node/baseline.json",
+        "bytes": 1303048,
+        "compressedBytes": 389584,
+        "sha256": "c9cba718f21bb7bc23217005593ddab298b723e274478d1d7e9e25fe36f284a4"
+      },
+      {
+        "path": "preparation-node/candidate-install.log",
+        "bytes": 296,
+        "compressedBytes": 231,
+        "sha256": "b256cfe405ebd81b380d24da052aff0071bd871a819bda50a277b50749f5d43b"
+      },
+      {
+        "path": "preparation-node/candidate.log",
+        "bytes": 166,
+        "compressedBytes": 133,
+        "sha256": "a9e76947ebf186ace6e3e2a851fb49b06c9c0749b5d640d4b87710da92672184"
+      },
+      {
+        "path": "preparation-node/frozen.log",
+        "bytes": 1172,
+        "compressedBytes": 558,
+        "sha256": "8c04a67156c2c1f129c6941a33a2cd6e062d4eef624ec4c07d9725381b156be2"
+      },
+      {
+        "path": "preparation-node/location.log",
+        "bytes": 122,
+        "compressedBytes": 95,
+        "sha256": "d1e1fdba2039a466420f1e831431067998844f40ec166e5a0f119d23f0669391"
+      },
+      {
+        "path": "preparation-node/versions.log",
+        "bytes": 7,
+        "compressedBytes": 9,
+        "sha256": "a712c758275b460d18fa77a26ed3589689bb3f69dcc1ea99b913e32db92a5cd2"
+      },
+      {
+        "path": "preparation-rust/baseline.json",
+        "bytes": 1303048,
+        "compressedBytes": 389584,
+        "sha256": "c9cba718f21bb7bc23217005593ddab298b723e274478d1d7e9e25fe36f284a4"
+      },
+      {
+        "path": "preparation-rust/candidate-install.log",
+        "bytes": 297,
+        "compressedBytes": 232,
+        "sha256": "ab9d2d4119d974139dd87bff3da99454ca8fd4d9843fee622d36c00ee5effeaf"
+      },
+      {
+        "path": "preparation-rust/candidate.log",
+        "bytes": 166,
+        "compressedBytes": 133,
+        "sha256": "a9e76947ebf186ace6e3e2a851fb49b06c9c0749b5d640d4b87710da92672184"
+      },
+      {
+        "path": "preparation-rust/frozen.log",
+        "bytes": 1115,
+        "compressedBytes": 540,
+        "sha256": "708fc975f52c440eecd6c1b56f1575e3d9725dba52309e58709fab68a673df0b"
+      },
+      {
+        "path": "preparation-rust/location.log",
+        "bytes": 122,
+        "compressedBytes": 95,
+        "sha256": "d1e1fdba2039a466420f1e831431067998844f40ec166e5a0f119d23f0669391"
+      },
+      {
+        "path": "preparation-rust/versions.log",
+        "bytes": 7,
+        "compressedBytes": 9,
+        "sha256": "a712c758275b460d18fa77a26ed3589689bb3f69dcc1ea99b913e32db92a5cd2"
+      },
+      {
+        "path": "prepare.py",
+        "bytes": 2192,
+        "compressedBytes": 1062,
+        "sha256": "4ea3f70f3c2c6303207ad801deab687cfb594b2970f71119e4e87f1cdc8f40cf"
+      },
+      {
+        "path": "profile-spans.json",
+        "bytes": 65555,
+        "compressedBytes": 6520,
+        "sha256": "8563c23972c3033fbcbc1e914dd2f77dff862aa6ee408ea7567b7c544900cdb3"
+      },
+      {
+        "path": "receipt-counters.json",
+        "bytes": 11861,
+        "compressedBytes": 1290,
+        "sha256": "030a71ba9c95442dfe0ea312a889bad6ec804e13f66da84ff903ab5688a3137f"
+      },
+      {
+        "path": "run-diagnostics.py",
+        "bytes": 2462,
+        "compressedBytes": 1193,
+        "sha256": "0696270ed7c435dfd308a817fe46dce2fccb8a72170ea3403229e3c2ce180c50"
+      },
+      {
+        "path": "rust/check/command.stderr",
+        "bytes": 484,
+        "compressedBytes": 266,
+        "sha256": "3138a75b03b26f0211a58ff50d0b98a4279177c97a028b33429bc6e74223738e"
+      },
+      {
+        "path": "rust/check/command.stdout",
+        "bytes": 470,
+        "compressedBytes": 219,
+        "sha256": "67904a1bc5ee24e82debb374cc58e9d4d6895b81b410e4c6353b581fb97235b8"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011735.61070.0.001.cpuprofile",
+        "bytes": 422574,
+        "compressedBytes": 32490,
+        "sha256": "54b7d32437d6e277aa5d08bef4b093569054f37030653cf83e0b62a318cb8f75"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011736.61075.0.001.cpuprofile",
+        "bytes": 7822730,
+        "compressedBytes": 329145,
+        "sha256": "9a1d10652b0e569c9935dbc0223a900ba1aa0eec268a2f8ddd2127140f01c613"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011736.61076.0.001.cpuprofile",
+        "bytes": 8079398,
+        "compressedBytes": 334642,
+        "sha256": "0b8ce767dbed84c859ad3a1a7fe0c42cc557df735e0b4af12d6cebc94689abde"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011736.61077.0.001.cpuprofile",
+        "bytes": 5775119,
+        "compressedBytes": 246233,
+        "sha256": "c0bc83cae2431b2e825bb31af7d7727b6ddd961f9de11f6462b63d8e8f292b7e"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011736.61078.0.001.cpuprofile",
+        "bytes": 4791025,
+        "compressedBytes": 209769,
+        "sha256": "89fe197770c26c59fc98e4db9e80a6d6b3977627739daac274f81c58e89fd6f5"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011736.61079.0.001.cpuprofile",
+        "bytes": 3163223,
+        "compressedBytes": 158153,
+        "sha256": "28313ceede3ac03246178affe38333c02f71c00eb4f7fdc76d9baa671ef336f2"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011741.61077.1.002.cpuprofile",
+        "bytes": 11636399,
+        "compressedBytes": 568997,
+        "sha256": "195d887fd5225ec7bfbdf0b90750f7b94e36e57045f0d48ef5e5a32829428553"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011741.61077.2.003.cpuprofile",
+        "bytes": 10736774,
+        "compressedBytes": 521770,
+        "sha256": "8e1be48144f16a816bb95ff46012c2146c3ccb5326da59a4215ad9d91c897411"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011741.61078.1.003.cpuprofile",
+        "bytes": 12869554,
+        "compressedBytes": 590951,
+        "sha256": "157840d0c97f68d79cf2b126fe22c6d9b9a1bd55ec900232000e3a3f5f7c126f"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011741.61078.2.002.cpuprofile",
+        "bytes": 9563518,
+        "compressedBytes": 449175,
+        "sha256": "ec518df561280c7e7aafda4e8d69d32fd00a87082721e126c30f9ef9f51ddeeb"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011742.61075.1.002.cpuprofile",
+        "bytes": 6522792,
+        "compressedBytes": 319220,
+        "sha256": "7d90e99461ac5b5f66d8b983d19d85ec4fd5db8f55809eeb8b8f71729f7b1cf9"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011742.61075.2.003.cpuprofile",
+        "bytes": 6918495,
+        "compressedBytes": 347460,
+        "sha256": "1d7e91b4c2e469729fa728c230ffa07adfd66def4608d3d93c1b49c4cd337bee"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011744.61076.1.003.cpuprofile",
+        "bytes": 8764689,
+        "compressedBytes": 430537,
+        "sha256": "60095272b271934149fc0d59f09fafc0a2fa8f5f42035e1e9edf27c9e4269184"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011744.61076.2.002.cpuprofile",
+        "bytes": 12131817,
+        "compressedBytes": 578656,
+        "sha256": "e1e798590c5f6029443b7aa4a88fae402e283f12cac5f3e10e64c97b77c3a2f0"
+      },
+      {
+        "path": "rust/check/cpu/CPU.20260911.011744.61076.3.004.cpuprofile",
+        "bytes": 9075453,
+        "compressedBytes": 433411,
+        "sha256": "a3708dbd9a81056e7fbd24ee63da31e45c8732ddfb5393705ea57e751d3961c6"
+      },
+      {
+        "path": "rust/check/operation.json",
+        "bytes": 8834,
+        "compressedBytes": 2589,
+        "sha256": "6336a6daa3ac0fc05ef2464b464bae39a21571a973ac608934beedf11b7cf0cc"
+      },
+      {
+        "path": "rust/check/operations/61070-0.json",
+        "bytes": 122436,
+        "compressedBytes": 8453,
+        "sha256": "31f1df4697987ef9b559fcf9151ab8d8862c30b47be615e1aac5cd93eb14a9e5"
+      },
+      {
+        "path": "rust/check/operations/61070-0.partial.json",
+        "bytes": 1304,
+        "compressedBytes": 677,
+        "sha256": "8bd3fa36f441109fec9b564e433c9a2c7970ec2a16efb98732854f3c9bf3930d"
+      },
+      {
+        "path": "rust/check/operations/61070-0.stderr",
+        "bytes": 484,
+        "compressedBytes": 266,
+        "sha256": "3138a75b03b26f0211a58ff50d0b98a4279177c97a028b33429bc6e74223738e"
+      },
+      {
+        "path": "rust/check/operations/61075-0.json",
+        "bytes": 562917,
+        "compressedBytes": 42598,
+        "sha256": "bd9f1ff1d62d761f40a67ecfa3ad11475529cb5bdfc5db7cf6d55544d1361b41"
+      },
+      {
+        "path": "rust/check/operations/61075-0.partial.json",
+        "bytes": 1337,
+        "compressedBytes": 704,
+        "sha256": "e7ca94605fd9ce1e2650535e63d585e0142259f1f1d6756484e294e630b96301"
+      },
+      {
+        "path": "rust/check/operations/61075-0.stderr",
+        "bytes": 2937,
+        "compressedBytes": 1152,
+        "sha256": "ac44427a94fe95e6bd7a59a35109aa1a9285f067f61db373c2487300cf30bdac"
+      },
+      {
+        "path": "rust/check/operations/61076-0.json",
+        "bytes": 520386,
+        "compressedBytes": 37251,
+        "sha256": "d1d8a68a9db6c78b583300401f8a0d47066f2e735ecb9d62b8cbb6af8ac80846"
+      },
+      {
+        "path": "rust/check/operations/61076-0.partial.json",
+        "bytes": 1334,
+        "compressedBytes": 702,
+        "sha256": "a695a1bf59854b250669d0ac1678ddb3c48a81034080bffa63719223c42a15b3"
+      },
+      {
+        "path": "rust/check/operations/61076-0.stderr",
+        "bytes": 2941,
+        "compressedBytes": 1158,
+        "sha256": "1ceff98d6510c7849e4b750d241016bc6b48ffe5b2aa1d7923612fca6c8e11b0"
+      },
+      {
+        "path": "rust/check/operations/61077-0.json",
+        "bytes": 368471,
+        "compressedBytes": 27537,
+        "sha256": "770a502b11dd858cfdc0568e9c44383cec6d65550924dad2bfc3989940a821ce"
+      },
+      {
+        "path": "rust/check/operations/61077-0.partial.json",
+        "bytes": 1335,
+        "compressedBytes": 697,
+        "sha256": "3711792247d807d3148e217204fc827e2450b7f2d02bc358eeb07c3c92b950ed"
+      },
+      {
+        "path": "rust/check/operations/61077-0.stderr",
+        "bytes": 2932,
+        "compressedBytes": 1148,
+        "sha256": "9d3d48fbec3875ce991c270343cce0fa51d6037663bcd781953b4fb56f78a9fd"
+      },
+      {
+        "path": "rust/check/operations/61078-0.json",
+        "bytes": 352001,
+        "compressedBytes": 24904,
+        "sha256": "10a51620916660d4f9a91cc6824294ddcf29f51684d3377af199632f43041ebe"
+      },
+      {
+        "path": "rust/check/operations/61078-0.partial.json",
+        "bytes": 1337,
+        "compressedBytes": 700,
+        "sha256": "a92994281eb6f3158022b095e07d166d22f202290caa5756d9c99c8f726f5f17"
+      },
+      {
+        "path": "rust/check/operations/61078-0.stderr",
+        "bytes": 2951,
+        "compressedBytes": 1160,
+        "sha256": "0786ae7739bcb3058f5ac7989449a4875859fce456d48f6078ce5334bdf06e50"
+      },
+      {
+        "path": "rust/check/operations/61079-0.json",
+        "bytes": 198719,
+        "compressedBytes": 13775,
+        "sha256": "ef9ef7a1395d515900d5a001c4b046094b5d90bb8ab4a1562903d5bcbf477c77"
+      },
+      {
+        "path": "rust/check/operations/61079-0.stderr",
+        "bytes": 2944,
+        "compressedBytes": 1141,
+        "sha256": "0a2b6f3fd5127afe4fe16094ec8cfdc49d29655b13bd409b0e81366b888f3c53"
+      },
+      {
+        "path": "rust/check/supervisor.stderr",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "rust/check/supervisor.stdout",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "rust/export/command.stderr",
+        "bytes": 2099,
+        "compressedBytes": 638,
+        "sha256": "5fd284ff6e02b9741cdcd4ad704ee2883a628460440f424f696a3752b6f0529b"
+      },
+      {
+        "path": "rust/export/command.stdout",
+        "bytes": 152,
+        "compressedBytes": 126,
+        "sha256": "4ed588ae1225654151ead8ac0617ad529c7173ff49e1815981315bf2b29defe0"
+      },
+      {
+        "path": "rust/export/cpu/CPU.20260911.011754.61196.0.001.cpuprofile",
+        "bytes": 899087,
+        "compressedBytes": 60645,
+        "sha256": "400dc09d1346f8db2a714443bac8ef54b5a841ba55fbb8a4b2746251770a0e5e"
+      },
+      {
+        "path": "rust/export/operation.json",
+        "bytes": 9120,
+        "compressedBytes": 2622,
+        "sha256": "ad7f3640bff57e57de9e823cefe15e4f26fd2ca1ef6e4b1d1d5b5e02a9fc756b"
+      },
+      {
+        "path": "rust/export/operations/61196-0.json",
+        "bytes": 1333752,
+        "compressedBytes": 102893,
+        "sha256": "69a6b7c64281bd397b22f590f6b3fd2a4a6704099c1d09d3cf29be903af263cf"
+      },
+      {
+        "path": "rust/export/operations/61196-0.partial.json",
+        "bytes": 1307,
+        "compressedBytes": 678,
+        "sha256": "e1b7aa0bd4cf7cf5405d267c805f96c90a451dde2531bca366f43a0f8d715181"
+      },
+      {
+        "path": "rust/export/operations/61196-0.stderr",
+        "bytes": 2099,
+        "compressedBytes": 638,
+        "sha256": "5fd284ff6e02b9741cdcd4ad704ee2883a628460440f424f696a3752b6f0529b"
+      },
+      {
+        "path": "rust/export/supervisor.stderr",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "rust/export/supervisor.stdout",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "rust/verify/command.stderr",
+        "bytes": 2070,
+        "compressedBytes": 635,
+        "sha256": "dbd5fda41e9597841c1b87ff85cbd1f6b36862ab8be1e1b095977bff9c24efc6"
+      },
+      {
+        "path": "rust/verify/command.stdout",
+        "bytes": 223,
+        "compressedBytes": 158,
+        "sha256": "f28745354aaa8b3e5efe46cd68bad93ca193b7f402b0eb041473e95da45873e9"
+      },
+      {
+        "path": "rust/verify/cpu/CPU.20260911.011804.61245.0.001.cpuprofile",
+        "bytes": 805864,
+        "compressedBytes": 53449,
+        "sha256": "5f79b5dbf83c3c73179d3c2e4c0dff699750758b51e2c88726ff80728707e087"
+      },
+      {
+        "path": "rust/verify/operation.json",
+        "bytes": 8877,
+        "compressedBytes": 2592,
+        "sha256": "b8121ae9491f9350d4f0ae8986d3acbea975caec29110fde6f387447c9cb61ac"
+      },
+      {
+        "path": "rust/verify/operations/61245-0.json",
+        "bytes": 1297526,
+        "compressedBytes": 100180,
+        "sha256": "77946f26166d85c128953bfa1147ce7ccb83c11fae13d31d2c8e31055a5288a0"
+      },
+      {
+        "path": "rust/verify/operations/61245-0.partial.json",
+        "bytes": 1310,
+        "compressedBytes": 680,
+        "sha256": "5f545bb6f5d0df702722d167d75bcf03a612aa414673d7ee9e69de8b4f8ae14c"
+      },
+      {
+        "path": "rust/verify/operations/61245-0.stderr",
+        "bytes": 2070,
+        "compressedBytes": 635,
+        "sha256": "dbd5fda41e9597841c1b87ff85cbd1f6b36862ab8be1e1b095977bff9c24efc6"
+      },
+      {
+        "path": "rust/verify/supervisor.stderr",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "rust/verify/supervisor.stdout",
+        "bytes": 0,
+        "compressedBytes": 2,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "safe-report.md",
+        "bytes": 6314,
+        "compressedBytes": 2759,
+        "sha256": "ebd1c5df778ca92a7d5943b7844c54838bda869b7eb7621a439ec8bb400cafaf"
+      },
+      {
+        "path": "safe-summary.json",
+        "bytes": 34897,
+        "compressedBytes": 6315,
+        "sha256": "6b4f0366ae5b0e16255b801c8a99dc937ff695b04b195aaeb174445370e5eb0f"
+      },
+      {
+        "path": "seal.py",
+        "bytes": 1960,
+        "compressedBytes": 945,
+        "sha256": "77d25118370561261c8c1aabab05640b08cf97dc5fda16fbad60a62bee75c626"
+      },
+      {
+        "path": "setup.json",
+        "bytes": 750,
+        "compressedBytes": 446,
+        "sha256": "d3ef53be9d947e0d7c5e269e5d61704d662ad5659357b2b38d0119936e58247d"
+      },
+      {
+        "path": "tools/authorization-profiler-loader.mjs",
+        "bytes": 672,
+        "compressedBytes": 323,
+        "sha256": "893106d798694435825d8bfc7eab41ccfd0366e6194f5b92c86d63552c094604"
+      },
+      {
+        "path": "tools/authorization-profiler.mjs",
+        "bytes": 751,
+        "compressedBytes": 423,
+        "sha256": "54154ef36832cb59d46e93a65f8541de73d3f72f98d3fa0754861dda3476bd6d"
+      },
+      {
+        "path": "tools/authorization-typescript-shim.mjs",
+        "bytes": 836,
+        "compressedBytes": 441,
+        "sha256": "901212f7ea41b9c2f24568a902a6535fd25153cbc34c5a86efdce80336f213a6"
+      },
+      {
+        "path": "tools/ci-operation.mjs",
+        "bytes": 32177,
+        "compressedBytes": 10039,
+        "sha256": "2a3e932508ad8b578697ffd60411c1eebcf7683d7b13de11ff3a4a86dab66609"
+      },
+      {
+        "path": "tools/historical-hook.mjs",
+        "bytes": 3833,
+        "compressedBytes": 1439,
+        "sha256": "6c59ee71227e9785e10bdabe6508800ce95bff1bd13412c21be5c8a8546305d4"
+      },
+      {
+        "path": "tools/operation-hook.mjs",
+        "bytes": 4632,
+        "compressedBytes": 1678,
+        "sha256": "e4efd2b94a6f3867ce59760655caa586e157d4ca964eb911bc97547c94ab12aa"
+      },
+      {
+        "path": "verified-identities.json",
+        "bytes": 990,
+        "compressedBytes": 329,
+        "sha256": "05147a807d53f668f3c000964e374d898bdf22060e0bd99f5fee2073c8bc91f8"
+      },
+      {
+        "path": "verify-identities.mjs",
+        "bytes": 1936,
+        "compressedBytes": 756,
+        "sha256": "a38cef22f6d975e9b46751d439b7b3a9879d2926ef1fa5e13208cc60f819f627"
+      }
+    ],
+    "memberManifestNote": "Paths, sizes and SHA256 only; no raw private source bodies."
+  },
+  "reproduction": {
+    "purpose": "Reproduce current corrected CI37 operation attribution, not a speed benchmark. Packaging did not rerun any workload.",
+    "consumer": {
+      "revision": "911339ca7ac0df9cc37acf2201898ac55505291f",
+      "tree": "7f4dcdc7470474c487431d5ae58d1b63d26e8c19",
+      "gitArchiveSha256": "a46e3ca8b3f041c0b7ed59f711bfccdc918add4278bfceac92048e4a53449788"
+    },
+    "candidate": {
+      "artifactId": "10159503087",
+      "sourceRevision": "1324a5ebe03865128f4f1468ea671442cd708367",
+      "sourceTree": "6cf328a934ac7ddb6a550e0f4e292c301ee2ef50",
+      "version": "0.3.30",
+      "descriptorSha256": "ccd718dbb22eed3ecd43fcb9b9f2c13ecf8e82e564e21200cd8a27ff7ed15661",
+      "packageAndNativeHashes": "candidate-packs/candidate.json (included); obtain exact five packs privately, not substitutes"
+    },
+    "runtime": {
+      "node": "24.18.0",
+      "pnpm": "12.1.0",
+      "enginesInOrder": ["node", "rust"]
+    },
+    "environment": {
+      "pnpm_config_verify_deps_before_run": "error",
+      "pnpm_config_enable_global_virtual_store": "false",
+      "pnpm_config_store_dir": "/private/tmp/intl-native-pnpm-store",
+      "COREPACK_ENABLE_NETWORK": "0 (installation)",
+      "CI": "true",
+      "NODE_OPTIONS": "unset",
+      "MIRAI_INTL_INTERNAL_AUTHORIZATION_PROFILE": "1",
+      "MIRAI_INTL_INTERNAL_ANALYZE_PROFILE": "1",
+      "MIRAI_INTL_INTERNAL_CLASSIFIER_PROFILE": "1",
+      "MIRAI_INTL_INTERNAL_V3_PROFILE": "1"
+    },
+    "nodeFlags": [
+      "--cpu-prof",
+      "--cpu-prof-interval=1000",
+      "--cpu-prof-dir=<fresh operation directory>",
+      "--experimental-test-module-mocks",
+      "--import <private tooling>/operation-hook.mjs"
+    ],
+    "sequence": [
+      "Create two NEW disposable workspaces from the exact consumer git archive. Verify input archive and candidate hashes.",
+      "Use prepare.py as retained: offline frozen install, exact installer verification, offline candidate install, workflow location assets; assert identical archived authored/generated baselines.",
+      "Use run-diagnostics.py as retained: check --workspace, authority export --workspace, verify --workspace, one fresh process each; Node sequence completes before Rust begins.",
+      "Every operation uses 180000ms command AND total supervisor budgets, samples=1, no warmups/retries/deadline relaxation. Retain failures.",
+      "Analyze existing results with analyze.py and verify-identities.mjs. Do not reinterpret sampled/nested spans as exclusive phase CPU or speed."
+    ],
+    "relocation": "Scripts are exact as executed. They reference the original private paths, cached Node/pnpm executables and historical worktree references. Inspect setup.json and scripts; relocate only a NEW copy and its paths before any user-authorized reproduction. Extracting the ZIP alone does not install dependencies or run workloads.",
+    "exactCommands": ["commands.jsonl", "diagnostic-commands.json"],
+    "manifestScope": "MANIFEST.json lists all diagnostic payload members with SHA256; it excludes its own self-hash. Public safe summary lists every ZIP member including MANIFEST.json. metadata/original-evidence-manifest.json describes the broader original private evidence set, including files deliberately omitted here.",
+    "omissions": {
+      "workspaceAndDependencyTrees": "Never included",
+      "rawInputArchive": "turbo911.tar omitted; hash retained",
+      "largeArtifacts": "Packed tarballs and exported authority tar files omitted; hashes retained",
+      "runtimeReferenceSource": "inspected-reference source bodies omitted; hashes retained"
+    },
+    "knownGaps": "See safe-summary.json and safe-report.md. Original one-attempt results, success statuses and all attribution limitations are preserved."
+  }
+}

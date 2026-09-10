@@ -3,6 +3,7 @@ import type { MessageFormatElement } from "@formatjs/icu-messageformat-parser";
 import type { IrNode, ObjectSchema, ValueSchema } from "@openmirai/intl-abi";
 
 import { canonicalJson, compareCanonicalStrings } from "./canonical";
+import { memoizeMessageSemantics } from "./message-semantics";
 
 export type ParsedMessage = Readonly<{
   exactPluralBranches: ReadonlyArray<string>;
@@ -198,6 +199,12 @@ function maximumTagCounts(
 }
 
 export function inspectMessageSyntax(message: string): MessageSyntax {
+  return memoizeMessageSemantics("syntax", message, () =>
+    inspectMessageSyntaxUncached(message)
+  );
+}
+
+function inspectMessageSyntaxUncached(message: string): MessageSyntax {
   const nodes = convertElements(
     parse(message, { captureLocation: false, ignoreTag: false })
   );
@@ -360,6 +367,16 @@ export function inferMessageContract(
   translations: Readonly<Record<string, string>>,
   locales: ReadonlyArray<string>
 ): InferredMessageContract {
+  return memoizeMessageSemantics("inferred", [translations, locales], () =>
+    inferMessageContractUncached(path, translations, locales)
+  );
+}
+
+function inferMessageContractUncached(
+  path: string,
+  translations: Readonly<Record<string, string>>,
+  locales: ReadonlyArray<string>
+): InferredMessageContract {
   const inferred = locales.map((locale) => {
     const message = translations[locale];
     if (message === undefined) {
@@ -419,9 +436,19 @@ export function parseMessage(
   valuesSchema: ObjectSchema,
   locale: string
 ): ParsedMessage {
-  const nodes = convertElements(
-    parse(message, { captureLocation: false, ignoreTag: false })
+  return memoizeMessageSemantics(
+    "parsed",
+    [message, valuesSchema, locale],
+    () => parseMessageUncached(message, valuesSchema, locale)
   );
+}
+
+function parseMessageUncached(
+  message: string,
+  valuesSchema: ObjectSchema,
+  locale: string
+): ParsedMessage {
+  const nodes = inspectMessageSyntax(message).nodes;
   const signature = new Map<string, Set<string>>();
   const exactPluralBranches: Array<string> = [];
   const pluralBranches: Array<{

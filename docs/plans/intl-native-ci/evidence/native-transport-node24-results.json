@@ -1,0 +1,398 @@
+{
+  "runtime": "Node 24.18.0",
+  "scope": "Local transport operations, not end-to-end CI; fresh-process cold, OS cache not cleared; 3 rotating blocks of 10 samples, 2 discarded warmups per warm block. Host workload not isolated. Sampled RSS may miss short peaks and double-count shared pages.",
+  "results": {
+    "hash-cold-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 150.31077100000005,
+        "p95": 160.53104199999984,
+        "min": 141.94741599999998,
+        "max": 165.358542,
+        "sampleVariance": 28.785867549174164,
+        "sampleSd": 5.365246271064747
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 107020288.0,
+        "p95": 115146752,
+        "min": 83951616,
+        "max": 117161984,
+        "sampleVariance": 81104466646093.69,
+        "sampleSd": 9005801.832490746
+      }
+    },
+    "hash-cold-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 197.97400000000005,
+        "p95": 209.00962500000014,
+        "min": 191.34404099999983,
+        "max": 223.286167,
+        "sampleVariance": 47.05345533025786,
+        "sampleSd": 6.859552123153367
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 90071040.0,
+        "p95": 90750976,
+        "min": 88932352,
+        "max": 100958208,
+        "sampleVariance": 4210747985778.759,
+        "sampleSd": 2052010.7177543587
+      }
+    },
+    "hash-cold-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 163.28812499999995,
+        "p95": 182.92700000000002,
+        "min": 154.85645799999998,
+        "max": 214.7605000000001,
+        "sampleVariance": 132.9553834037571,
+        "sampleSd": 11.530628057645304
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 114606080.0,
+        "p95": 123502592,
+        "min": 96043008,
+        "max": 126566400,
+        "sampleVariance": 45503069585784.64,
+        "sampleSd": 6745596.310615144
+      }
+    },
+    "hash-warm-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 89.56520850000004,
+        "p95": 102.81812500000001,
+        "min": 80.48687499999994,
+        "max": 109.90358400000002,
+        "sampleVariance": 34.07037672699267,
+        "sampleSd": 5.836983529785969
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 140763136.0,
+        "p95": 155746304,
+        "min": 123076608,
+        "max": 156876800,
+        "sampleVariance": 129298114791899.52,
+        "sampleSd": 11370932.890132608
+      }
+    },
+    "hash-warm-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 126.26716650000003,
+        "p95": 138.74874999999997,
+        "min": 112.86650000000009,
+        "max": 142.92816600000003,
+        "sampleVariance": 38.37202924340338,
+        "sampleSd": 6.194516062082928
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 123420672.0,
+        "p95": 140410880,
+        "min": 115867648,
+        "max": 140722176,
+        "sampleVariance": 50066306956860.03,
+        "sampleSd": 7075754.868341613
+      }
+    },
+    "hash-warm-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 97.00789600000002,
+        "p95": 101.861042,
+        "min": 84.65316699999994,
+        "max": 102.18395800000008,
+        "sampleVariance": 16.54845423184092,
+        "sampleSd": 4.067979133653579
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 189554688.0,
+        "p95": 244269056,
+        "min": 157958144,
+        "max": 249380864,
+        "sampleVariance": 607641086283333.5,
+        "sampleSd": 24650377.000835776
+      }
+    },
+    "receipt-cold-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 172.805063,
+        "p95": 181.33245900000009,
+        "min": 163.94720899999993,
+        "max": 225.55225000000019,
+        "sampleVariance": 107.6967657433611,
+        "sampleSd": 10.37770522530685
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 184590336.0,
+        "p95": 193839104,
+        "min": 149323776,
+        "max": 194199552,
+        "sampleVariance": 86253282388387.02,
+        "sampleSd": 9287264.526672373
+      }
+    },
+    "receipt-cold-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 403.685104,
+        "p95": 416.0961659999998,
+        "min": 388.3319160000001,
+        "max": 420.12933299999986,
+        "sampleVariance": 64.53713130587052,
+        "sampleSd": 8.03350056363168
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 309387264.0,
+        "p95": 312852480,
+        "min": 257441792,
+        "max": 314851328,
+        "sampleVariance": 163165991468754.7,
+        "sampleSd": 12773644.408263238
+      }
+    },
+    "receipt-cold-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 176.69612500000005,
+        "p95": 182.1437910000002,
+        "min": 168.8497910000001,
+        "max": 184.476584,
+        "sampleVariance": 12.382081627381721,
+        "sampleSd": 3.5188182145972986
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 217382912.0,
+        "p95": 235913216,
+        "min": 179847168,
+        "max": 237256704,
+        "sampleVariance": 316963734859615.94,
+        "sampleSd": 17803475.359030772
+      }
+    },
+    "receipt-warm-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 106.43045850000001,
+        "p95": 110.321458,
+        "min": 103.383375,
+        "max": 111.42979200000013,
+        "sampleVariance": 3.2404757061016767,
+        "sampleSd": 1.8001321357338402
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 278102016.0,
+        "p95": 346570752,
+        "min": 222527488,
+        "max": 349077504,
+        "sampleVariance": 1466664620436440.0,
+        "sampleSd": 38297057.5950221
+      }
+    },
+    "receipt-warm-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 323.3346039999999,
+        "p95": 330.61954200000037,
+        "min": 316.07212500000014,
+        "max": 331.6613339999999,
+        "sampleVariance": 22.576124847012075,
+        "sampleSd": 4.751433977970448
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 333438976.0,
+        "p95": 359956480,
+        "min": 329170944,
+        "max": 360497152,
+        "sampleVariance": 99642007081195.4,
+        "sampleSd": 9982084.305454217
+      }
+    },
+    "receipt-warm-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 112.01037500000007,
+        "p95": 120.14541700000018,
+        "min": 108.67137500000001,
+        "max": 122.251083,
+        "sampleVariance": 9.81785289240209,
+        "sampleSd": 3.1333453196866268
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 326811648.0,
+        "p95": 391561216,
+        "min": 269352960,
+        "max": 393052160,
+        "sampleVariance": 1027270739442845.8,
+        "sampleSd": 32051064.560211502
+      }
+    }
+  },
+  "rawReports": [
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-addon-0.json",
+      "sha256": "4924b6b94b1ae77b2fcd951117fcc4fa50a2cfb1591a9e0acd2b3f6b68091908"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-addon-1.json",
+      "sha256": "0ddad53013d7f183cae22f2c8aa0d520635d7b1e28f2702ca9d99960a11e4c76"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-addon-2.json",
+      "sha256": "0d648d6a5a02ed2745601b1c32a30433d78f11d024faa7f5ecf7ba86f42f459a"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-node-0.json",
+      "sha256": "8f393d96ccc66792fdd399c0a7e85b2802d41d254d48ebeeeb928a05b0d8d156"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-node-1.json",
+      "sha256": "87867e84f329931dc27ab31c191f05a7bb396620a5b778e761cec4df7edc7393"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-node-2.json",
+      "sha256": "d480b932ebbc4d4a1fb738c55843dcbb8a94c81a7bd3a6c9e3a32e40ef75c855"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-worker-0.json",
+      "sha256": "6aac744fdd35e27862b771d8bc4f448272aaafd535899e74f8d7f2b146f97440"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-worker-1.json",
+      "sha256": "bdfe1fa71c85c7370382cf1674563d5f196ed1f7f11205232985dfd7d6472b5c"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-cold-worker-2.json",
+      "sha256": "9d1d7945d5d4fffdec0476aa1754b1caf98bcdc3a208eb430067d0472b45d4ce"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-addon-0.json",
+      "sha256": "721971b4a3c95e2cf0138d976b1f92a249f681658c0bf128e5f9d2c8b8a9c92a"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-addon-1.json",
+      "sha256": "e4a6eb207e9a057f083ac6bb22f6aea2e1ea5c462a59d0de3fe606c0862ba854"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-addon-2.json",
+      "sha256": "ffc53cfc066e989d9c47dde89cd4821c604d62f3e99ad0ff35e7338d5e0df47b"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-node-0.json",
+      "sha256": "5ee04b671a6a6836f1ed595fca4bbaed3aeb3f54c70891f9db23cc6f156e3255"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-node-1.json",
+      "sha256": "fe822395bc980a1541ae0881b0b445f6cdb623401ca60d9923c5e9f4791e93a8"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-node-2.json",
+      "sha256": "accbe9eb2af9ce72ed4fe6e3a105893bc98db8cf16de9524c339bd5c131cbc0a"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-worker-0.json",
+      "sha256": "0eec1cb84b1059822d985336c139d029267e305d26ee6275eff6508f77405912"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-worker-1.json",
+      "sha256": "7361ce2880e9ccc19850964ea0fd8437b7feca11f7d8fee4dacfaff3c160ee79"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/hash-warm-worker-2.json",
+      "sha256": "368b24c822afbb5e8fec87c79d7b3c21ab0e6d030a61c00fcd22122e029dfc3d"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-addon-0.json",
+      "sha256": "d7d26229f5d00b0fc3b6f76742851d8a5ee3bea0950c1f474b7b341e1f32e0ff"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-addon-1.json",
+      "sha256": "93d530cf6514c06c4c9e2b0115f16114e71808ff66c6ed287c1953683f6baca7"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-addon-2.json",
+      "sha256": "0c1c7e33e2e49be7b9958466bd1dd5103586e2a1a7c6f56bb722d20437a3a0fe"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-node-0.json",
+      "sha256": "03d125095b7750a388545f10820f847dd458b51640271111b28c8297c60c5c5f"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-node-1.json",
+      "sha256": "80fe112a106b5d154426b972123b0f4b4d263e1ddd1f7d6b6c5f00cceb518997"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-node-2.json",
+      "sha256": "38336e71c207143f19bda7d7b88779b46c912c754b700a9925a5077aaa9f05b6"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-worker-0.json",
+      "sha256": "4ff6312a35eb113f41393e34b48dc8a66385790b713d2c29f76c6ca17b724a9e"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-worker-1.json",
+      "sha256": "df12dd96323141cf0b3741bd9a4942e8fc3afda2fd3f5ed967d9f0646cf590a2"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-cold-worker-2.json",
+      "sha256": "aeeeaa20dde6784c823e6b0c872d5564ed046bddf12788d4af8adc8223804552"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-addon-0.json",
+      "sha256": "0d0d1138fbc131f3337fecc721ad059693d36d728a3d93739afe3426ff870565"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-addon-1.json",
+      "sha256": "97f31eeb530eb0dfa5a58c483a7f8e093b0212e00235033b1cd53b1ba2f53179"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-addon-2.json",
+      "sha256": "8212a0ca22729e854c0675610a13743845cfd18089899edf2883187ab23baa1d"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-node-0.json",
+      "sha256": "43fd53b73ad6452c71f831f0350025afc426f01b2a98ee9e5ab3db694706745c"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-node-1.json",
+      "sha256": "37eca7d23f9ea6df18ce6b92788d55d79a45f5a33ed586890b574bcf6ef061c7"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-node-2.json",
+      "sha256": "c4d0199d2cef684ef5f16c5d2c91d99cd42e366dee69b74282d64369546f0c4d"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-worker-0.json",
+      "sha256": "842255ec84793616ace4c971c102573416abcba58a12aea1f27c0d6d38ef9162"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-worker-1.json",
+      "sha256": "65ef14a9f7a66d6d562f76a607c500b2c7c32c9368e8495b4d57af5808d5eebb"
+    },
+    {
+      "path": ".tmp/native-benchmark-node24/receipt-warm-worker-2.json",
+      "sha256": "2e84b646bb7be85d5fd84cfea0376d3668bbd89a963a08746c6b13d30519ef98"
+    }
+  ],
+  "rawArchive": {
+    "path": "/private/tmp/intl-native-execution-evidence/native-transport-node24-20260910.tar.gz",
+    "sha256": "c412c11f6578d062eda19aa8afb3ff315eb946c4e1abe7fd20b426a357b18685",
+    "bytes": 596559
+  },
+  "decision": "Select Node-API for receipt processing; retain Node hashing unless whole-operation evidence supports native hashing. Scanning still requires integration parity and end-to-end measurements."
+}

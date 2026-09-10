@@ -1,0 +1,16 @@
+{
+  "capturedAt": "2026-09-10T15:44:26.806257+00:00",
+  "region": "us-east-1",
+  "account": "867344467192",
+  "project": "fe-mirai-arm-builder-md",
+  "timeoutMinutes": 60,
+  "queuedTimeoutMinutes": 480,
+  "environmentType": "ARM_CONTAINER",
+  "computeType": "BUILD_GENERAL1_MEDIUM",
+  "image": "aws/codebuild/amazonlinux-aarch64-standard:4.0",
+  "fleetArn": null,
+  "concurrentBuildLimit": null,
+  "command": "aws codebuild batch-get-projects --names fe-mirai-arm-builder-md --region us-east-1 --query '{projects:projects[].{name:name,timeoutMinutes:timeoutInMinutes,queuedTimeoutMinutes:queuedTimeoutInMinutes,environmentType:environment.type,computeType:environment.computeType,image:environment.image,fleetArn:environment.fleet.fleetArn,concurrentBuildLimit:concurrentBuildLimit},projectsNotFound:projectsNotFound}' --output json",
+  "mutation": false,
+  "note": "Project absent in ap-southeast-1; previous recorded region corrected. Workflow timeout cannot extend project timeout."
+}

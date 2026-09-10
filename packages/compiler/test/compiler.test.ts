@@ -274,6 +274,29 @@ function replacementFixture(): Readonly<{
 }
 
 describe("canonical compiler identities", () => {
+  it("retains explicit buildId and descriptor tokens for direct compiler callers", () => {
+    const first = compileCatalog({
+      ...catalogFixtureSource,
+      buildId: "release-a",
+    });
+    const second = compileCatalog({
+      ...catalogFixtureSource,
+      buildId: "release-b",
+    });
+    expect(first.catalog.manifest.buildId).toBe("release-a");
+    expect(second.catalog.manifest.buildId).toBe("release-b");
+    expect(first.catalog.manifest.hash).toBe(second.catalog.manifest.hash);
+    expect(first.catalog.manifest.buildToken).not.toBe(
+      second.catalog.manifest.buildToken
+    );
+    expect(first.descriptors[0]?.buildToken).toBe(
+      first.catalog.manifest.buildToken
+    );
+    expect(second.descriptors[0]?.buildToken).toBe(
+      second.catalog.manifest.buildToken
+    );
+  });
+
   it("orders NFC Unicode keys by stable UTF-16 code units", () => {
     expect(canonicalJson({ äther: 1, zeta: 2 })).toBe('{"zeta":2,"äther":1}');
   });

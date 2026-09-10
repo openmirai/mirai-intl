@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "base": "4ab620825437f7ca1d0314f6297d259266c6b8b4",
+  "version": "0.3.30",
+  "versions": [
+    {
+      "path": "package.json",
+      "name": "@openmirai/mirai-intl",
+      "version": "0.3.30"
+    },
+    {
+      "path": "packages/abi/package.json",
+      "name": "@openmirai/intl-abi",
+      "version": "0.3.30"
+    },
+    {
+      "path": "packages/compiler/package.json",
+      "name": "@openmirai/intl-compiler",
+      "version": "0.3.30"
+    },
+    {
+      "path": "packages/intl/package.json",
+      "name": "@openmirai/intl",
+      "version": "0.3.30"
+    },
+    {
+      "path": "packages/intl-i18next/package.json",
+      "name": "@openmirai/intl-i18next",
+      "version": "0.3.30"
+    },
+    {
+      "path": "packages/runtime/package.json",
+      "name": "@openmirai/intl-runtime",
+      "version": "0.3.30"
+    }
+  ],
+  "command": "CI=true node node_modules/release-it/bin/release-it.js 0.3.30 --ci --no-git.commit --no-git.tag --no-git.push",
+  "verified": [
+    "full before:init pnpm verify at4ab6208 in clean checkout with no native assets (Node fallback)",
+    "workspace version sync",
+    "explicit lock refresh produced no drift",
+    "build",
+    "generate:fixtures and check:generated, no tracked fixture drift"
+  ],
+  "firstAttempt": "Full pnpm verify passed; stopped before version bump because new branch lacked upstream. Branch-specific upstream linked to existing feature branch; guarded command rerun passed.",
+  "log": {
+    "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-patch-release/.tmp/patch-preparation-upstream.log",
+    "sha256": "6318e6c926ea50ac8c02c4cb51a6f7dff06e8d8397a046dcc3a8abb966401b22"
+  },
+  "native": "Private non-published Cargo crate remains0.3.29; no CARGO_PKG_VERSION export. Release compiler identity comes from compiler package0.3.30, engineABI and exact native source/asset hashes. Fresh all8native assembly at post-bump source is required; no old manifest relabeling.",
+  "notYetVerified": [
+    "post-bump all8platform native artifacts",
+    "post-bump forcedRust full packedCI",
+    "Turbo candidate.30 all4productionbuild/finalproof/regression acceptance",
+    "repeated CI performance comparisons",
+    "ordinary publishedpatchadoption"
+  ],
+  "publication": false,
+  "tagCreated": false,
+  "merge": false,
+  "postReleaseEcho": "Configured echo says tag pushed, but Git tag absence verified; disabled Git release effects are authoritative."
+}

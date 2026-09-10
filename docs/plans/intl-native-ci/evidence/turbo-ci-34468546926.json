@@ -1,0 +1,421 @@
+{
+  "schemaVersion": 1,
+  "runId": 34468546926,
+  "conclusion": "success",
+  "consumerHead": "5fa66072269baa47c07ccc1254334649d3c54b5d",
+  "candidateLibraryHead": "7f02a9ec5c555bfd993395e1c1573ff7902f9240",
+  "compiledLibrarySource": "465b3df1416969b8df7c042561d3bddf1af5b232",
+  "libraryVersion": "0.3.29 unreleased candidate content, not published0.3.29",
+  "candidatePackageArtifact": 10145205307,
+  "proofArtifact": {
+    "id": 10149885086,
+    "bytes": 671895,
+    "sha256": "3a9d15cc369293653b003bebd012d4cf5e313cc035c34ebf2c77f878973acac5",
+    "retainedArchive": "turbo-ci-34468546926.zip"
+  },
+  "steps": [
+    {
+      "name": "Set up job",
+      "conclusion": "success",
+      "seconds": 2.0
+    },
+    {
+      "name": "Run actions/checkout@v6",
+      "conclusion": "success",
+      "seconds": 4.0
+    },
+    {
+      "name": "Run actions/setup-node@v6",
+      "conclusion": "success",
+      "seconds": 4.0
+    },
+    {
+      "name": "Run pnpm/setup@v2.1.0",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run ./.github/actions/configure-npm-auth",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Install locked verifier tools without saving a dependency cache",
+      "conclusion": "success",
+      "seconds": 20.0
+    },
+    {
+      "name": "Pin reviewed library producer and candidate artifact",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run actions/download-artifact@v8",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Recheck producer after artifact download",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Verify and prepare exact candidate package inputs",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Install candidate without Rust compilation",
+      "conclusion": "success",
+      "seconds": 12.0
+    },
+    {
+      "name": "Capture actual runner and candidate resources",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Authorize all five catalogs and export authority",
+      "conclusion": "success",
+      "seconds": 65.0
+    },
+    {
+      "name": "Verify unchanged reuse skips audit and regeneration",
+      "conclusion": "success",
+      "seconds": 40.0
+    },
+    {
+      "name": "Isolate producer state and restore checked-in generation surfaces",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Verify authority import for downstream consumption",
+      "conclusion": "success",
+      "seconds": 38.0
+    },
+    {
+      "name": "Run candidate source quality and runtime contracts",
+      "conclusion": "success",
+      "seconds": 111.0
+    },
+    {
+      "name": "Capture memory counters after source quality",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Run every application test suite with candidate packages",
+      "conclusion": "success",
+      "seconds": 1198.0
+    },
+    {
+      "name": "Load reviewed public build inputs",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Build all four apps in production mode and finalize proofs",
+      "conclusion": "success",
+      "seconds": 753.0
+    },
+    {
+      "name": "Verify all four version-only regeneration regressions",
+      "conclusion": "success",
+      "seconds": 89.0
+    },
+    {
+      "name": "Upload acceptance and final artifact evidence",
+      "conclusion": "success",
+      "seconds": 2.0
+    },
+    {
+      "name": "Post Run pnpm/setup@v2.1.0",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Run actions/setup-node@v6",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Run actions/checkout@v6",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success",
+      "seconds": 0.0
+    }
+  ],
+  "proofs": [
+    {
+      "app": "admin",
+      "target": "client",
+      "state": "finalized",
+      "authorityHash": "sha256:ac081ecc64a6198bd2dfd3fb15fc7b4c4d8ed0473dd3f5a8da17b1bd01fa8a8c",
+      "graphHash": "sha256:b507358c87cd7e5b7ec285681d3da244bf31bacd2e85d32ef145338db2207608",
+      "deploymentReceiptHash": "sha256:9daf7cb0668bcab0c7633d860189b4a3dc0c3c2675dff718ba3542c25d623af0",
+      "sha256": "c5a8498c566cf6a315f089ae8e33dc6ac59762b8c53f8527a41cac827dbd5e53",
+      "path": ".intl-candidate/evidence/proofs/admin/client.finalized.v1.json"
+    },
+    {
+      "app": "admin",
+      "target": "worker",
+      "state": "finalized",
+      "authorityHash": "sha256:ac081ecc64a6198bd2dfd3fb15fc7b4c4d8ed0473dd3f5a8da17b1bd01fa8a8c",
+      "graphHash": "sha256:83d90a3232e71c9a63cce40e8030b03a849f40c4c29c44e414060208ccad74c3",
+      "deploymentReceiptHash": "sha256:9daf7cb0668bcab0c7633d860189b4a3dc0c3c2675dff718ba3542c25d623af0",
+      "sha256": "a6e5e690ac4c50eacecaeecbd782f585276f73d7d6529a46483eee5e7ec3fbfb",
+      "path": ".intl-candidate/evidence/proofs/admin/worker.finalized.v1.json"
+    },
+    {
+      "app": "auth",
+      "target": "client",
+      "state": "finalized",
+      "authorityHash": "sha256:870c41f15cd664bb61199dc86e0f5174be7f2487569392c0cc6b252b94f8a316",
+      "graphHash": "sha256:00eb8c7f3635e6407286ec8f32999826f62706fc1424290e645283110c0d34ca",
+      "deploymentReceiptHash": "sha256:870b0e157a2ee749cc82174c10620be984b308a9c87e52a61186b88ab919c351",
+      "sha256": "c2ae9edb92de8300a25d15d13d0c104aa81f08a0a1513176f1f653aac4e40484",
+      "path": ".intl-candidate/evidence/proofs/auth/client.finalized.v1.json"
+    },
+    {
+      "app": "auth",
+      "target": "worker",
+      "state": "finalized",
+      "authorityHash": "sha256:870c41f15cd664bb61199dc86e0f5174be7f2487569392c0cc6b252b94f8a316",
+      "graphHash": "sha256:764af2794a8ff67acf2d6467293e589758afe1ff06c18156e78c78a1ba9a7310",
+      "deploymentReceiptHash": "sha256:870b0e157a2ee749cc82174c10620be984b308a9c87e52a61186b88ab919c351",
+      "sha256": "0fb58eda5f2e09ed5cae8b32a7c4acf80d23455e6eb491bc26725cd8ead5902e",
+      "path": ".intl-candidate/evidence/proofs/auth/worker.finalized.v1.json"
+    },
+    {
+      "app": "instructor",
+      "target": "client",
+      "state": "finalized",
+      "authorityHash": "sha256:773bc531df5a4def6fa166c722eccc7fa155ca92f9726a550de1f6686c2fe64b",
+      "graphHash": "sha256:448e2b79f4e45b23d096cf261e1830edafeeddea24d25eb3ea518fcb7923f6c4",
+      "deploymentReceiptHash": "sha256:ecdd08b6451956caa602a6338a5cc7658e66e54d254d0ead6a97ce14dd097086",
+      "sha256": "b37e2e038bfe9cce62b9d4fea9833eda8f2b578689d578ff4f0f1e4fc7710138",
+      "path": ".intl-candidate/evidence/proofs/instructor/client.finalized.v1.json"
+    },
+    {
+      "app": "instructor",
+      "target": "worker",
+      "state": "finalized",
+      "authorityHash": "sha256:773bc531df5a4def6fa166c722eccc7fa155ca92f9726a550de1f6686c2fe64b",
+      "graphHash": "sha256:61162ef72446066b1bd51761dc92cc4e57e26994e07df403a8f2784dae7c8e91",
+      "deploymentReceiptHash": "sha256:ecdd08b6451956caa602a6338a5cc7658e66e54d254d0ead6a97ce14dd097086",
+      "sha256": "f2be95f72d4c1c7e2a7891c480072fb7e79a0c006d871564328ccac69c7b9e49",
+      "path": ".intl-candidate/evidence/proofs/instructor/worker.finalized.v1.json"
+    },
+    {
+      "app": "learner",
+      "target": "client",
+      "state": "finalized",
+      "authorityHash": "sha256:586500ac20d1d9a7b69b722760faa7e0351b19bfb177ff75e92183e0af4f6ce4",
+      "graphHash": "sha256:38d140ea778cd7ecd55dc0f8134f2c50fde7c8aa94ae8542ea7e047995499064",
+      "deploymentReceiptHash": "sha256:8f7abd74e41d4a5130ea83fa294f8f30af7db34bd24f052012dc8e065df7425f",
+      "sha256": "c3db8a6cebdf7b45a9e8b7a0adf11b1980170a485003d58e0c907dd577d399f6",
+      "path": ".intl-candidate/evidence/proofs/learner/client.finalized.v1.json"
+    },
+    {
+      "app": "learner",
+      "target": "worker",
+      "state": "finalized",
+      "authorityHash": "sha256:586500ac20d1d9a7b69b722760faa7e0351b19bfb177ff75e92183e0af4f6ce4",
+      "graphHash": "sha256:ea51cbf72b45309cd160c7e2688dc2e7a76d6a9b38036d59594b181f690c0953",
+      "deploymentReceiptHash": "sha256:8f7abd74e41d4a5130ea83fa294f8f30af7db34bd24f052012dc8e065df7425f",
+      "sha256": "da4a57f97d831ffa229f5857c0ea00493e078fbabb1e2cde11338a1bb23f7a70",
+      "path": ".intl-candidate/evidence/proofs/learner/worker.finalized.v1.json"
+    }
+  ],
+  "versionRegression": {
+    "incidentRevision": "72dd09fd3b6e95e71ec7fbcf997f62313b624cfc",
+    "catalogs": [
+      {
+        "app": "admin",
+        "versionBefore": "2.0.8",
+        "generated": {
+          "sha256": "b5ebb47975dce1dab1a55ecb8a43c1e29cda445ddfbc38afb9d7d6878b6eab93",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      },
+      {
+        "app": "auth",
+        "versionBefore": "2.0.8",
+        "generated": {
+          "sha256": "bf8508211cb1aff3ce937522b72caaf144411717bd7329a96d88c8d12c82bfaf",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      },
+      {
+        "app": "instructor",
+        "versionBefore": "2.0.8",
+        "generated": {
+          "sha256": "66ddf29842fc04f36e1ff0f593f1bfc5b28ea3d5c92a994e3f2ce7cf8f42cb87",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      },
+      {
+        "app": "learner",
+        "versionBefore": "2.0.8",
+        "generated": {
+          "sha256": "26e4f9164aaf16153333cc1e30efa55051ece93d705c7c5e9b9c3cd731688782",
+          "files": 14
+        },
+        "oldAuthorityRejected": true,
+        "freshAuthorityVerified": true,
+        "identicalRerunStable": true
+      }
+    ]
+  },
+  "memoryAfterQuality": {
+    "capturedAt": "2026-09-10T11:00:25.327Z",
+    "controls": {
+      "/sys/fs/cgroup/memory.events": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.peak": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.current": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory/memory.max_usage_in_bytes": "6723579904",
+      "/sys/fs/cgroup/memory/memory.failcnt": "0",
+      "/sys/fs/cgroup/memory/memory.oom_control": "oom_kill_disable 0\nunder_oom 0\noom_kill 0"
+    }
+  },
+  "resources": {
+    "node": "v24.21.0",
+    "versions": {
+      "node": "24.21.0",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "137",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "3.5.8",
+      "simdjson": "4.6.7",
+      "simdutf": "6.4.0",
+      "sqlite": "3.53.4",
+      "tz": "2026c",
+      "undici": "7.29.1",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "13.6.233.17-node.53",
+      "zlib": "1.3.2.1-motley-8002e91",
+      "zstd": "1.5.7"
+    },
+    "arch": "arm64",
+    "platform": "linux",
+    "cpu": [
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 15100,
+          "nice": 60,
+          "sys": 4960,
+          "idle": 91140,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 16620,
+          "nice": 460,
+          "sys": 5020,
+          "idle": 95140,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 13980,
+          "nice": 140,
+          "sys": 4040,
+          "idle": 100540,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 14370,
+          "nice": 110,
+          "sys": 5140,
+          "idle": 100950,
+          "irq": 0
+        }
+      }
+    ],
+    "parallelism": 4,
+    "memory": 8256585728,
+    "storage": {
+      "type": 1481003842,
+      "bsize": 4096,
+      "frsize": 4096,
+      "blocks": 53996283,
+      "bfree": 33284319,
+      "bavail": 33284319,
+      "files": 107997680,
+      "ffree": 105493141
+    },
+    "controls": {
+      "/sys/fs/cgroup/cpu.max": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.max": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.current": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/io.stat": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory/memory.limit_in_bytes": "7516192768",
+      "/sys/fs/cgroup/memory/memory.max_usage_in_bytes": "4897861632",
+      "/sys/fs/cgroup/memory/memory.failcnt": "0",
+      "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1",
+      "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000"
+    }
+  },
+  "interpretation": [
+    "All5authorizations/export/unchangedreuse/producerisolation/importverify pass; fullsourcequality/allapplicationtests/4productionbuilds and8finalproofs pass.",
+    "Both this candidate run and ordinaryvalidate34468547449 succeeded. Candidate lane tests unpublished package contents; ordinaryvalidate remains published0.3.29. Production rollout still pending patchpublication+Turbodependency/cacheadoption.",
+    "Four app version-only probes preserve all14generated files each, rejectoldauthority, verifyfreshauthority andretainidenticalrerunbytes.",
+    "Job steps have single observations and extra candidate installation/probes. Do not infer before/after CI speedup or end-to-end productioncriticalpath from these alone.",
+    "Afterquality cgroup v1 max usage6723579904B, failcnt0 andoom_kill0; successful boundedtypecheck. This does not prove earlier failures were OOM."
+  ]
+}

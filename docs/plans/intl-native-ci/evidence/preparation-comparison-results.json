@@ -1,0 +1,202 @@
+{
+  "sourceRevision": "42a898e58b7355326d3da121f56b63f1c995a161",
+  "candidateCompilerSource": "f71bbc868615cce0d877f6c9e456421cd9cd1058",
+  "runtime": "Node24.18.0 macOSARM64 M4Pro14logical48GiB",
+  "scope": "n10 per cell; two reverse-order5sampleblocks. Fresh processes with warmedOS cache, noCPUisolation. Sourceinputs identical; exactlyfivecandidatepackage replacements and associatedfileoverride/lockidentities differ frompublished0.3.29. Includes check/audit+wrapperexportandstandaloneverify, outputhash andcleanup. CLIreuse includes actualTurbohelper validationandbyteidenticalforwarding+cleanup. Excludes runnerstartup/dependencyrestore/networktransfer/tests/appbuilds; localmeasurements,notCIcriticalpath. Lightweightedits/unitchecks/read-onlyCIpolling duringstudy; heavychecks occurred onlyduringrecordedinter-blockpause afterharnesspathfailure. p95n10nearest-rank is samplemaximum.",
+  "results": {
+    "candidate-node-full-preparation": {
+      "wallMs": {
+        "n": 10,
+        "median": 23959.771499999995,
+        "p95": 26764.205665999994,
+        "min": 23542.900834,
+        "max": 26764.205665999994,
+        "sampleVariance": 1246604.3199968275,
+        "sampleSd": 1116.5143617512617
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 10,
+        "median": 5175705600.0,
+        "p95": 5472927744,
+        "min": 4825710592,
+        "max": 5472927744,
+        "sampleVariance": 4.896002682224203e16,
+        "sampleSd": 221269127.58503395
+      },
+      "sampledTreeCpuMs": {
+        "n": 10,
+        "median": 64445.0,
+        "p95": 67930,
+        "min": 63410,
+        "max": 67930,
+        "sampleVariance": 3696373.3333333335,
+        "sampleSd": 1922.595467937375
+      }
+    },
+    "candidate-rust-cli-reuse": {
+      "wallMs": {
+        "n": 10,
+        "median": 16893.296083,
+        "p95": 17173.407833,
+        "min": 16681.86,
+        "max": 17173.407833,
+        "sampleVariance": 28657.04258688674,
+        "sampleSd": 169.2839111873504
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 10,
+        "median": 987774976.0,
+        "p95": 1127956480,
+        "min": 865943552,
+        "max": 1127956480,
+        "sampleVariance": 8615910005404831.0,
+        "sampleSd": 92821926.31811102
+      },
+      "sampledTreeCpuMs": {
+        "n": 10,
+        "median": 22005.0,
+        "p95": 22320,
+        "min": 21710,
+        "max": 22320,
+        "sampleVariance": 48427.77777777778,
+        "sampleSd": 220.06312225763267
+      }
+    },
+    "candidate-rust-full-preparation": {
+      "wallMs": {
+        "n": 10,
+        "median": 25709.2382915,
+        "p95": 29251.547375000002,
+        "min": 25178.389375,
+        "max": 29251.547375000002,
+        "sampleVariance": 1547870.8448340162,
+        "sampleSd": 1244.1345766572103
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 10,
+        "median": 4471652352.0,
+        "p95": 5041799168,
+        "min": 4088791040,
+        "max": 5041799168,
+        "sampleVariance": 9.553498504301408e16,
+        "sampleSd": 309087342.0944541
+      },
+      "sampledTreeCpuMs": {
+        "n": 10,
+        "median": 66135.0,
+        "p95": 67380,
+        "min": 63440,
+        "max": 67380,
+        "sampleVariance": 1604423.3333333333,
+        "sampleSd": 1266.658333305921
+      }
+    },
+    "published-node-full-preparation": {
+      "wallMs": {
+        "n": 10,
+        "median": 42557.800042,
+        "p95": 44027.04083399999,
+        "min": 40452.342166999995,
+        "max": 44027.04083399999,
+        "sampleVariance": 1593224.4310548552,
+        "sampleSd": 1262.2299438116872
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 10,
+        "median": 4608532480.0,
+        "p95": 4746215424,
+        "min": 4100915200,
+        "max": 4746215424,
+        "sampleVariance": 3.2917374044220804e16,
+        "sampleSd": 181431458.25413188
+      },
+      "sampledTreeCpuMs": {
+        "n": 10,
+        "median": 85955.0,
+        "p95": 89170,
+        "min": 82430,
+        "max": 89170,
+        "sampleVariance": 6211832.222222222,
+        "sampleSd": 2492.3547544886587
+      }
+    },
+    "published-node-verify": {
+      "wallMs": {
+        "n": 10,
+        "median": 9630.975062499996,
+        "p95": 9725.560458,
+        "min": 9564.802999999996,
+        "max": 9725.560458,
+        "sampleVariance": 4069.7188082876114,
+        "sampleSd": 63.79434777695914
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 10,
+        "median": 863215616.0,
+        "p95": 999407616,
+        "min": 788021248,
+        "max": 999407616,
+        "sampleVariance": 3091482455677337.5,
+        "sampleSd": 55601101.20921471
+      },
+      "sampledTreeCpuMs": {
+        "n": 10,
+        "median": 11930.0,
+        "p95": 12120,
+        "min": 11850,
+        "max": 12120,
+        "sampleVariance": 8582.222222222223,
+        "sampleSd": 92.64028401414917
+      }
+    }
+  },
+  "raw": [
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-node-full-preparation-0.json",
+      "sha256": "412c56193539d33e87a57f7ee9538f534523ab1b6c84410b76998b2fddb11d48"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-node-full-preparation-1.json",
+      "sha256": "866f4bc96bfcd763df5f1e3c52a8d151c4519f869909488ccdaf3ed045e3bdbb"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-rust-cli-reuse-0-retry.json",
+      "sha256": "5978bbab8b8d617331c29afd545bb01ded34f7c38a8dcddf8c4e2ae03063fb14"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-rust-cli-reuse-1.json",
+      "sha256": "72319b3c03e905ce8c30ead045e723f46bd5287405793b9ae657299bba40fd59"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-rust-full-preparation-0.json",
+      "sha256": "96ac269ec92fe25facc2fdab26cfb8fe0e44228f5ea02fa5bf5b2fe2548ac484"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-rust-full-preparation-1.json",
+      "sha256": "7b23debd9bce0794dd34aee946651a3873934e1ef182be21a017669f696212d2"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/published-node-full-preparation-0.json",
+      "sha256": "2e7d39b0391dfa00489a171cdf287076d6b92868112f80f2272cf3b5c4261769"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/published-node-full-preparation-1.json",
+      "sha256": "96dd48aadf10f32ba6e10b395cccf550d65bb8051b79a1707e8d32ac4b001812"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/published-node-verify-0.json",
+      "sha256": "bcf825c6d10fee53428c50e81bfb7fbc95204d4abc1da874ea67e38aad020fa7"
+    },
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/published-node-verify-1.json",
+      "sha256": "d3099fcb7e53754faf787554e548f9e3f2e25cc84f8acbe8dddd39873aee8031"
+    }
+  ],
+  "excluded": [
+    {
+      "path": "/private/tmp/intl-native-execution-evidence/preparation-comparison-f71-published/candidate-rust-cli-reuse-0.json",
+      "sha256": "bfcba7d9e8d93f1a789cc549a9f4d5b021122ef9edd6325874707f95e0e910d8",
+      "reason": "Missing relative wrapper in disposable consumer; failed before Intl execution; excluded"
+    }
+  ]
+}

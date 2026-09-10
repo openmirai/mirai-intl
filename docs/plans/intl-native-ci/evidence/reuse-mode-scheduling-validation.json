@@ -1,0 +1,59 @@
+{
+  "status": "local-reviewed-validated-not-yet-pushed",
+  "sourceBase": "911339ca7ac0df9cc37acf2201898ac55505291f",
+  "libraryPin": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "changes": [
+    "Separate CI reuse-cold/reuse-warm, n10/engine/reverseblocks",
+    "Combined reuse retained in helper but excluded from CIselector",
+    "Remove temporary automatic push measurement trigger; explicitdispatchverified",
+    "FullPR/defaultdispatch acceptance, existingrunner/job/permissions/limits and runApiOperation retained"
+  ],
+  "reason": "Completed live combinedreuse blocks forecast beyond35minbudget; finalstatus remainsunobserved at this checkpoint",
+  "verification": {
+    "intlHelperTests": 122,
+    "rootLint": "passed",
+    "actionlint": "passed",
+    "standardReview": "APPROVE;49focusedtests/30workflowbehaviorcases passed"
+  },
+  "files": [
+    {
+      "path": ".github/scripts/benchmark-intl-ci.test.mjs",
+      "sha256": "b76a339909fb3e508a68c5f0564e100a54eb850206e25c402242d82dc3c92a8e"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-profile.mjs",
+      "sha256": "97fb4934d3268e804e7e568a31c7a44a74a454fe64d90da057920963f90c9ce3"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-profile.test.mjs",
+      "sha256": "5483dffe93066a1b2c80a6321626270e1b4d16e6a0b4044b0b6466ed76aff2a6"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-workspace.mjs",
+      "sha256": "d21656bccd58381e805d585f1d52def27982fce7c76fa006c63c40687c37e0de"
+    },
+    {
+      "path": ".github/scripts/benchmark-intl-workspace.test.mjs",
+      "sha256": "202c2b30e71eb0d5959cfaa32837e814c1224126386733ddd422b9c015549f27"
+    },
+    {
+      "path": ".github/workflows/intl-candidate.yml",
+      "sha256": "e1e6858ef7b9d1d1258cc1f62471d785da2543fb98ee08da869e5b4238b36704"
+    }
+  ],
+  "logs": [
+    {
+      "path": ".tmp/reuse-mode-all-intl-tests.log",
+      "sha256": "0dbfc293bed3661ead2694463b4bd765d0ecb529866e1042dc5f1e981335f256"
+    },
+    {
+      "path": ".tmp/reuse-mode-root-lint.log",
+      "sha256": "4e5de79eeb5c8e0eda48b2b34f723c2c45a088d9a3388c4e8ca885728be7eafa"
+    },
+    {
+      "path": ".tmp/reuse-mode-review.md",
+      "sha256": "595c34868d7a8a83bcc2711aad4c9a49a8d29cf90c34ad8ed9038c90a6bcba0c"
+    }
+  ],
+  "scope": "Scheduling-only changes; no new performance conclusion or runner configuration."
+}

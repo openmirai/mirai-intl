@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "runId": 34464044260,
+  "head": "511f0f8356b0b6bd396b461d014231ba357d98a0",
+  "conclusion": "failure",
+  "evidenceArtifact": {
+    "id": 10147169453,
+    "sha256": "90558a34d45230e07878270a470334156336a6666b5a5bd8fdb248e54adeaf05"
+  },
+  "resources": {
+    "node": "v24.21.0",
+    "versions": {
+      "node": "24.21.0",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "137",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "3.5.8",
+      "simdjson": "4.6.7",
+      "simdutf": "6.4.0",
+      "sqlite": "3.53.4",
+      "tz": "2026c",
+      "undici": "7.29.1",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "13.6.233.17-node.53",
+      "zlib": "1.3.2.1-motley-8002e91",
+      "zstd": "1.5.7"
+    },
+    "arch": "arm64",
+    "platform": "linux",
+    "cpu": [
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 81050,
+          "nice": 790,
+          "sys": 98680,
+          "idle": 954490,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 126940,
+          "nice": 1000,
+          "sys": 83510,
+          "idle": 959330,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 87830,
+          "nice": 900,
+          "sys": 100280,
+          "idle": 956800,
+          "irq": 0
+        }
+      },
+      {
+        "model": "unknown",
+        "speed": 0,
+        "times": {
+          "user": 87640,
+          "nice": 1430,
+          "sys": 93320,
+          "idle": 960290,
+          "irq": 0
+        }
+      }
+    ],
+    "parallelism": 4,
+    "memory": 8256585728,
+    "storage": {
+      "type": 1481003842,
+      "bsize": 4096,
+      "frsize": 4096,
+      "blocks": 53996283,
+      "bfree": 33297782,
+      "bavail": 33297782,
+      "files": 107997680,
+      "ffree": 105493155
+    },
+    "controls": {
+      "/sys/fs/cgroup/cpu.max": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.max": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory.current": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/io.stat": {
+        "code": "ENOENT"
+      },
+      "/sys/fs/cgroup/memory/memory.limit_in_bytes": "7516192768",
+      "/sys/fs/cgroup/memory/memory.max_usage_in_bytes": "5047558144",
+      "/sys/fs/cgroup/memory/memory.failcnt": "0",
+      "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1",
+      "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000"
+    }
+  },
+  "timingScope": "GitHub step timestamps; startup queue and before-job provision time unavailable. Candidate acceptance includes extra package installation and mutation probes; not comparable to ordinary preparation job end-to-end.",
+  "steps": [
+    {
+      "name": "Set up job",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run actions/checkout@v6",
+      "conclusion": "success",
+      "seconds": 3.0
+    },
+    {
+      "name": "Run actions/setup-node@v6",
+      "conclusion": "success",
+      "seconds": 3.0
+    },
+    {
+      "name": "Run pnpm/setup@v2.1.0",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run ./.github/actions/configure-npm-auth",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Install locked verifier tools without saving a dependency cache",
+      "conclusion": "success",
+      "seconds": 21.0
+    },
+    {
+      "name": "Pin reviewed library producer and candidate artifact",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Run actions/download-artifact@v8",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Recheck producer after artifact download",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Verify and prepare exact candidate package inputs",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Install candidate without Rust compilation",
+      "conclusion": "success",
+      "seconds": 12.0
+    },
+    {
+      "name": "Capture actual runner and candidate resources",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Authorize all five catalogs and export authority",
+      "conclusion": "success",
+      "seconds": 63.0
+    },
+    {
+      "name": "Verify unchanged reuse skips audit and regeneration",
+      "conclusion": "success",
+      "seconds": 39.0
+    },
+    {
+      "name": "Isolate producer state and restore checked-in generation surfaces",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Verify authority import for downstream consumption",
+      "conclusion": "success",
+      "seconds": 39.0
+    },
+    {
+      "name": "Run candidate source quality and runtime contracts",
+      "conclusion": "failure",
+      "seconds": 527.0
+    },
+    {
+      "name": "Run every application test suite with candidate packages",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Load reviewed public build inputs",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Build all four apps in production mode and finalize proofs",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Verify all four version-only regeneration regressions",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Upload acceptance and final artifact evidence",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Post Run pnpm/setup@v2.1.0",
+      "conclusion": "success",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Run actions/setup-node@v6",
+      "conclusion": "skipped",
+      "seconds": 0.0
+    },
+    {
+      "name": "Post Run actions/checkout@v6",
+      "conclusion": "success",
+      "seconds": 1.0
+    },
+    {
+      "name": "Complete job",
+      "conclusion": "success",
+      "seconds": 0.0
+    }
+  ],
+  "interpretation": [
+    "Fresh audit plus export:63s; unchanged verified reuse plus final compare:39s; import with standalone verify:39s. One observation each; no speedup distribution or identical-state comparison inferred.",
+    "7GiB cgroup v1 memory limit; initial max usage5047558144B and failcnt0 captured before audits/typecheck. No after-failure counters; does not establish OOM.",
+    "Strict typecheck failed without child diagnostics; later tests/builds/version probes skipped. This is not a passing adoption run."
+  ]
+}

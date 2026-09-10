@@ -1,0 +1,98 @@
+{
+  "timestamp": "2026-09-10T07:44:21.030554+00:00",
+  "runtime": "Node24.18.0",
+  "scope": "Local darwin-arm64 prebuilt only; not final release or CI adoption",
+  "packedConsumer": {
+    "apiSurface": "getServerTranslations(namespace).t(named-key)",
+    "catalogIdentity": {
+      "buildId": "pack-smoke-build",
+      "capabilitySetHash": "sha256:0f92fb686b0ee7466fb6d166cb7ae2fe845d8a517ef76e246005c6bb220e0e8d",
+      "catalogHash": "sha256:4d402f1813e883c63dc864904dfd607dc7df179b70c86c5c0f5d6289b35cfa75",
+      "catalogId": "pack-smoke",
+      "packageName": "@openmirai/intl-catalog-smoke",
+      "rendererCapabilityId": "precompiled-v1",
+      "runtimeAbi": "1.0.0",
+      "version": "0.3.29-smoke.4d402f1813e8"
+    },
+    "checksums": {
+      "openmirai-intl-0.3.29.tgz": "sha256:646e2680e347b1023341de36c4c081adebe4984086ac06acd19b7808b944cb24",
+      "openmirai-intl-abi-0.3.29.tgz": "sha256:a0e08d5d1a764979fba31a35f00934a5d724a07e51e241d58a81aa7dcf2d75d0",
+      "openmirai-intl-catalog-smoke-0.3.29-smoke.4d402f1813e8.tgz": "sha256:27577d14a85a3b9a29622584626dd49afcf43dab11fd415193431a6be266e23e",
+      "openmirai-intl-compiler-0.3.29.tgz": "sha256:217d622b86f19620b828c7a2eb53c47c251c4402084db3aa3d481c5fe143380a",
+      "openmirai-intl-i18next-0.3.29.tgz": "sha256:e3963c755ea32a958e65a1fcc13a7092e7748b2c28c8f34be5c1b558fa3a690e",
+      "openmirai-intl-runtime-0.3.29.tgz": "sha256:9041d45511cf55e067105e71ab18a6f8737c54b68fee4ce1f19b682f076d8c09"
+    },
+    "compilerPublicApi": true,
+    "receiptV3": {
+      "authorization": {
+        "semanticAuthorizationRuns": 1,
+        "semanticFilesAnalyzed": 1
+      },
+      "build": {
+        "buildReceiptVerifications": 1,
+        "buildSemanticAnalysisRuns": 0
+      },
+      "negativeMatrix": [
+        "v1",
+        "malformed-v3",
+        "noncanonical-v3",
+        "tampered-v3",
+        "stale-source",
+        "stale-config",
+        "stale-provider",
+        "stale-generation-receipt",
+        "stale-payload",
+        "stale-control",
+        "stale-typescript-lib"
+      ]
+    },
+    "installed": true,
+    "isolatedInstall": true,
+    "otelDependencyResolvedTransitively": true,
+    "privateDescriptorLowering": true,
+    "nodeNextTypecheck": true,
+    "renderedTranslation": "Good morning, Mali",
+    "skipLibCheck": false,
+    "tarballs": [
+      "openmirai-intl-0.3.29.tgz",
+      "openmirai-intl-abi-0.3.29.tgz",
+      "openmirai-intl-catalog-smoke-0.3.29-smoke.4d402f1813e8.tgz",
+      "openmirai-intl-compiler-0.3.29.tgz",
+      "openmirai-intl-i18next-0.3.29.tgz",
+      "openmirai-intl-runtime-0.3.29.tgz"
+    ]
+  },
+  "fullSuite": {
+    "passed": 941,
+    "failed": 4,
+    "files": 75,
+    "durationSeconds": 104.21,
+    "reason": "Aggregate diagnostic hid individual provider-staleness messages; corrected while retaining all drained failures",
+    "regressionRerun": {
+      "passed": 43,
+      "failed": 0,
+      "durationSeconds": 25.4
+    }
+  },
+  "nativeIntegration": {
+    "passed": 4,
+    "coverage": [
+      "source extension and generated-directory parity",
+      "hidden dot files and symlinks",
+      "fresh additions within one operation",
+      "catalog discovery errors",
+      "bounded request serialization",
+      "close and reopen"
+    ]
+  },
+  "rustDebug": {
+    "passed": 10,
+    "coverage": [
+      "FIFO replacement before open",
+      "same-size rewrite restored mtime",
+      "growth guard",
+      "Unix fault preservation"
+    ]
+  },
+  "remaining": "Loader private-byte snapshot/retry poison under implementation; release matrix under implementation; source scan added after packed v1; all final evidence must be refreshed after these changes."
+}

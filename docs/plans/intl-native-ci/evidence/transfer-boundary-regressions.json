@@ -1,0 +1,456 @@
+{
+  "schemaVersion": 1,
+  "kind": "retained-transfer-boundary-regression-evidence",
+  "recordedAt": "2026-09-10T18:05:42.095896+00:00",
+  "executionDate": "2026-09-11",
+  "executionTimezone": "Asia/Bangkok",
+  "status": "tests-passed",
+  "sourceRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "sourceScope": {
+    "implementationChanged": false,
+    "testPatchCommitted": false,
+    "changedTestFile": "packages/compiler/test/authority-bundle.test.ts",
+    "transactionSource": "packages/compiler/src/authority-bundle.ts",
+    "sourceHashes": [
+      {
+        "path": "packages/compiler/test/authority-bundle.test.ts",
+        "sha256": "00c136f9fadd39d73e1d1f5d734590e9df98a15d767c9bd58f5d979d0c149786"
+      },
+      {
+        "path": "packages/compiler/src/authority-bundle.ts",
+        "sha256": "9c850068c134c16945a1b451197846113e603ceb987310e3a041cd228e154374"
+      },
+      {
+        "path": "packages/compiler/native/engine-manifest.json",
+        "sha256": "664b427deb25add08683b917a834d38cd85d60dcacee043a72664ec86a1b7df6"
+      },
+      {
+        "path": "packages/compiler/native/mirai-intl-darwin-arm64.node",
+        "sha256": "2bcb397fe48b0eccecc848cccc2b70aa1e22d951e03e4b5a68d88618d06ef325"
+      }
+    ],
+    "nativeAssets": {
+      "compilerVersion": "0.3.30",
+      "sourceHash": "sha256:d05fb9f3df6d9c69beb83fa192419eba3bb658992f3547573c4abe05fa45e9c6",
+      "engineAbi": "mirai-intl-native-v1",
+      "selectedTarget": "darwin-arm64",
+      "rebuilt": false
+    }
+  },
+  "environment": {
+    "node": "24.18.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "vitest": "4.1.10",
+    "pnpm": "11.11.0",
+    "engineRunsParallel": true
+  },
+  "testScope": {
+    "file": "packages/compiler/test/authority-bundle.test.ts",
+    "group": "transfer transaction boundary fault injection",
+    "existingCases": 41,
+    "addedForwardCases": 33,
+    "addedRollbackFailureCases": 22,
+    "addedCases": 55,
+    "totalCasesPerEngine": 96,
+    "fixtureCatalogs": ["apps/app", "apps/b", "apps/c", "apps/d", "apps/e"],
+    "installPaths": [
+      "apps/app/src/i18n/generated",
+      "apps/b/src/i18n/generated",
+      "apps/c/src/i18n/generated",
+      "apps/d/src/i18n/generated",
+      "apps/e/src/i18n/generated",
+      "apps/app/.mirai-intl",
+      "apps/b/.mirai-intl",
+      "apps/c/.mirai-intl",
+      "apps/d/.mirai-intl",
+      "apps/e/.mirai-intl",
+      ".mirai-intl/workspace-authority"
+    ],
+    "forwardCases": [
+      {
+        "boundary": "before-backup",
+        "path": "apps/app/src/i18n/generated"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/app/src/i18n/generated"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/app/src/i18n/generated"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/b/src/i18n/generated"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/b/src/i18n/generated"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/b/src/i18n/generated"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/c/src/i18n/generated"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/c/src/i18n/generated"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/c/src/i18n/generated"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/d/src/i18n/generated"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/d/src/i18n/generated"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/d/src/i18n/generated"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/e/src/i18n/generated"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/e/src/i18n/generated"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/e/src/i18n/generated"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/app/.mirai-intl"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/app/.mirai-intl"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/app/.mirai-intl"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/b/.mirai-intl"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/b/.mirai-intl"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/b/.mirai-intl"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/c/.mirai-intl"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/c/.mirai-intl"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/c/.mirai-intl"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/d/.mirai-intl"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/d/.mirai-intl"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/d/.mirai-intl"
+      },
+      {
+        "boundary": "before-backup",
+        "path": "apps/e/.mirai-intl"
+      },
+      {
+        "boundary": "after-backup",
+        "path": "apps/e/.mirai-intl"
+      },
+      {
+        "boundary": "after-install",
+        "path": "apps/e/.mirai-intl"
+      },
+      {
+        "boundary": "before-backup",
+        "path": ".mirai-intl/workspace-authority"
+      },
+      {
+        "boundary": "after-backup",
+        "path": ".mirai-intl/workspace-authority"
+      },
+      {
+        "boundary": "after-install",
+        "path": ".mirai-intl/workspace-authority"
+      }
+    ],
+    "rollbackFailureCases": [
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/app/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/app/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/b/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/b/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/c/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/c/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/d/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/d/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/e/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/e/src/i18n/generated",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/app/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/app/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/b/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/b/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/c/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/c/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/d/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/d/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": "apps/e/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": "apps/e/.mirai-intl",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "remove",
+        "path": ".mirai-intl/workspace-authority",
+        "trigger": "after final workspace-authority install"
+      },
+      {
+        "rollbackOperation": "restore",
+        "path": ".mirai-intl/workspace-authority",
+        "trigger": "after final workspace-authority install"
+      }
+    ],
+    "assertions": [
+      "Actual filesystem transactions through public reuse/import APIs; completed renames resolve before the next actual I/O is faulted.",
+      "All prior file hashes, directory entries and permissions match after successful rollback; every catalog verifies with zero compilation, emissions and semantic analysis.",
+      "Failure during rollback remove or restore rejects without a recovery-safe miss, preserves the import lock and explicit backup location, and retains every complete old tree in backup or already restored at its destination.",
+      "A second reuse attempt rejects on the preserved lock without changing recovery evidence."
+    ],
+    "notClaimed": [
+      "Cross-platform same-archive transfer",
+      "Full private consumer corpus parity",
+      "Performance comparison",
+      "Exhaustive filesystem failure proof",
+      "Publication, commit, push or remote CI completion"
+    ]
+  },
+  "runs": [
+    {
+      "engine": "node",
+      "commandFile": "node.command.sh",
+      "logFile": "node.log",
+      "command": "MIRAI_INTL_ENGINE=node corepack pnpm --config.verify-deps-before-run=false exec vitest run packages/compiler/test/authority-bundle.test.ts --maxWorkers 1 --testTimeout 30000 --hookTimeout 60000",
+      "exitCode": 0,
+      "testsPassed": 96,
+      "testsFailed": 0,
+      "testsSkipped": 0,
+      "testFilesPassed": 1,
+      "durationSeconds": 73.95,
+      "completionCapturedAt": "2026-09-10T17:37:30.539Z",
+      "outerDeadlineSeconds": 180,
+      "testTimeoutMs": 30000,
+      "hookTimeoutMs": 60000,
+      "pnpmConfiguration": "Fresh per-run XDG_CONFIG_HOME, npm_config_userconfig and npm_config_globalconfig scratch paths; exact setup is in commandFile."
+    },
+    {
+      "engine": "rust",
+      "commandFile": "rust.command.sh",
+      "logFile": "rust.log",
+      "command": "MIRAI_INTL_ENGINE=rust corepack pnpm --config.verify-deps-before-run=false exec vitest run packages/compiler/test/authority-bundle.test.ts --maxWorkers 1 --testTimeout 30000 --hookTimeout 60000",
+      "exitCode": 0,
+      "testsPassed": 96,
+      "testsFailed": 0,
+      "testsSkipped": 0,
+      "testFilesPassed": 1,
+      "durationSeconds": 76.1,
+      "completionCapturedAt": "2026-09-10T17:37:30.539Z",
+      "outerDeadlineSeconds": 180,
+      "testTimeoutMs": 30000,
+      "hookTimeoutMs": 60000,
+      "pnpmConfiguration": "Fresh per-run XDG_CONFIG_HOME, npm_config_userconfig and npm_config_globalconfig scratch paths; exact setup is in commandFile."
+    }
+  ],
+  "validation": {
+    "batchCommandFile": "validation-batch.command.sh",
+    "batchLogFile": "validation-batch.log",
+    "batchExitCode": 0,
+    "typecheck": {
+      "command": "node_modules/.bin/tsc -p tsconfig.tools.json --pretty false --incremental false",
+      "scope": "tsconfig.tools.json: benchmarks, package tests, scripts, root tests and build/test configuration; production dependencies resolved by this TypeScript project",
+      "observedDiagnostics": 0,
+      "status": "no-diagnostics-in-completed-validation-batch",
+      "individualExitCode": null,
+      "limitation": "Standalone exit status was not captured; batch final exit 0 is not an independently captured typecheck exit."
+    },
+    "lint": {
+      "command": "node_modules/.bin/oxlint packages/compiler/test/authority-bundle.test.ts",
+      "observedErrors": 0,
+      "existingWarnings": [
+        "packages/compiler/test/authority-bundle.test.ts:458:13: warning vitest(no-conditional-expect): Unexpected conditional expect help: Avoid calling `expect` conditionally",
+        "packages/compiler/test/authority-bundle.test.ts:461:7: warning vitest(no-conditional-expect): Unexpected conditional expect help: Avoid calling `expect` conditionally",
+        "packages/compiler/test/authority-bundle.test.ts:464:7: warning vitest(no-conditional-expect): Unexpected conditional expect help: Avoid calling `expect` conditionally",
+        "packages/compiler/test/authority-bundle.test.ts:470:13: warning vitest(no-conditional-expect): Unexpected conditional expect help: Avoid calling `expect` conditionally",
+        "packages/compiler/test/authority-bundle.test.ts:477:7: warning vitest(no-conditional-expect): Unexpected conditional expect help: Avoid calling `expect` conditionally",
+        "packages/compiler/test/authority-bundle.test.ts:1086:34: warning vitest(no-conditional-expect): Unexpected conditional expect help: Avoid calling `expect` conditionally"
+      ],
+      "existingWarningCount": 6,
+      "warningOrigin": "Pre-existing conditional expectations outside the added describe block."
+    },
+    "format": {
+      "command": "node_modules/.bin/oxfmt --check packages/compiler/test/authority-bundle.test.ts",
+      "observedResult": "All matched files use the correct format."
+    },
+    "diff": {
+      "command": "git diff --check -- packages/compiler/test/authority-bundle.test.ts",
+      "observedDiagnostics": 0
+    }
+  },
+  "retention": {
+    "rerunDuringCollection": false,
+    "logProvenance": "Exact allowlisted output fields and expanded shell commands from retained execution records. No manually reconstructed test output.",
+    "individualTypecheckLogAvailable": false,
+    "archiveContainsSourceBodies": false,
+    "archiveContainsPrivateConsumerContent": false,
+    "earlierFixtureDevelopmentRuns": "Excluded; final successful logs bind to the final test-file hash. Earlier marker-layout failures were corrected in test fixtures only."
+  },
+  "ownership": {
+    "releaseOwner": "main",
+    "remoteRuntimeRevisionKeptFrozen": true,
+    "commitsOrPushesByThisLane": false
+  },
+  "logsArchive": {
+    "file": "transfer-boundary-regressions-logs.tar.gz",
+    "bytes": 2180,
+    "sha256": "f0c604c8603fec691ef273345d30babf0e6027db8866fe8aed4a374c43af25de",
+    "members": [
+      {
+        "path": "transfer-boundary-regressions/README.txt",
+        "bytes": 920,
+        "sha256": "b5d461d3315892a13d8aa401cfc1deeba04aadaeb298b772e82ef172dd3f895d"
+      },
+      {
+        "path": "transfer-boundary-regressions/node.command.sh",
+        "bytes": 822,
+        "sha256": "0f0f49f71a541512a388aab3dc3b22da259054aa2adc8aa2b286740d19b0cfca"
+      },
+      {
+        "path": "transfer-boundary-regressions/node.log",
+        "bytes": 351,
+        "sha256": "759639fbcb9235d243e504e8d883c3b44f9a36e28038055c8137782e356b972d"
+      },
+      {
+        "path": "transfer-boundary-regressions/rust.command.sh",
+        "bytes": 822,
+        "sha256": "122c97622d347a850bb94a853c9fb03f433dcad8667ab839fe44f41ad0b56614"
+      },
+      {
+        "path": "transfer-boundary-regressions/rust.log",
+        "bytes": 351,
+        "sha256": "a452ad9d9fdb7d1a1f69e06cdbdf2b18a32ab35ba2e9e19f2d2185c36b056e82"
+      },
+      {
+        "path": "transfer-boundary-regressions/validation-batch.command.sh",
+        "bytes": 767,
+        "sha256": "4d7968829e015e5556bebc5f75d611cd2e5ccd3d4263667c3fd4bccb3d586c7b"
+      },
+      {
+        "path": "transfer-boundary-regressions/validation-batch.log",
+        "bytes": 1869,
+        "sha256": "06e83a007e6b20dfd9974a546d50bfc10b3e9862ab2a41e7f637783cdea7471b"
+      }
+    ]
+  }
+}

@@ -1,0 +1,618 @@
+{
+  "decision": "Provisional Node-API preference from Node 26.8.1 secondary evidence; repeat on Node 24 LTS before production selection. No CI speedup claim.",
+  "method": "3 rotating backend-order blocks; 10 samples per block; warm uses one persistent process per block with 2 discarded warmups. OS filesystem cache is not cleared. Native workers=4, Node UV_THREADPOOL_SIZE=4, Node I/O concurrency=16, same macOS host. Tests/other host activity are not fully isolated.",
+  "corpus": {
+    "receiptFiles": 5,
+    "receiptBytes": 24308028,
+    "sourceJsonFiles": 6845,
+    "sourceJsonBytes": 28334997,
+    "manifestSha256": "6e349f62243942cce8cb1496daed5aac8e730eb31659490edbab4b3429a14e74"
+  },
+  "groups": {
+    "hash-cold-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 153.17139600000002,
+        "p95": 168.9345,
+        "min": 139.97066700000005,
+        "max": 173.508041,
+        "mean": 153.7380665666667,
+        "sampleVariance": 46.12219504798998,
+        "sampleSd": 6.791332347042808
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 97951744.0,
+        "p95": 102383616,
+        "min": 74350592,
+        "max": 109084672,
+        "mean": 95821277.86666666,
+        "sampleVariance": 53525358529213.5,
+        "sampleSd": 7316102.687169823
+      },
+      "officialCpuMs": {
+        "n": 30,
+        "median": 370.0,
+        "p95": 420,
+        "min": 330,
+        "max": 450,
+        "mean": 378.3333333333333,
+        "sampleVariance": 517.816091954023,
+        "sampleSd": 22.755572766995407
+      },
+      "officialMaxRssBytes": {
+        "n": 30,
+        "median": 108052480.0,
+        "p95": 110395392,
+        "min": 105283584,
+        "max": 110870528,
+        "mean": 108117469.86666666,
+        "sampleVariance": 1513503587146.7402,
+        "sampleSd": 1230245.3361613448
+      },
+      "blockMediansMs": [157.545729, 150.50708350000002, 151.1826455000001]
+    },
+    "hash-cold-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 153.67491600000005,
+        "p95": 240.874458,
+        "min": 131.30720900000006,
+        "max": 342.36187499999994,
+        "mean": 166.99859713333336,
+        "sampleVariance": 1746.6121066051664,
+        "sampleSd": 41.79248863857196
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 86908928.0,
+        "p95": 97845248,
+        "min": 77676544,
+        "max": 97878016,
+        "mean": 88236578.13333334,
+        "sampleVariance": 46525894757618.46,
+        "sampleSd": 6820989.2799812015
+      },
+      "officialCpuMs": {
+        "n": 30,
+        "median": 450.0,
+        "p95": 550,
+        "min": 370,
+        "max": 570,
+        "mean": 462.6666666666667,
+        "sampleVariance": 2923.67816091954,
+        "sampleSd": 54.07104734439255
+      },
+      "officialMaxRssBytes": {
+        "n": 30,
+        "median": 96788480.0,
+        "p95": 97239040,
+        "min": 95141888,
+        "max": 97566720,
+        "mean": 96694545.06666666,
+        "sampleVariance": 218371009269.9954,
+        "sampleSd": 467301.83957480354
+      },
+      "blockMediansMs": [
+        179.21020800000008, 144.15433299999995, 149.89612550000004
+      ]
+    },
+    "hash-cold-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 157.10920849999997,
+        "p95": 191.81558300000006,
+        "min": 147.107959,
+        "max": 250.33691599999997,
+        "mean": 160.9964736,
+        "sampleVariance": 347.5524184746636,
+        "sampleSd": 18.642757802285143
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 105324544.0,
+        "p95": 137101312,
+        "min": 88244224,
+        "max": 139821056,
+        "mean": 109959031.46666667,
+        "sampleVariance": 182257094255929.1,
+        "sampleSd": 13500262.747662695
+      },
+      "officialCpuMs": {
+        "n": 30,
+        "median": 380.0,
+        "p95": 400,
+        "min": 330,
+        "max": 410,
+        "mean": 372,
+        "sampleVariance": 451.0344827586207,
+        "sampleSd": 21.237572430921116
+      },
+      "officialMaxRssBytes": {
+        "n": 30,
+        "median": 109305856.0,
+        "p95": 110346240,
+        "min": 108216320,
+        "max": 110428160,
+        "mean": 109261073.06666666,
+        "sampleVariance": 311268189836.0644,
+        "sampleSd": 557914.14199325
+      },
+      "blockMediansMs": [
+        155.13706250000007, 156.36143749999997, 160.63666650000005
+      ]
+    },
+    "hash-warm-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 84.05868800000002,
+        "p95": 90.04641700000002,
+        "min": 71.60670899999991,
+        "max": 90.48791699999992,
+        "mean": 83.55318893333335,
+        "sampleVariance": 21.709519956943165,
+        "sampleSd": 4.659347589195634
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 140697600.0,
+        "p95": 160268288,
+        "min": 117391360,
+        "max": 160268288,
+        "mean": 138522897.06666666,
+        "sampleVariance": 196273057268540.62,
+        "sampleSd": 14009748.651155045
+      },
+      "officialCpuMs": null,
+      "officialMaxRssBytes": null,
+      "blockMediansMs": [85.9970415, 81.53393699999998, 84.05868800000002]
+    },
+    "hash-warm-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 75.43947899999998,
+        "p95": 110.33229200000005,
+        "min": 64.16737499999999,
+        "max": 130.741084,
+        "mean": 78.46193203333333,
+        "sampleVariance": 205.28256542603256,
+        "sampleSd": 14.327685278021448
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 125435904.0,
+        "p95": 130760704,
+        "min": 118456320,
+        "max": 130924544,
+        "mean": 125464849.06666666,
+        "sampleVariance": 9312760617859.236,
+        "sampleSd": 3051681.604928541
+      },
+      "officialCpuMs": null,
+      "officialMaxRssBytes": null,
+      "blockMediansMs": [
+        77.04902100000007, 71.76806249999998, 77.41552099999998
+      ]
+    },
+    "hash-warm-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 90.12777100000017,
+        "p95": 96.39316699999995,
+        "min": 79.29750000000001,
+        "max": 108.87712499999998,
+        "mean": 89.37623339999999,
+        "sampleVariance": 35.39938951803101,
+        "sampleSd": 5.94973860921898
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 172548096.0,
+        "p95": 198410240,
+        "min": 161054720,
+        "max": 200704000,
+        "mean": 175142229.33333334,
+        "sampleVariance": 95987355539903.27,
+        "sampleSd": 9797313.689981721
+      },
+      "officialCpuMs": null,
+      "officialMaxRssBytes": null,
+      "blockMediansMs": [
+        91.40433350000004, 85.55689599999994, 90.20156250000002
+      ]
+    },
+    "receipt-cold-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 163.7868335,
+        "p95": 182.5914580000001,
+        "min": 157.008583,
+        "max": 185.42449999999997,
+        "mean": 165.1186708,
+        "sampleVariance": 45.16487466908261,
+        "sampleSd": 6.720481728944928
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 154017792.0,
+        "p95": 195559424,
+        "min": 147210240,
+        "max": 195870720,
+        "mean": 164308582.4,
+        "sampleVariance": 299765050509975.8,
+        "sampleSd": 17313724.33966695
+      },
+      "officialCpuMs": {
+        "n": 30,
+        "median": 170.0,
+        "p95": 190,
+        "min": 160,
+        "max": 200,
+        "mean": 175.33333333333334,
+        "sampleVariance": 60.229885057471265,
+        "sampleSd": 7.7607915226136095
+      },
+      "officialMaxRssBytes": {
+        "n": 30,
+        "median": 187867136.0,
+        "p95": 196231168,
+        "min": 180076544,
+        "max": 196395008,
+        "mean": 188677597.86666667,
+        "sampleVariance": 17319557132918.879,
+        "sampleSd": 4161677.201912575
+      },
+      "blockMediansMs": [162.4757085, 160.75160400000001, 166.815021]
+    },
+    "receipt-cold-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 379.489229,
+        "p95": 406.444167,
+        "min": 367.20741599999997,
+        "max": 410.569083,
+        "mean": 383.0800375,
+        "sampleVariance": 136.10490394521327,
+        "sampleSd": 11.666400642238088
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 254844928.0,
+        "p95": 278773760,
+        "min": 206471168,
+        "max": 279658496,
+        "mean": 247069627.73333332,
+        "sampleVariance": 675252017150003.8,
+        "sampleSd": 25985611.733226597
+      },
+      "officialCpuMs": {
+        "n": 30,
+        "median": 480.0,
+        "p95": 520,
+        "min": 470,
+        "max": 520,
+        "mean": 487.6666666666667,
+        "sampleVariance": 204.71264367816093,
+        "sampleSd": 14.307782626184986
+      },
+      "officialMaxRssBytes": {
+        "n": 30,
+        "median": 277471232.0,
+        "p95": 278298624,
+        "min": 236322816,
+        "max": 278839296,
+        "mean": 266996394.66666666,
+        "sampleVariance": 324349674413609.2,
+        "sampleSd": 18009710.558851555
+      },
+      "blockMediansMs": [
+        390.17829150000034, 373.4001874999999, 381.9761665000001
+      ]
+    },
+    "receipt-cold-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 174.11804150000012,
+        "p95": 183.95225000000005,
+        "min": 166.769875,
+        "max": 184.54325,
+        "mean": 174.86916806666667,
+        "sampleVariance": 21.714098670130767,
+        "sampleSd": 4.659838910319837
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 191250432.0,
+        "p95": 235536384,
+        "min": 164626432,
+        "max": 240140288,
+        "mean": 193187020.8,
+        "sampleVariance": 472881071763145.25,
+        "sampleSd": 21745828.83596634
+      },
+      "officialCpuMs": {
+        "n": 30,
+        "median": 200.0,
+        "p95": 200,
+        "min": 180,
+        "max": 210,
+        "mean": 195,
+        "sampleVariance": 74.13793103448276,
+        "sampleSd": 8.610338613230189
+      },
+      "officialMaxRssBytes": {
+        "n": 30,
+        "median": 179724288.0,
+        "p95": 200474624,
+        "min": 157663232,
+        "max": 201195520,
+        "mean": 179995170.13333333,
+        "sampleVariance": 343478503490025.6,
+        "sampleSd": 18533173.055093013
+      },
+      "blockMediansMs": [
+        179.03193749999997, 172.15249999999992, 172.71808350000003
+      ]
+    },
+    "receipt-warm-addon": {
+      "wallMs": {
+        "n": 30,
+        "median": 91.70324950000008,
+        "p95": 94.38104099999998,
+        "min": 88.26266599999997,
+        "max": 95.17412499999995,
+        "mean": 91.68592493333335,
+        "sampleVariance": 3.103531350195717,
+        "sampleSd": 1.7616842368017367
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 279207936.0,
+        "p95": 312279040,
+        "min": 227590144,
+        "max": 323616768,
+        "mean": 275687560.53333336,
+        "sampleVariance": 794668261313778.5,
+        "sampleSd": 28189860.96655637
+      },
+      "officialCpuMs": null,
+      "officialMaxRssBytes": null,
+      "blockMediansMs": [91.51868700000006, 91.70322900000008, 92.2681665]
+    },
+    "receipt-warm-node": {
+      "wallMs": {
+        "n": 30,
+        "median": 307.78375000000017,
+        "p95": 321.814083,
+        "min": 290.49241699999993,
+        "max": 334.43874999999935,
+        "mean": 308.05799716666667,
+        "sampleVariance": 81.9838868257869,
+        "sampleSd": 9.054495393216946
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 396025856.0,
+        "p95": 412975104,
+        "min": 328892416,
+        "max": 417923072,
+        "mean": 377201186.1333333,
+        "sampleVariance": 1155938847635733.8,
+        "sampleSd": 33999100.68863195
+      },
+      "officialCpuMs": null,
+      "officialMaxRssBytes": null,
+      "blockMediansMs": [
+        306.32341700000006, 306.4667289999998, 312.6875409999999
+      ]
+    },
+    "receipt-warm-worker": {
+      "wallMs": {
+        "n": 30,
+        "median": 109.98585400000002,
+        "p95": 124.94804099999988,
+        "min": 103.20800000000008,
+        "max": 137.46454200000016,
+        "mean": 111.58195269999997,
+        "sampleVariance": 56.108673051721595,
+        "sampleSd": 7.49057227798528
+      },
+      "sampledTreePeakRssBytes": {
+        "n": 30,
+        "median": 336011264.0,
+        "p95": 397819904,
+        "min": 292667392,
+        "max": 429867008,
+        "mean": 339557307.73333335,
+        "sampleVariance": 989546949427463.6,
+        "sampleSd": 31457065.17505191
+      },
+      "officialCpuMs": null,
+      "officialMaxRssBytes": null,
+      "blockMediansMs": [109.85322900000006, 108.1805415, 112.27977099999993]
+    }
+  },
+  "rawReports": [
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-addon-0.json",
+      "sha256": "ca5b8e25f49daf8d9f10484d886f4bc21649c49ed227ad37528cdeccd7557577"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-addon-1.json",
+      "sha256": "9d6ff159630bc8d8de40a9313504f5b3d8bd5479a958097fd8e0b6e9d9e454e1"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-addon-2.json",
+      "sha256": "b602f7edaaceb3ffacc70e50f83dae24b10a0b29f26c2dad2548c0b84cd2a02f"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-node-0.json",
+      "sha256": "a9fa69e7a57f465638f383ba2c1155c12aeb54aca7d1753b5dcb3483c51e597c"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-node-1.json",
+      "sha256": "e946e02fca41b3b64bd5d18c6ba32b13c87245df3385a3fa2731ee3242b21c97"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-node-2.json",
+      "sha256": "a822becfaded4155d16a2366a2ccd38f31e5c42308818d71306d07b6ee126cdf"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-worker-0.json",
+      "sha256": "6e065c5e26aabdaaeb94eff90867355bd874d1cc0f03077ddfb8f9f6081aeb67"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-worker-1.json",
+      "sha256": "79821ba8ace020a6dd74b5eb60479d12600a18397a6487ad68a6a2f43df4016b"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-cold-worker-2.json",
+      "sha256": "55771824f00b8897991f110a680a6e8fe37f427184fd7a7211960e23a2326df8"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-addon-0.json",
+      "sha256": "c53a372cd11a9c909f121d15db20170623a55f9335b62e4148ea2149dbed0abf"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-addon-1.json",
+      "sha256": "294f9faba95f0dc67f862f4789e459ce30dc9c7d500db978f2381fd808b6d44b"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-addon-2.json",
+      "sha256": "b98333656232220d97d312b272d4add893ae12de1453c64c9a4a935004153792"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-node-0.json",
+      "sha256": "6b07f670a0103b66b555335359f883b9c9cfaaa2bcd415c7f0a3d4bb3921ed34"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-node-1.json",
+      "sha256": "b559d43e2022176662145fb112fde93f7f83567b7cf509d6d7ebdabc8db8225f"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-node-2.json",
+      "sha256": "7b6aa74921e4fe2c541d9357915bf7111532f1bed550bcc8242d6f24a0e8e171"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-worker-0.json",
+      "sha256": "0197904d120c939e7cde13660b533d706dfe8b3fdb7697953cf759c92ac6f813"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-worker-1.json",
+      "sha256": "0ea44dfc4e7ee2ffb15f357e6e5d58c36ea4260f081d1d452233324c9c528ad7"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/hash-warm-worker-2.json",
+      "sha256": "fa24a6baf450efe58159af506bf15ebcc1d8114e2be8592959a0a246ac703e19"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-addon-0.json",
+      "sha256": "a524925f004cdcf9ecf2bcf3a7fdf2c720de74f5dc93b3041dec46a6c9bfae9b"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-addon-1.json",
+      "sha256": "49550966b867e984a6f6a972786fb453428146c70f2c9510af902fd290efe409"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-addon-2.json",
+      "sha256": "69b02063e4ffec8dc7c17e00a08299cd75d068ddeac09dc4f8986666eca82167"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-node-0.json",
+      "sha256": "5e60181335ba5f88cb834895e1fb88a5bae8bffd0e66bfcb7512d2faf3febd6d"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-node-1.json",
+      "sha256": "0fa83199e1e6558ce77b81fc14f595322de1d3cdfc6c8ebed1ec83c9ae836a7b"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-node-2.json",
+      "sha256": "5239a9c75c35f41f845b26cfeda7433b14099f0ef1ebba3c47f83fa4c488fe81"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-worker-0.json",
+      "sha256": "194b023d740a9eb4730dbb0b93d83397c219b62c4f1005475fc171d7b3dd8836"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-worker-1.json",
+      "sha256": "261d6faecc74264da89a117b69d95bc55a6a1ffd3e4852d7d0dcdd0bbccfebe4"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-cold-worker-2.json",
+      "sha256": "44584aa1f87dc55845aeb8786dc8155a035fd220b7e7d4a60f1d5ef705f56654"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-addon-0.json",
+      "sha256": "5195e363a21006b9ede4404001e0cb9fb98ec477ba797488131b7b380e58bb44"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-addon-1.json",
+      "sha256": "0d41a4499c1f205376f83fe2054b8a8266398156e2ecd4f739f6dd322a5d6fe2"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-addon-2.json",
+      "sha256": "fd293ce09916726cf9413deca8609b5dc5753ffe4e0afbc51cc3345ca16b678c"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-node-0.json",
+      "sha256": "4f21917c338b06e00dcb7d8a26adf91643f6e4254e3d7bbcbb7a828271c2e03d"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-node-1.json",
+      "sha256": "6339ad6c6b9948f58abeb997d07607af50d548588567963c299779907e76ab22"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-node-2.json",
+      "sha256": "3a35099dffba1767b6ecccd3718e4116619f54af741e8b66e00c76317ba597a8"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-worker-0.json",
+      "sha256": "4b6247849c4039af3647327743af9230f3ee9f262747504f97b8af1857a039cf"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-worker-1.json",
+      "sha256": "369504aefe482e79852082e7992cdae5aa75c9cd694baf85f10b54cb51ca4ec1"
+    },
+    {
+      "path": ".tmp/native-benchmark-streaming/receipt-warm-worker-2.json",
+      "sha256": "b375c4e88bff6d34fe6b54b3f55895b6ff172723a85a979e67af994e2c3f0c26"
+    }
+  ],
+  "environment": {
+    "platform": "darwin",
+    "release": "25.6.0",
+    "arch": "arm64",
+    "node": "v26.8.1",
+    "nodeExecutable": "/opt/homebrew/Cellar/node/26.8.1/bin/node",
+    "cpu": {
+      "logicalCount": 14,
+      "availableParallelism": 14,
+      "models": ["Apple M4 Pro"]
+    },
+    "memory": {
+      "hostTotalBytes": 51539607552,
+      "hostFreeBytes": 379977728
+    },
+    "loadAverage": [3.87890625, 4.9384765625, 5.60400390625],
+    "storage": {
+      "path": "/Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine",
+      "filesystemType": "26",
+      "blockSize": "4096",
+      "totalBytes": "994662584320",
+      "freeBytes": "177260990464",
+      "availableBytes": "177260990464",
+      "source": "fs.statfs; byte values are decimal strings"
+    },
+    "cgroup": null,
+    "gaps": [
+      "Host memory/CPU inventory is not a container allocation or benchmark CPU consumption",
+      "Filesystem capacity is not disk model, throughput, IOPS or observed workload I/O",
+      "Linux cgroup limits are not applicable on macOS"
+    ]
+  },
+  "rawArchive": {
+    "path": "/private/tmp/intl-native-execution-evidence/native-transport-streaming-20260910.tar.gz",
+    "sha256": "f6efa35a9afb96d27e4654bb12949f0ae172a1e550cac03c53f587989561fc5e",
+    "bytes": 591446
+  }
+}

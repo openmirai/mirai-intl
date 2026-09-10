@@ -1,0 +1,6 @@
+{
+  "target": "darwin-arm64",
+  "node": "v24.18.0",
+  "unicode": "17.0",
+  "runtimePassed": true
+}

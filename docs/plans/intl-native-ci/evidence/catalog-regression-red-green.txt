@@ -1,0 +1,26 @@
+Catalog regression evidence, 2026-09-10
+Captured tool-output transcription saved after the run; stdout was not originally redirected to disk.
+Working directory: /Users/kentakoong/Desktop/Work/openmirai/org/worktrees/mirai-intl-native-engine
+
+RED command:
+node_modules/.bin/vitest run packages/compiler/test/authority-bundle.test.ts -t 'does not classify config filesystem failure'
+Start at 12:21:38; Duration 1.26s; exit 1
+Test Files 1 failed (1)
+Tests 1 failed | 40 skipped (41)
+AssertionError: promise resolved "{ status: 'miss', …(4) }" instead of rejecting
+Received: { diagnostic: "Check project tsconfig.json transitive config must be a readable regular file", reason: "candidate-rejected", recoverySafe: true, stage: "checkout", status: "miss" }
+Expected rejection matching { code: "EACCES" }.
+
+Change: distinct ./tsconfig.base.json extends fixture resolves successfully on first lstat, then throws EACCES at transitive manifest traversal. Production fix catches ENOENT only.
+
+GREEN command:
+node_modules/.bin/vitest run packages/compiler/test/authority-bundle.test.ts -t 'does not classify .* filesystem failure|permits recovery only after successful rollback'
+Start at 12:22:08; Duration 3.55s; exit 0
+Test Files 1 passed (1)
+Tests 6 passed | 35 skipped (41)
+
+FORMAT commands:
+node_modules/.bin/oxfmt --write packages/compiler/src/catalog.ts packages/compiler/test/authority-bundle.test.ts
+node_modules/.bin/oxfmt --check packages/compiler/src/catalog.ts packages/compiler/test/authority-bundle.test.ts
+All matched files use the correct format. exit 0.
+No commits or builds. Prior broader 100-test results belong to main, not this run.

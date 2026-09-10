@@ -1,0 +1,173 @@
+{
+  "capturedAt": "2026-09-10T16:38:48.151662+00:00",
+  "status": "passed",
+  "kind": "actual installed API orchestration pilot, not final performance evidence",
+  "sourceRevision": "59553abbcb1386a48b90a314fcc3b4e3c837238e",
+  "libraryRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "candidateArtifactId": 10159503087,
+  "root": "/private/tmp/intl-workspace-profile-consumer.PERIuPaz",
+  "evidenceRoot": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX",
+  "node": "v24.18.0",
+  "samplesPerCell": 2,
+  "cells": 8,
+  "blocks": 16,
+  "engines": ["node", "rust"],
+  "modes": ["fresh-process", "persistent-node-api-driver"],
+  "archive": "workspace-profile-real-pilot.zip",
+  "sha256": "9b8c090218965f7af44abd1b7f32b89af9a4cd589fb3e6393663e15627aaf613",
+  "zipBytes": 958583,
+  "sourceProofSummary": {
+    "catalogCount": 5,
+    "checkerProjects": 0,
+    "ownerProjects": 5,
+    "projects": [
+      {
+        "findings": 0,
+        "path": "apps/admin",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "apps/auth",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "apps/instructor",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "apps/learner",
+        "valid": true
+      },
+      {
+        "findings": 0,
+        "path": "packages/i18n",
+        "valid": true
+      }
+    ],
+    "semanticAuthorizationRuns": 1,
+    "semanticFilesAnalyzed": 899,
+    "valid": true
+  },
+  "limitations": [
+    "Small orchestration pilot; no comparative performance claim",
+    "Local Node24.18.0 and shared macOS host, not the existing Linux CI resource profile",
+    "Authority tar excluded from retained pilot ZIP; frozen digest and per-sample proof counters retained"
+  ],
+  "reportFiles": [
+    {
+      "label": "verify-cold-node-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-node-0.json",
+      "reportSha256": "c1865b51eec4ea0b5a80b94156bbed84905b58929b5f29848b9cefc2da7fa648",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-node-0.jsonl",
+      "rawSha256": "268616988f0d218b8c19a0837efeefe6b039a343657c807c51af61aace8bff77"
+    },
+    {
+      "label": "verify-cold-rust-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-rust-0.json",
+      "reportSha256": "78b961e73ec4622f129d457dc234595e5e8882e2ea9fdce4d57d27612e121838",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-rust-0.jsonl",
+      "rawSha256": "c1d3a5aa46886ca598db78649d155a9f9911ce7ab7e0c5777841dceae4c71d14"
+    },
+    {
+      "label": "reuse-cold-node-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-node-0.json",
+      "reportSha256": "52c171d838dd3e4e1a0c2a3df140e3af99ab9c59387d45cc3c3b118daeddb839",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-node-0.jsonl",
+      "rawSha256": "21f3fd1492ece2ee6085af7b24451753cb5fb788e128b7df4832f7359e760441"
+    },
+    {
+      "label": "reuse-cold-rust-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-rust-0.json",
+      "reportSha256": "1bd214948509b01aec8c8780cc507e258ac0659bd6f5bfe1d32dbc6c36f67963",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-rust-0.jsonl",
+      "rawSha256": "d280e65a3c109c66b59e58f1c21565487835d88c4b6b3988de388ec018888a2b"
+    },
+    {
+      "label": "verify-warm-node-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-node-0.json",
+      "reportSha256": "6622f9ba63136b416bc973c2d231da6d5466a362c2eff6c1dc6a9ed1c9ffd58e",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-node-0.jsonl",
+      "rawSha256": "61b768b867933d038d7b67ae0d7d38d752fe315fadfb079dcab791f2981a6eba"
+    },
+    {
+      "label": "verify-warm-rust-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-rust-0.json",
+      "reportSha256": "f1ae78a57b5a99dbaa5f59365689cde64e8d34fc7783a4eb6fe996e9c911f9a9",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-rust-0.jsonl",
+      "rawSha256": "e7fb9afb0723cce8ac540547a3b90b7ded8d9b77aede8720a3151e80b0b25a76"
+    },
+    {
+      "label": "reuse-warm-node-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-node-0.json",
+      "reportSha256": "363f251644712fa48862ead41bfeeeec45de5a15e85cdf4827d66ed53c7e6d6c",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-node-0.jsonl",
+      "rawSha256": "a06512e8a03a6d6642da512adf2649827ee53087830015ae5d6872913ac358b8"
+    },
+    {
+      "label": "reuse-warm-rust-0",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-rust-0.json",
+      "reportSha256": "734631e0f4ca22e320f400a815243a05ea898f181f706da16664b7e8c4dd3b1d",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-rust-0.jsonl",
+      "rawSha256": "3760a076b2a215e962b8bbcf16966ed95fc15ca00f47684a9d58d23a4e5620e8"
+    },
+    {
+      "label": "reuse-warm-rust-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-rust-1.json",
+      "reportSha256": "0925da93d8d9c125a77c1b7df0034fb6fddc75284cb6a155f26a9cb0ab9d84ee",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-rust-1.jsonl",
+      "rawSha256": "087507ac12af6077c5882342ee28ed24ed8a2a180bd4165c5b9c67b0b00ea08c"
+    },
+    {
+      "label": "reuse-warm-node-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-node-1.json",
+      "reportSha256": "84723f9cb8f07da8565b3fd9d81de0d749a9ae9173c88da7b5aae819470033da",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-warm-node-1.jsonl",
+      "rawSha256": "ebe26d97d194502255919799d82a8532261e6d13a45931cb8e106f53dfc60dab"
+    },
+    {
+      "label": "verify-warm-rust-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-rust-1.json",
+      "reportSha256": "3bf3d4bbd8aecd1a29d0b4434640a0650d2514adf0bc77782a979185c45db362",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-rust-1.jsonl",
+      "rawSha256": "755e8ef04cda6564e7a91c751bfed280c3358c8072fed7a497c5cec2eaeed260"
+    },
+    {
+      "label": "verify-warm-node-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-node-1.json",
+      "reportSha256": "b47dc2036d43ddeca95d8f8c87319b635d4fd74539872533f22491223f965fa1",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-warm-node-1.jsonl",
+      "rawSha256": "72c11211dbb77ec5107ecc5b12e320070caf8aea266c41b4a74c19da8cfac9ea"
+    },
+    {
+      "label": "reuse-cold-rust-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-rust-1.json",
+      "reportSha256": "132c1dd818fa92ce10a7de1bd3be6ebe2b17dc4244f7e29f39962e9cbe1df7a4",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-rust-1.jsonl",
+      "rawSha256": "5634159920fb46d271bd181dde3068631bb4ada257db28a13ddb4afb3106f7ca"
+    },
+    {
+      "label": "reuse-cold-node-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-node-1.json",
+      "reportSha256": "9501a6833044fe3e1ae5d00a2a9a7940749a82d2683730a376112ce8b1f68948",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/reuse-cold-node-1.jsonl",
+      "rawSha256": "a07e2ddb64aa70e9c2353e9c9602af79277166105116050351b19d3f79d1db0b"
+    },
+    {
+      "label": "verify-cold-rust-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-rust-1.json",
+      "reportSha256": "de8c3bc8716fc44c6be9427facfcfc24b53d641e3641330bc33e8f618db35dec",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-rust-1.jsonl",
+      "rawSha256": "148f0f0fd7a7027420e71085e26f2907e064de21ae1e07b5e45ec9c279af40b5"
+    },
+    {
+      "label": "verify-cold-node-1",
+      "report": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-node-1.json",
+      "reportSha256": "b5ce047cfcb0942130b73f1a9cb3d905ab296264f756b6b8df477b8c9f7606a8",
+      "raw": "/private/tmp/intl-workspace-profile-pilot.qqtEuMgX/results/verify-cold-node-1.jsonl",
+      "rawSha256": "b5dceaf07033700764d9e9896cce6f9710d561aa70652768ebfa36a598a12415"
+    }
+  ]
+}

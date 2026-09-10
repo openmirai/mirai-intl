@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "headRevision": "37a8628f66cd793330db2d5a163287f8454182a8",
+  "compiledRevision": "1324a5ebe03865128f4f1468ea671442cd708367",
+  "sourceTree": "6cf328a934ac7ddb6a550e0f4e292c301ee2ef50",
+  "nativeRun": 34494038965,
+  "normalRun": 34494038352,
+  "conclusion": "success",
+  "version": "0.3.30",
+  "artifacts": [
+    {
+      "id": 10159503807,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTUwMzgwNw==",
+      "name": "native-consumer-evidence-1324a5ebe03865128f4f1468ea671442cd708367-1",
+      "size_in_bytes": 1377,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159503807",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159503807/zip",
+      "expired": false,
+      "digest": "sha256:e9a12ef2864e7ee92e4d4c1cbd9937164ac4a2df773621a7195607b3440e8c9a",
+      "created_at": "2026-09-10T15:23:34Z",
+      "updated_at": "2026-09-10T15:23:34Z",
+      "expires_at": "2026-09-24T15:23:33Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159503087,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTUwMzA4Nw==",
+      "name": "intl-candidate-packages-1324a5ebe03865128f4f1468ea671442cd708367-1",
+      "size_in_bytes": 7017305,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159503087",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159503087/zip",
+      "expired": false,
+      "digest": "sha256:36c8a1109c7ac63698770365f2e51f20eced9381ab2dd91d467dba6c50654428",
+      "created_at": "2026-09-10T15:23:33Z",
+      "updated_at": "2026-09-10T15:23:33Z",
+      "expires_at": "2026-09-24T15:23:32Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159288263,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTI4ODI2Mw==",
+      "name": "native-release-1324a5ebe03865128f4f1468ea671442cd708367-1",
+      "size_in_bytes": 13586198,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159288263",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159288263/zip",
+      "expired": false,
+      "digest": "sha256:e5a7169ee91d50d13ce0de3cf78f750a8b1eceac6aa97e9706554aaef5ce4ad1",
+      "created_at": "2026-09-10T15:18:51Z",
+      "updated_at": "2026-09-10T15:18:51Z",
+      "expires_at": "2026-09-24T15:18:49Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159270529,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTI3MDUyOQ==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-win32-x64",
+      "size_in_bytes": 1656047,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159270529",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159270529/zip",
+      "expired": false,
+      "digest": "sha256:1c4ce607406919e0502735fafbbf26ed5125830add3ecb691b1756e58ccd9798",
+      "created_at": "2026-09-10T15:18:28Z",
+      "updated_at": "2026-09-10T15:18:28Z",
+      "expires_at": "2026-09-24T15:18:27Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159230746,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTIzMDc0Ng==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-win32-arm64",
+      "size_in_bytes": 1480445,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159230746",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159230746/zip",
+      "expired": false,
+      "digest": "sha256:4f8ce20a2545e70402ef8eb1a5395dd603734d0a005efb1b83d6b324687c8e8d",
+      "created_at": "2026-09-10T15:17:34Z",
+      "updated_at": "2026-09-10T15:17:34Z",
+      "expires_at": "2026-09-24T15:17:33Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159199992,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTE5OTk5Mg==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-linux-x64-musl",
+      "size_in_bytes": 1829612,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159199992",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159199992/zip",
+      "expired": false,
+      "digest": "sha256:be64ac4cdd61b542765d89c33c8134249f4543c0c2490c6d5a1585ff87672697",
+      "created_at": "2026-09-10T15:16:54Z",
+      "updated_at": "2026-09-10T15:16:54Z",
+      "expires_at": "2026-09-24T15:16:53Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159193726,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTE5MzcyNg==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-linux-arm64-musl",
+      "size_in_bytes": 1710834,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159193726",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159193726/zip",
+      "expired": false,
+      "digest": "sha256:7e2e5f3aaf04ada8804230d6b3f3a062c08fc5040a442f01396e1fb18e3a44b6",
+      "created_at": "2026-09-10T15:16:46Z",
+      "updated_at": "2026-09-10T15:16:46Z",
+      "expires_at": "2026-09-24T15:16:45Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159148895,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTE0ODg5NQ==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-darwin-x64",
+      "size_in_bytes": 1673742,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159148895",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159148895/zip",
+      "expired": false,
+      "digest": "sha256:3b319c81fc004bc1e2d4be95f9c7aa6430ac8b0fc77a7ecbc5950c13cdc20eab",
+      "created_at": "2026-09-10T15:15:50Z",
+      "updated_at": "2026-09-10T15:15:50Z",
+      "expires_at": "2026-09-24T15:15:48Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159078421,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTA3ODQyMQ==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-linux-arm64-gnu",
+      "size_in_bytes": 1779082,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159078421",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159078421/zip",
+      "expired": false,
+      "digest": "sha256:ed9b84a5ae73610926b6963bd75561babc85105fcfea5f67fcdb111b7669226d",
+      "created_at": "2026-09-10T15:14:19Z",
+      "updated_at": "2026-09-10T15:14:19Z",
+      "expires_at": "2026-09-24T15:14:18Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159073826,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTA3MzgyNg==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-linux-x64-gnu",
+      "size_in_bytes": 1840427,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159073826",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159073826/zip",
+      "expired": false,
+      "digest": "sha256:9bc0d8006a0c98f61297f8e04fa23c70b9bc8764907576445ffe5d7eb41bc5cd",
+      "created_at": "2026-09-10T15:14:13Z",
+      "updated_at": "2026-09-10T15:14:13Z",
+      "expires_at": "2026-09-24T15:14:12Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    },
+    {
+      "id": 10159073793,
+      "node_id": "MDg6QXJ0aWZhY3QxMDE1OTA3Mzc5Mw==",
+      "name": "native-1324a5ebe03865128f4f1468ea671442cd708367-1-darwin-arm64",
+      "size_in_bytes": 1612580,
+      "url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159073793",
+      "archive_download_url": "https://api.github.com/repos/openmirai/mirai-intl/actions/artifacts/10159073793/zip",
+      "expired": false,
+      "digest": "sha256:1e21ea48736201606e947986ac9224b9f8e7ce5765d248e6cfbc55ffba80e266",
+      "created_at": "2026-09-10T15:14:12Z",
+      "updated_at": "2026-09-10T15:14:12Z",
+      "expires_at": "2026-09-24T15:14:11Z",
+      "workflow_run": {
+        "id": 34494038965,
+        "repository_id": 1302569862,
+        "head_repository_id": 1302569862,
+        "head_branch": "codex/intl-native-engine",
+        "head_sha": "37a8628f66cd793330db2d5a163287f8454182a8"
+      }
+    }
+  ],
+  "downloadedAndDigestVerified": [10159503087, 10159503807, 10159288263],
+  "packedConsumer": {
+    "apiSurface": "getServerTranslations(namespace).t(named-key)",
+    "catalogIdentity": {
+      "buildId": "pack-smoke-build",
+      "capabilitySetHash": "sha256:0f92fb686b0ee7466fb6d166cb7ae2fe845d8a517ef76e246005c6bb220e0e8d",
+      "catalogHash": "sha256:4d402f1813e883c63dc864904dfd607dc7df179b70c86c5c0f5d6289b35cfa75",
+      "catalogId": "pack-smoke",
+      "packageName": "@openmirai/intl-catalog-smoke",
+      "rendererCapabilityId": "precompiled-v1",
+      "runtimeAbi": "1.0.0",
+      "version": "0.3.30-smoke.4d402f1813e8"
+    },
+    "checksums": {
+      "openmirai-intl-0.3.30.tgz": "sha256:e350d0436abc622968e7e8e0711744954219d084f4f7b70f7902cfbeaa2890b5",
+      "openmirai-intl-abi-0.3.30.tgz": "sha256:23742825417cb930724a885cefef385d0a2a895c085ac37a7f4ef1d27cb88bcf",
+      "openmirai-intl-catalog-smoke-0.3.30-smoke.4d402f1813e8.tgz": "sha256:a2b42b9f74d90eff65fdfc1191952b68fe1de7fe7bc45df482c298d4889ea2fa",
+      "openmirai-intl-compiler-0.3.30.tgz": "sha256:f334c01c30d1d19e522c462b1ddbc281d8de34a8cc08ee68c4d39067e4be37e3",
+      "openmirai-intl-i18next-0.3.30.tgz": "sha256:6c6fec53dd9239e782ee4948fca38c9748d6a57b7811be6ae494ca686e85000e",
+      "openmirai-intl-runtime-0.3.30.tgz": "sha256:e2802003e2c132f5ad159e07efe80c755c3189f7117a475cea1998ebb7ab1b73"
+    },
+    "compilerPublicApi": true,
+    "receiptV3": {
+      "authorization": {
+        "semanticAuthorizationRuns": 1,
+        "semanticFilesAnalyzed": 1
+      },
+      "build": {
+        "buildReceiptVerifications": 1,
+        "buildSemanticAnalysisRuns": 0
+      },
+      "negativeMatrix": [
+        "v1",
+        "malformed-v3",
+        "noncanonical-v3",
+        "tampered-v3",
+        "stale-source",
+        "stale-config",
+        "stale-provider",
+        "stale-generation-receipt",
+        "stale-payload",
+        "stale-control",
+        "stale-typescript-lib"
+      ],
+      "localeNegativeMatrix": [
+        "missing-nested-en",
+        "missing-nested-th",
+        "missing-nested-key",
+        "extra-nested-key",
+        "empty-translation",
+        "invalid-icu",
+        "incompatible-contract"
+      ],
+      "translationChange": {
+        "generationChanged": true,
+        "oldAuthorityRejected": true,
+        "freshAuthorizationVerified": true,
+        "runtimeLocales": ["en", "th"],
+        "unchangedRerunStable": true,
+        "baselineRestored": true
+      },
+      "generationIdentity": {
+        "identicalRerunStable": true,
+        "versionOnlyGeneratedHash": "0eb527d963d2ed655c4a6f6bb32000befb3969426ce979ae5a04c40ad5e8565d",
+        "oldAuthorizationRejectedBeforeAndAfterGenerate": true,
+        "freshAuthorizationVerified": true
+      }
+    },
+    "installed": true,
+    "isolatedInstall": true,
+    "otelDependencyResolvedTransitively": true,
+    "privateDescriptorLowering": true,
+    "nodeNextTypecheck": true,
+    "renderedTranslation": "Good morning, Mali",
+    "skipLibCheck": false,
+    "tarballs": [
+      "openmirai-intl-0.3.30.tgz",
+      "openmirai-intl-abi-0.3.30.tgz",
+      "openmirai-intl-catalog-smoke-0.3.30-smoke.4d402f1813e8.tgz",
+      "openmirai-intl-compiler-0.3.30.tgz",
+      "openmirai-intl-i18next-0.3.30.tgz",
+      "openmirai-intl-runtime-0.3.30.tgz"
+    ]
+  },
+  "publication": false,
+  "merge": false,
+  "turboAcceptance": "pending",
+  "nativeReleaseLocalVerification": {
+    "archive": "/private/tmp/intl-native-execution-evidence/native-release-10159288263.zip",
+    "sha256": "e5a7169ee91d50d13ce0de3cf78f750a8b1eceac6aa97e9706554aaef5ce4ad1",
+    "entries": 18,
+    "verifyNativeRelease": "passed against R37 version/source; all eight binaries and exact manifest verified",
+    "installed": false,
+    "published": false
+  }
+}

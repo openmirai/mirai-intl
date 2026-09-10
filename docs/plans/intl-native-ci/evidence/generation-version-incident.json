@@ -1,0 +1,120 @@
+{
+  "incidentRevision": "72dd09fd3b6e95e71ec7fbcf997f62313b624cfc",
+  "firstParent": "8b08631ad223a13cc157cdf48e84e0ad7ff661b1",
+  "subject": "Merge pull request #1788 from openmirai/changeset-release/main",
+  "scope": "first-parent diff; not a timing measurement or an A/B baseline",
+  "apps": [
+    {
+      "app": "admin",
+      "versionBefore": "2.0.7",
+      "versionAfter": "2.0.8",
+      "manifestOtherwiseEqual": true,
+      "generatedChanges": [
+        {
+          "path": "apps/admin/src/i18n/generated/catalog-generation-receipt.v1.json",
+          "beforeSha256": "f30be492a4c952fec8ecbc373aa86f86a94b824ba546d570c7394ac038a07d10",
+          "afterSha256": "15faf802e0006499ffcc564bfa13f88f93febf4af6e47bcff691b28f7119fe3f"
+        },
+        {
+          "path": "apps/admin/src/i18n/generated/catalog.lock.json",
+          "beforeSha256": "eb6c5bf0ab16f22d3c4b3263a62d2e9e7c4b53704e713f63454a70cec0dfaa0f",
+          "afterSha256": "38e9345f05efc1ca189880a0ed6040cf9f5e188c68e41ddb175a8675d4e315a1"
+        },
+        {
+          "path": "apps/admin/src/i18n/generated/current.json",
+          "beforeSha256": "c8e0266acd3b7dbef91adac882c0632dfab7e4f84ae04b8eb283b7ce170b227f",
+          "afterSha256": "e8be23b7a307171d21c72098fdcba1e90b50585f4cad51ca678d95893ea3a4c2"
+        },
+        {
+          "path": "apps/admin/src/i18n/generated/index.ts",
+          "beforeSha256": "314db1cc1e8e0fa3ea3b23b74da47473f53cdc235c247a977f42baac4e58170b",
+          "afterSha256": "7ff5b5f24e747fe17436be08038309f8c225458660e3217f4db982703828ff3a"
+        }
+      ]
+    },
+    {
+      "app": "auth",
+      "versionBefore": "2.0.7",
+      "versionAfter": "2.0.8",
+      "manifestOtherwiseEqual": true,
+      "generatedChanges": [
+        {
+          "path": "apps/auth/src/i18n/generated/catalog-generation-receipt.v1.json",
+          "beforeSha256": "c322caf208c5daa9761474fa75fffc4e668ba5fd8c21d998053c224bf031a79d",
+          "afterSha256": "1c6104522b0d26ceb3c48af833c79c65286431f5bbf4e4c27a778c0ff16d8de5"
+        },
+        {
+          "path": "apps/auth/src/i18n/generated/catalog.lock.json",
+          "beforeSha256": "70a60c72abb95fa8561f3df2f066350f016f81158a17e3c85e52ffb07e3cf785",
+          "afterSha256": "056095004325517b985300c30b5a5c6209bfa78d34a188897fedbc4f111510c4"
+        },
+        {
+          "path": "apps/auth/src/i18n/generated/current.json",
+          "beforeSha256": "e11f8aa151a22c3e7c231a06321716cebdbf624d6ba44e2dd1a3a90c1dd9ad88",
+          "afterSha256": "5e10c880d6d8634ae5451345da388dcba9bf8dcecb400f3b348ab1f0f05b29e1"
+        },
+        {
+          "path": "apps/auth/src/i18n/generated/index.ts",
+          "beforeSha256": "a8cbc2283fe8347d61fcf761bd075a9cc16678c54d81bc83a7ca1e3ca9785645",
+          "afterSha256": "40ea442a61a4b27e96589bb1f557083cbd38060be6d1fe8c175177cef717e402"
+        }
+      ]
+    },
+    {
+      "app": "instructor",
+      "versionBefore": "2.0.7",
+      "versionAfter": "2.0.8",
+      "manifestOtherwiseEqual": true,
+      "generatedChanges": [
+        {
+          "path": "apps/instructor/src/i18n/generated/catalog-generation-receipt.v1.json",
+          "beforeSha256": "ad99046ff4f24cdc452f0fb83ea33d2f2b1feb2d038162fe8e43b4ec49514a61",
+          "afterSha256": "2c937ba00a862334e683b02ae60ec9617b3c0cd15f517c4eb6a5261ae3844ea9"
+        },
+        {
+          "path": "apps/instructor/src/i18n/generated/catalog.lock.json",
+          "beforeSha256": "16f3aa9adc54e9dae5de5384aea958b8e387d6c52f2bff75acb547e0d4078219",
+          "afterSha256": "fdb48ef51f76052b5a5bf3f364d10671ca2940297e85555ee12f73b4fd0989fc"
+        },
+        {
+          "path": "apps/instructor/src/i18n/generated/current.json",
+          "beforeSha256": "fde5abf59774d55820b3c555f96b86c49cbed9f411ff6c4c15d68f6fb334f72e",
+          "afterSha256": "741fbbaac90cd7e310c9496528f9aaa612d97c8a17599b35028a76266a75c639"
+        },
+        {
+          "path": "apps/instructor/src/i18n/generated/index.ts",
+          "beforeSha256": "89f287c4f51d54acc1fb7ff5f44ca6325c36b369ff1573657df50bb563ee716d",
+          "afterSha256": "e525683b1be389e76bc646f0c4ac0b3a3ceafb6c4fcab3c80dca9e72a37d4fc5"
+        }
+      ]
+    },
+    {
+      "app": "learner",
+      "versionBefore": "2.0.7",
+      "versionAfter": "2.0.8",
+      "manifestOtherwiseEqual": true,
+      "generatedChanges": [
+        {
+          "path": "apps/learner/src/i18n/generated/catalog-generation-receipt.v1.json",
+          "beforeSha256": "ef9d360e216c1330b336c37449721820127e5e35ac76db34ca7a51944f6b6ba0",
+          "afterSha256": "7ab189cd3b3080792e601a9162d271f9e6af230712f46fba2ed6f6087c33d006"
+        },
+        {
+          "path": "apps/learner/src/i18n/generated/catalog.lock.json",
+          "beforeSha256": "7a9e4bd167bbc39ad7688157a9f44e0e87d4fe1a5fd2e3f435a95d1741ce84dc",
+          "afterSha256": "e155c8ca5e0d3b2e894b3b5ec26f793ac9359bc14a9197b4186bb1d8415c0f2c"
+        },
+        {
+          "path": "apps/learner/src/i18n/generated/current.json",
+          "beforeSha256": "9687f0f1a67bbc5cf0913395b453fbf71aaa61d9b285d5f864f232a192fe3947",
+          "afterSha256": "1c98ee14d79cbd6770e7960f58f4d9647f559a36f3437ccec49d418f234e7063"
+        },
+        {
+          "path": "apps/learner/src/i18n/generated/index.ts",
+          "beforeSha256": "7b1cfa7b3addda5282dc9864551956d247337920e3e5a7ae3814e1b1e3f96d8b",
+          "afterSha256": "87d55c1f05352af506c1e472c5e0c37a7225bbb611feea55dbcc8f2b815d8011"
+        }
+      ]
+    }
+  ]
+}

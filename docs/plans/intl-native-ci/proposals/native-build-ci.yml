@@ -1,0 +1,88 @@
+name: Native release readiness
+
+on:
+  pull_request:
+    paths:
+      - native/**
+      - packages/compiler/**
+      - scripts/publish-packages.mjs
+      - test/publish-packages.test.ts
+      - .github/workflows/native-build*.yml
+      - .github/workflows/publish.yml
+      - .nvmrc
+  push:
+    branches: [main]
+    paths:
+      - native/**
+      - packages/compiler/**
+      - .github/workflows/native-build*.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: native-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    uses: ./.github/workflows/native-build.yml
+    with:
+      # On PRs this is the exact synthetic merge tested by the workflow.
+      source_sha: ${{ github.sha }}
+
+  consumer:
+    name: Verify packed native compiler
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MIRAI_INTL_ENGINE: rust
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Verify exact native artifact from this run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.native.outputs.artifact_id }}
+          ARTIFACT_DIGEST: ${{ needs.native.outputs.artifact_digest }}
+        run: |
+          node --input-type=module <<'JS'
+          const response = await fetch(`${process.env.GITHUB_API_URL}/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${process.env.ARTIFACT_ID}`, {
+            headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}`, accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(30000),
+          });
+          if (!response.ok) throw new Error(`Artifact lookup failed: ${response.status}`);
+          const artifact = await response.json();
+          const digest = process.env.ARTIFACT_DIGEST.replace(/^sha256:/, '');
+          if (!/^[a-f0-9]{64}$/.test(digest) || artifact.digest !== `sha256:${digest}` || artifact.expired || String(artifact.workflow_run?.id) !== process.env.GITHUB_RUN_ID) throw new Error('Native consumer artifact identity mismatch');
+          JS
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.native.outputs.artifact_id }}
+          path: .tmp/native-release
+          digest-mismatch: error
+      - name: Install verified prebuilt compiler assets
+        run: node native/scripts/install-release.mjs .tmp/native-release/native
+      - run: pnpm install --frozen-lockfile
+      - name: Run strictness and packed-consumer gates with Rust required
+        run: pnpm verify
+      - name: Upload packed-consumer evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-consumer-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: .tmp/pack-smoke/results.json
+          if-no-files-found: warn
+          retention-days: 14

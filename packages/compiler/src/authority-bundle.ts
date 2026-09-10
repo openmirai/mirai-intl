@@ -20,13 +20,15 @@ import { pipeline } from "node:stream/promises";
 import { extract, Pack, Parser } from "tar";
 
 import { canonicalJson, sha256 } from "./canonical";
+import { withReceiptParsingScope } from "./authorization-snapshot";
+import { withNativeOperation } from "./native-engine";
 import {
   conventionPackageAuthorityReceiptPath,
   conventionPackageAuthoritySetPath,
   conventionPackageClassifierAuthorityPath,
   parseCanonicalPackageAuthoritySetV1,
   readConventionCheckReceipt,
-  verifyTransferredConventionBuildReceipt,
+  verifyTransferredConventionBuildReceiptBatch,
 } from "./check-receipt";
 import { parseCanonicalCatalogGenerationReceipt } from "./generation-snapshot";
 import { discoverWorkspaceCatalogs } from "./workspace-catalogs";
@@ -70,6 +72,54 @@ export type AuthorityBundleResult = Readonly<{
   files: number;
   bytes: number;
 }>;
+
+export type AuthorityReuseResult =
+  | Readonly<{ status: "reused"; bundle: AuthorityBundleResult }>
+  | Readonly<{
+      status: "miss";
+      reason: "missing" | "candidate-rejected";
+      stage: "archive" | "manifest" | "closure" | "checkout";
+      recoverySafe: true;
+      diagnostic: string;
+    }>;
+
+type CandidateRejection = Extract<AuthorityReuseResult, { status: "miss" }>;
+type ImportTransactionResult =
+  | Extract<AuthorityReuseResult, { status: "reused" }>
+  | Readonly<{
+      status: "rejected";
+      rejection: CandidateRejection;
+      error: unknown;
+    }>;
+
+// Only failures inside explicit candidate-validation boundaries can become a
+// miss. Filesystem/lock/resource errors (including wrapped causes) must escape.
+function candidateValidationFailure(error: unknown): error is Error {
+  if (
+    !(error instanceof Error) ||
+    error instanceof RangeError ||
+    error instanceof ReferenceError ||
+    error instanceof EvalError
+  ) {
+    return false;
+  }
+  if (
+    "code" in error &&
+    typeof error.code === "string" &&
+    !["ENOENT", "TAR_BAD_ARCHIVE", "TAR_ABORT", "TAR_ENTRY_INVALID"].includes(
+      error.code
+    )
+  ) {
+    return false;
+  }
+  if (error.cause !== undefined && !candidateValidationFailure(error.cause)) {
+    return false;
+  }
+  return (
+    !(error instanceof AggregateError) ||
+    error.errors.every(candidateValidationFailure)
+  );
+}
 
 function safePath(value: string): string {
   if (
@@ -363,6 +413,14 @@ function summary(manifest: BundleManifest): AuthorityBundleResult {
 export async function exportAuthorityBundle(
   options: AuthorityBundleOptions
 ): Promise<AuthorityBundleResult> {
+  return withReceiptParsingScope(() =>
+    withNativeOperation(() => exportAuthorityBundleWithinOperation(options))
+  );
+}
+
+async function exportAuthorityBundleWithinOperation(
+  options: AuthorityBundleOptions
+): Promise<AuthorityBundleResult> {
   const root = await realpath(resolve(options.root));
   const archive = resolve(options.archive);
   const temporary = await mkdtemp(join(tmpdir(), "intl-authority-export-"));
@@ -384,12 +442,13 @@ export async function exportAuthorityBundle(
       });
     }
     await validateBundle(root, stage, manifest);
-    for (const catalog of catalogs) {
-      await verifyTransferredConventionBuildReceipt(
-        join(root, catalog),
-        join(stage, catalog)
-      );
-    }
+    await verifyTransferredConventionBuildReceiptBatch(
+      catalogs.map((catalog) => ({
+        packageRoot: join(root, catalog),
+        transferredPackageRoot: join(stage, catalog),
+      })),
+      root
+    );
     await writeFile(join(stage, MANIFEST), `${canonicalJson(manifest)}\n`, {
       mode: 0o600,
       flag: "wx",
@@ -506,7 +565,8 @@ async function publish(
   root: string,
   stage: string,
   backupRoot: string,
-  manifest: BundleManifest
+  manifest: BundleManifest,
+  verifyTransferred: typeof verifyTransferredConventionBuildReceiptBatch
 ): Promise<void> {
   const generatedPaths = manifest.catalogs.map(
     (catalog) => `${catalog}/${GENERATED}`
@@ -565,13 +625,14 @@ async function publish(
         // no new authority selector is activated until every package verifies.
         // Import is an exclusive operation in an inactive checkout; any failure
         // restores the previous generated tree before releasing the import lock.
-        for (const catalog of manifest.catalogs) {
-          await verifyTransferredConventionBuildReceipt(
-            join(root, catalog),
-            join(stage, catalog),
-            join(root, catalog, GENERATED)
-          );
-        }
+        await verifyTransferred(
+          manifest.catalogs.map((catalog) => ({
+            packageRoot: join(root, catalog),
+            transferredPackageRoot: join(stage, catalog),
+            generatedRoot: join(root, catalog, GENERATED),
+          })),
+          root
+        );
       }
       const target = join(root, path);
       await safeDestination(root, path);
@@ -590,12 +651,13 @@ async function publish(
       installed.push(path);
     }
     // Catch source edits during publication, before granting successful import.
-    for (const catalog of manifest.catalogs) {
-      await verifyTransferredConventionBuildReceipt(
-        join(root, catalog),
-        join(root, catalog)
-      );
-    }
+    await verifyTransferred(
+      manifest.catalogs.map((catalog) => ({
+        packageRoot: join(root, catalog),
+        transferredPackageRoot: join(root, catalog),
+      })),
+      root
+    );
   } catch (error) {
     try {
       for (const path of installed.toReversed()) {
@@ -614,26 +676,89 @@ async function publish(
   }
 }
 
-/** Import into an inactive checkout only; no source or dependency file is ever restored from a bundle. */
-export async function importAuthorityBundle(
-  options: AuthorityBundleOptions
-): Promise<AuthorityBundleResult> {
+async function assertInactiveCatalogs(root: string): Promise<void> {
+  for (const catalog of await catalogsAt(root)) {
+    const path = `${catalog}/${GENERATED}`;
+    await safeDestination(root, path);
+    const entries = await readdir(join(root, path)).catch((error: unknown) => {
+      if (object(error).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    });
+    if (
+      entries.some(
+        (name) =>
+          name.startsWith(".publish.lock") || name === ".catalog-publication"
+      )
+    ) {
+      throw new Error(
+        `Receiving catalog has publication recovery state: ${path}; recover it before import`
+      );
+    }
+  }
+}
+
+async function importAuthorityTransaction(
+  options: AuthorityBundleOptions,
+  allowRecovery: boolean
+): Promise<ImportTransactionResult> {
   const root = await realpath(resolve(options.root));
   const archive = resolve(options.archive);
-  const entry = await lstat(archive);
-  if (
-    !entry.isFile() ||
-    entry.isSymbolicLink() ||
-    entry.size > MAX_ARCHIVE_BYTES
-  ) {
-    throw new Error("Invalid authority archive file");
-  }
   const lockPath = join(root, ".mirai-intl-authority-transfer.lock");
   const temporary = await mkdtemp(join(root, ".mirai-intl-transfer-"));
   let lock: Awaited<ReturnType<typeof open>> | undefined;
   let preserveRecovery = false;
+  let rejected:
+    | Readonly<{ error: Error; rejection: CandidateRejection }>
+    | undefined;
+  const candidateCheck = async <T>(
+    stage: CandidateRejection["stage"],
+    action: () => Promise<T>,
+    missing = false
+  ): Promise<T> => {
+    try {
+      return await action();
+    } catch (error) {
+      if (candidateValidationFailure(error)) {
+        rejected = {
+          error,
+          rejection: {
+            status: "miss",
+            reason:
+              missing && "code" in error && error.code === "ENOENT"
+                ? "missing"
+                : "candidate-rejected",
+            stage,
+            recoverySafe: true,
+            diagnostic: error.message,
+          },
+        };
+      }
+      throw error;
+    }
+  };
   try {
     lock = await open(lockPath, "wx", 0o600);
+    // A missing/corrupt candidate does not grant permission to audit over an
+    // active writer or unresolved publication. Check before returning any miss.
+    if (allowRecovery) {
+      await assertInactiveCatalogs(root);
+    }
+    await candidateCheck(
+      "archive",
+      async () => {
+        const entry = await lstat(archive);
+        if (
+          !entry.isFile() ||
+          entry.isSymbolicLink() ||
+          entry.size > MAX_ARCHIVE_BYTES
+        ) {
+          throw new Error("Invalid authority archive file");
+        }
+      },
+      true
+    );
     // Snapshot before parsing, so the untrusted input cannot change between inspection and extraction.
     const snapshot = join(temporary, "bundle.tar");
     await cp(archive, snapshot, {
@@ -651,23 +776,43 @@ export async function importAuthorityBundle(
     }
     const stage = join(temporary, "stage");
     await mkdir(stage);
-    const paths = await unpackArchive(snapshot, stage);
-    const manifest = parseManifest(await regularFile(stage, MANIFEST));
-    if (
-      canonicalJson(paths) !==
-      canonicalJson(
-        [MANIFEST, ...manifest.files.map((file) => file.path)].toSorted()
+    const paths = await candidateCheck("archive", () =>
+      unpackArchive(snapshot, stage)
+    );
+    const manifest = await candidateCheck("manifest", async () => {
+      const parsed = parseManifest(await regularFile(stage, MANIFEST));
+      if (
+        canonicalJson(paths) !==
+        canonicalJson(
+          [MANIFEST, ...parsed.files.map((file) => file.path)].toSorted()
+        )
+      ) {
+        throw new Error(
+          "Authority archive file inventory disagrees with manifest"
+        );
+      }
+      return parsed;
+    });
+    await candidateCheck("closure", () =>
+      validateBundle(root, stage, manifest)
+    );
+    await publish(root, stage, join(temporary, "backup"), manifest, (...args) =>
+      candidateCheck("checkout", () =>
+        verifyTransferredConventionBuildReceiptBatch(...args)
       )
-    ) {
-      throw new Error(
-        "Authority archive file inventory disagrees with manifest"
-      );
-    }
-    await validateBundle(root, stage, manifest);
-    await publish(root, stage, join(temporary, "backup"), manifest);
-    return summary(manifest);
+    );
+    return { status: "reused", bundle: summary(manifest) };
   } catch (error) {
     preserveRecovery = error instanceof AuthorityImportRecoveryError;
+    if (
+      !preserveRecovery &&
+      rejected !== undefined &&
+      rejected.error === error
+    ) {
+      // This result reaches the caller only after finally completes. Failed
+      // rollback or cleanup instead rejects and never permits a fresh audit.
+      return { status: "rejected", rejection: rejected.rejection, error };
+    }
     throw error;
   } finally {
     await lock?.close();
@@ -678,4 +823,27 @@ export async function importAuthorityBundle(
       }
     }
   }
+}
+
+/** Import into an inactive checkout only; no authored source or dependency is restored. */
+export async function importAuthorityBundle(
+  options: AuthorityBundleOptions
+): Promise<AuthorityBundleResult> {
+  const result = await withReceiptParsingScope(() =>
+    withNativeOperation(() => importAuthorityTransaction(options, false))
+  );
+  if (result.status === "rejected") {
+    throw result.error;
+  }
+  return result.bundle;
+}
+
+/** Try one candidate, never auditing or generating. Only a safely cleaned miss permits producer recovery. */
+export async function reuseAuthorityBundle(
+  options: AuthorityBundleOptions
+): Promise<AuthorityReuseResult> {
+  const result = await withReceiptParsingScope(() =>
+    withNativeOperation(() => importAuthorityTransaction(options, true))
+  );
+  return result.status === "rejected" ? result.rejection : result;
 }

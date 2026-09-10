@@ -1,5 +1,13 @@
 import { lstat, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { nativeDiscoverCatalogs } from "./native-engine";
+
+function missingOnly(error: unknown): undefined {
+  if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    return undefined;
+  }
+  throw error;
+}
 
 const workspaceSkipDirectories = new Set([
   ".git",
@@ -15,7 +23,7 @@ export async function nearestWorkspaceRoot(start: string): Promise<string> {
   let directory = resolve(start);
   while (true) {
     const marker = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
-      () => undefined
+      missingOnly
     );
     if (marker?.isFile() && !marker.isSymbolicLink()) {
       return directory;
@@ -30,13 +38,13 @@ export async function nearestWorkspaceRoot(start: string): Promise<string> {
 
 async function hasConventionCatalog(directory: string): Promise<boolean> {
   const config = await lstat(join(directory, "mirai-intl.config.json")).catch(
-    () => undefined
+    missingOnly
   );
   if (config?.isFile() && !config.isSymbolicLink()) {
     return true;
   }
   for (const name of ["src/locales", "locales"]) {
-    const locales = await lstat(join(directory, name)).catch(() => undefined);
+    const locales = await lstat(join(directory, name)).catch(missingOnly);
     if (locales?.isDirectory() && !locales.isSymbolicLink()) {
       return true;
     }
@@ -47,6 +55,15 @@ async function hasConventionCatalog(directory: string): Promise<boolean> {
 export async function discoverWorkspaceCatalogs(
   root: string
 ): Promise<Array<string>> {
+  const native = await nativeDiscoverCatalogs(resolve(root));
+  if (native) {
+    if (native.length === 0) {
+      throw new Error(
+        "No Mirai Intl catalogs were discovered in the pnpm workspace"
+      );
+    }
+    return native.toSorted((left, right) => left.localeCompare(right));
+  }
   const catalogs: Array<string> = [];
   const visit = async (directory: string): Promise<void> => {
     if (directory !== root && (await hasConventionCatalog(directory))) {

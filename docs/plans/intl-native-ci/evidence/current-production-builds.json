@@ -1,0 +1,140 @@
+{
+  "recordedAt": "2026-09-10T09:31:24.540553+00:00",
+  "revision": "42a898e58b7355326d3da121f56b63f1c995a161",
+  "sourceTree": "f59b1895de30a207ed5dd5f8fa301854e28a079e",
+  "compilerSource": "f71bbc868615cce0d877f6c9e456421cd9cd1058",
+  "compilerPackSha256": "8854d068b1b692ffe5b32dff5bf5d06ab75712ac67f1c2ccf22ccfce899da1cd",
+  "runtime": "Node24.18.0 macOS arm64; forced Rust; all8 CI prebuilt binaries; production mode and public Production variables; no deployment",
+  "samplesPerApp": 1,
+  "scope": "Build acceptance observations; no repeated-build variance/p95 claim. Finalizer success and counters retained in hashed logs. Build proof files were not archived before subsequent authority-reuse benchmarks replaced .mirai-intl; archive fresh proofs in candidate CI.",
+  "apps": [
+    {
+      "app": "auth",
+      "wallMs": 17819.688291,
+      "tree": {
+        "sampledTreePeakRssBytes": 2000584704,
+        "sampledTreeCpuMs": 20150,
+        "snapshots": 230,
+        "gaps": [
+          "ps CPU is a coarse per-PID estimate; short-lived/reaped or escaped processes and PID reuse can invalidate completeness",
+          "RSS sums live rows per snapshot (not atomic); shared pages can be double counted; maxima between polls are missed"
+        ]
+      },
+      "command": [
+        "node",
+        ".intl-candidate/run-production-build.mjs",
+        "auth",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/production-build-environment.json",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-auth-all-targets.raw.log"
+      ],
+      "proof": {
+        "targets": 2,
+        "modules": 133,
+        "receiptVerifications": 1,
+        "semanticBuilds": 0
+      },
+      "raw": {
+        "report": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-auth-all-targets.json",
+        "reportSha256": "aae600e2150c536ac80a61929860394cadf4db29c95ab552c21b687488e7e72e",
+        "log": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-auth-all-targets.raw.log",
+        "logSha256": "37e2618bb830e86350ad07f4da40d3e073f7d96558beb01486eb47c68a40d817"
+      }
+    },
+    {
+      "app": "instructor",
+      "wallMs": 81740.890166,
+      "tree": {
+        "sampledTreePeakRssBytes": 4955701248,
+        "sampledTreeCpuMs": 116730,
+        "snapshots": 1080,
+        "gaps": [
+          "ps CPU is a coarse per-PID estimate; short-lived/reaped or escaped processes and PID reuse can invalidate completeness",
+          "RSS sums live rows per snapshot (not atomic); shared pages can be double counted; maxima between polls are missed"
+        ]
+      },
+      "command": [
+        "node",
+        ".intl-candidate/run-production-build.mjs",
+        "instructor",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/production-build-environment.json",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-instructor-all-targets.raw.log"
+      ],
+      "proof": {
+        "targets": 2,
+        "modules": 941,
+        "receiptVerifications": 1,
+        "semanticBuilds": 0
+      },
+      "raw": {
+        "report": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-instructor-all-targets.json",
+        "reportSha256": "ac0ed6c4fe79a001af72f59465f1cfab0845407cfe7583bd1491ee87df99645f",
+        "log": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-instructor-all-targets.raw.log",
+        "logSha256": "f1cad26493d45741f1ca4eb806b28df122dfdee041e1394e45ff33c25681369f"
+      }
+    },
+    {
+      "app": "admin",
+      "wallMs": 118406.88208400001,
+      "tree": {
+        "sampledTreePeakRssBytes": 6370328576,
+        "sampledTreeCpuMs": 164750.00000000003,
+        "snapshots": 1623,
+        "gaps": [
+          "ps CPU is a coarse per-PID estimate; short-lived/reaped or escaped processes and PID reuse can invalidate completeness",
+          "RSS sums live rows per snapshot (not atomic); shared pages can be double counted; maxima between polls are missed"
+        ]
+      },
+      "command": [
+        "node",
+        ".intl-candidate/run-production-build.mjs",
+        "admin",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/production-build-environment.json",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-admin-all-targets.raw.log"
+      ],
+      "proof": {
+        "targets": 2,
+        "modules": 1373,
+        "receiptVerifications": 1,
+        "semanticBuilds": 0
+      },
+      "raw": {
+        "report": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-admin-all-targets.json",
+        "reportSha256": "c16a78138b057767d935fbeccec5daa22aba62d0b9797237bdd075c63bf308fe",
+        "log": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-admin-all-targets.raw.log",
+        "logSha256": "40b9dd9d9049c4f36c7de51031744a3f72a964eda2cae53995ec4373eb8ab8ab"
+      }
+    },
+    {
+      "app": "learner",
+      "wallMs": 78398.97033299999,
+      "tree": {
+        "sampledTreePeakRssBytes": 4968775680,
+        "sampledTreeCpuMs": 110390,
+        "snapshots": 1081,
+        "gaps": [
+          "ps CPU is a coarse per-PID estimate; short-lived/reaped or escaped processes and PID reuse can invalidate completeness",
+          "RSS sums live rows per snapshot (not atomic); shared pages can be double counted; maxima between polls are missed"
+        ]
+      },
+      "command": [
+        "node",
+        ".intl-candidate/run-production-build.mjs",
+        "learner",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/production-build-environment.json",
+        "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-learner-all-targets.raw.log"
+      ],
+      "proof": {
+        "targets": 2,
+        "modules": 1062,
+        "receiptVerifications": 1,
+        "semanticBuilds": 0
+      },
+      "raw": {
+        "report": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-learner-all-targets.json",
+        "reportSha256": "367087a99bc4a290ff6f9ebd3330fcdd21ca6a2457ea3bedab934cfafb911dcb",
+        "log": "/private/tmp/intl-native-execution-evidence/turbo-current-v2/build-learner-all-targets.raw.log",
+        "logSha256": "694525a78ded4119be20bdf57612f228cb7c0e14f1109d48371ddf8b6c831d06"
+      }
+    }
+  ]
+}

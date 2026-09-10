@@ -276,11 +276,12 @@ export type IntlCheckModuleBoundaryV3 = Readonly<{
 export type IntlCheckUnknownModuleBoundaryV3 = Readonly<{
   byteEnd: number;
   byteStart: number;
-  kind: IntlCheckModuleBoundaryV3["kind"];
+  kind: IntlCheckModuleBoundaryV3["kind"] | "semantic-source";
   nodeHash: Sha256;
   nodeKind: string;
   observationOrdinal: number;
   reason:
+    | "semantic-analysis-required"
     | "nonliteral-specifier"
     | "unknown-resolution-mode"
     | "unsupported-boundary-shape";

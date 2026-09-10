@@ -12,6 +12,7 @@ import {
   classifyMiraiIntlModuleBoundariesShadow,
   hashMiraiIntlClassifierBoundariesShadow,
   miraiIntlClassifierDecisionVectorShadow,
+  miraiIntlSemanticSourceBoundary,
 } from "./transform";
 import type {
   MiraiIntlClassifierBoundaryKind,
@@ -876,6 +877,15 @@ function scanCandidateSources(
       ts.forEachChild(node, visit);
     };
     visit(sourceFile);
+    const semanticBoundary = miraiIntlSemanticSourceBoundary(
+      source,
+      cleanId,
+      observationOrdinal,
+      sourceFile
+    );
+    if (semanticBoundary) {
+      unknownBoundaries.push(semanticBoundary);
+    }
     if (
       preparedBinding &&
       candidateSyntaxHash(sourceFile) !== preparedBinding.syntaxHash

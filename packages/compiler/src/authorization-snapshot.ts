@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { isAbsolute, relative, sep } from "node:path";
 import { performance } from "node:perf_hooks";
+import { isDeepStrictEqual } from "node:util";
+import { nativeCanonicalReceipt } from "./native-engine";
 
 import { GeneratedFacadeProjectionProofKindV3 } from "@openmirai/intl-abi";
 import type {
@@ -1847,7 +1850,9 @@ const CANDIDATE_REASONS = [
 ] as const satisfies ReadonlyArray<
   GeneratedFacadeCandidateIndexV3["reasons"][number]
 >;
+const UNKNOWN_BOUNDARY_KINDS = [...BOUNDARY_KINDS, "semantic-source"] as const;
 const UNKNOWN_BOUNDARY_REASONS = [
+  "semantic-analysis-required",
   "nonliteral-specifier",
   "unknown-resolution-mode",
   "unsupported-boundary-shape",
@@ -2538,10 +2543,18 @@ function parseV3Tables(value: unknown): IntlCheckTablesV3 {
     if (byteStart >= byteEnd) {
       fail(context, "must have byteStart strictly before byteEnd");
     }
+    if (
+      (unknown.kind === "semantic-source") !==
+        (unknown.reason === "semantic-analysis-required") ||
+      (unknown.kind === "semantic-source" &&
+        (unknown.nodeKind !== "SourceFile" || byteStart !== 0))
+    ) {
+      fail(context, "semantic activity must bind the complete source file");
+    }
     return {
       byteEnd,
       byteStart,
-      kind: enumValue(unknown.kind, BOUNDARY_KINDS, `${context}.kind`),
+      kind: enumValue(unknown.kind, UNKNOWN_BOUNDARY_KINDS, `${context}.kind`),
       nodeHash: sha(unknown.nodeHash, `${context}.nodeHash`),
       nodeKind: text(unknown.nodeKind, `${context}.nodeKind`),
       observationOrdinal: count(
@@ -4253,6 +4266,15 @@ function validateUnknownBoundaryEvidence(
         "byte range exceeds the receipt-bound source bytes"
       );
     }
+    if (
+      boundary.kind === "semantic-source" &&
+      boundary.byteEnd !== sourceBytes.length
+    ) {
+      fail(
+        `Intl check receipt V3.tables.unknownBoundaries[${reference}]`,
+        "semantic activity must cover the complete receipt-bound source bytes"
+      );
+    }
     const sourceSlice = sourceBytes.subarray(
       boundary.byteStart,
       boundary.byteEnd
@@ -4689,6 +4711,12 @@ function assertV3NamedHashes(
 }
 
 const trustedReceiptsV3 = new WeakSet<object>();
+// Keys are validated, deeply frozen receipts only. Canonical strings cannot
+// mutate and do not keep their receipt keys alive.
+const trustedReceiptCanonicalBytesV3 = new WeakMap<
+  IntlCheckReceiptV3,
+  string
+>();
 
 const WORKSPACE_ROOT_EVIDENCE_PATH = ".mirai-intl/workspace-root";
 const WORKSPACE_ANCESTOR_EVIDENCE_PREFIX = ".mirai-intl/ancestor";
@@ -7733,6 +7761,17 @@ export function buildIntlCheckReceiptV3(
   metrics = createIntlCheckReceiptV3HashMetrics(),
   options: IntlCheckReceiptV3VerificationOptions = {}
 ): IntlCheckReceiptV3 {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    trustedReceiptsV3.has(value)
+  ) {
+    const receipt = value as IntlCheckReceiptV3;
+    // Only immutable structure, named hashes, and counters are reusable.
+    // Relationship validation observes fresh source bytes through these options.
+    validateV3Relationships(receipt, v3ExpansionContext(metrics), options);
+    return receipt;
+  }
   const parsed = parseV3Structure(value);
   return buildNormalizedIntlCheckReceiptV3(parsed, metrics, options);
 }
@@ -7780,12 +7819,33 @@ export function parseIntlCheckReceiptV3(
   metrics = createIntlCheckReceiptV3HashMetrics(),
   options: IntlCheckReceiptV3VerificationOptions = {}
 ): IntlCheckReceiptV3 {
+  const profile = process.env.MIRAI_INTL_INTERNAL_V3_PROFILE === "1";
+  const started = profile ? performance.now() : 0;
+  let prior = started;
+  const phases: Array<Readonly<{ phase: string; milliseconds: number }>> = [];
+  const mark = (phase: string): void => {
+    if (!profile) {
+      return;
+    }
+    const now = performance.now();
+    phases.push({ phase, milliseconds: now - prior });
+    prior = now;
+  };
   const receipt = parseV3Structure(value);
+  mark("structure");
   const recomputed = computedV3Hashes(receipt, metrics);
   assertV3NamedHashes(receipt, recomputed);
+  mark("named-hashes");
   validateV3Relationships(receipt, v3ExpansionContext(metrics), options);
+  mark("relationships-and-live-sources");
   const immutable = deepFreeze(receipt);
   trustedReceiptsV3.add(immutable);
+  mark("freeze");
+  if (profile) {
+    process.stderr.write(
+      `MIRAI_INTL_V3_PARSE_PROFILE=${JSON.stringify({ phases, totalMilliseconds: performance.now() - started })}\n`
+    );
+  }
   return immutable;
 }
 
@@ -7817,7 +7877,13 @@ export function canonicalIntlCheckReceiptV3Bytes(
   const receipt = trustedReceiptsV3.has(value)
     ? value
     : parseIntlCheckReceiptV3(value, metrics);
-  return `${canonicalJson(receipt)}\n`;
+  const cached = trustedReceiptCanonicalBytesV3.get(receipt);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const bytes = `${canonicalJson(receipt)}\n`;
+  trustedReceiptCanonicalBytesV3.set(receipt, bytes);
+  return bytes;
 }
 
 export function parseCanonicalIntlCheckReceiptV3(
@@ -7834,6 +7900,92 @@ export function parseCanonicalIntlCheckReceiptV3(
     fail("Intl check receipt V3", "must use canonical JSON bytes");
   }
   return parsed;
+}
+
+/** Native byte validation retains the complete schema, named hash and live-source checks. */
+export async function parseCanonicalIntlCheckReceiptV3WithEngine(
+  source: string,
+  metrics = createIntlCheckReceiptV3HashMetrics(),
+  options: IntlCheckReceiptV3VerificationOptions = {}
+): Promise<IntlCheckReceiptV3> {
+  const scope = receiptParsingScope.getStore();
+  const cached = scope?.receipts.get(source);
+  if (cached) {
+    if (scope) {
+      scope.hits += 1;
+    }
+    // Reuse immutable structure and named hashes, retaining the receiving
+    // phase's live-source relationship checks and fresh callbacks.
+    return buildIntlCheckReceiptV3(cached, metrics, options);
+  }
+  if (scope) {
+    scope.misses += 1;
+  }
+  const canonical = await nativeCanonicalReceipt(source);
+  if (canonical === undefined) {
+    const parsed = parseCanonicalIntlCheckReceiptV3(source, metrics, options);
+    rememberParsedReceipt(source, parsed);
+    return parsed;
+  }
+  if (!canonical) {
+    fail("Intl check receipt V3", "must use canonical JSON bytes");
+  }
+  const raw: unknown = JSON.parse(source);
+  const parsed = parseIntlCheckReceiptV3(raw, metrics, options);
+  // The schema parser may reconstruct values. Native validation of raw bytes
+  // cannot prove that reconstruction left the receipt unchanged.
+  if (!isDeepStrictEqual(raw, parsed)) {
+    fail("Intl check receipt V3", "must use canonical JSON bytes");
+  }
+  trustedReceiptCanonicalBytesV3.set(parsed, source);
+  rememberParsedReceipt(source, parsed);
+  return parsed;
+}
+
+const receiptParsingScope = new AsyncLocalStorage<{
+  receipts: Map<string, IntlCheckReceiptV3>;
+  bytes: number;
+  hits: number;
+  misses: number;
+}>();
+
+export async function withReceiptParsingScope<T>(
+  run: () => Promise<T>
+): Promise<T> {
+  if (receiptParsingScope.getStore()) {
+    return run();
+  }
+  const scope = {
+    receipts: new Map<string, IntlCheckReceiptV3>(),
+    bytes: 0,
+    hits: 0,
+    misses: 0,
+  };
+  try {
+    return await receiptParsingScope.run(scope, run);
+  } finally {
+    if (process.env.MIRAI_INTL_INTERNAL_V3_PROFILE === "1") {
+      process.stderr.write(
+        `MIRAI_INTL_V3_CACHE_PROFILE=${JSON.stringify({ entries: scope.receipts.size, bytes: scope.bytes, hits: scope.hits, misses: scope.misses })}\n`
+      );
+    }
+  }
+}
+
+function rememberParsedReceipt(
+  source: string,
+  receipt: IntlCheckReceiptV3
+): void {
+  const scope = receiptParsingScope.getStore();
+  if (!scope || scope.receipts.has(source)) {
+    return;
+  }
+  const bytes = Buffer.byteLength(source);
+  if (scope.receipts.size >= 16 || scope.bytes + bytes > 32 * 1024 * 1024) {
+    return;
+  }
+  scope.receipts.set(source, receipt);
+  scope.bytes += bytes;
 }
 
 export function parseCanonicalIntlCheckReceipt(

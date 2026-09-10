@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.30](https://github.com/openmirai/mirai-intl/compare/v0.3.29...v0.3.30) (2026-09-10)
+
+### Bug Fixes
+
+* **compiler:** retain semantic authorization for adapter translation calls even when their imports do not target the generated facade. Bind the conservative source observation into portable receipts and reject changed sources or malformed observations.
+
+
+### Performance Improvements
+
+* **intl:** add bounded native authority engine and stable generation identity ([f71bbc8](https://github.com/openmirai/mirai-intl/commit/f71bbc868615cce0d877f6c9e456421cd9cd1058))
+
 ## [0.3.29](https://github.com/openmirai/mirai-intl/compare/v0.3.28...v0.3.29) (2026-09-09)
 
 

@@ -34,6 +34,21 @@ const receiptAppRoot = join(temporaryRoot, "receipt-app");
 const catalogPackageName = "@openmirai/intl-catalog-smoke";
 const commandOutputLimit = 64 * 1024;
 
+// Never truncate an installed dependency: pnpm may hardlink it to its store.
+async function replaceOwnedFile(
+  path: string,
+  bytes: string | Buffer
+): Promise<void> {
+  const staging = await mkdtemp(join(dirname(path), ".pack-smoke-replace-"));
+  try {
+    const replacement = join(staging, "replacement");
+    await writeFile(replacement, bytes, { flag: "wx" });
+    await rename(replacement, path);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
+
 type PackageManifest = Readonly<{ name: string; version: string }>;
 
 async function readPackageManifest(path: string): Promise<PackageManifest> {
@@ -562,6 +577,8 @@ await Promise.all([
     `${JSON.stringify(
       {
         checkProjects: [{ path: "tsconfig.json", role: "owner" }],
+        requiredLocales: ["en", "th"],
+        sourceLocale: "en",
       },
       null,
       2
@@ -587,7 +604,18 @@ await Promise.all([
   ),
   writeFile(
     join(receiptAppRoot, "src/locales/receipt/en.json"),
-    '{"greeting":"Hello"}\n',
+    `${JSON.stringify({
+      greeting: "Hello",
+      nested: { detail: "Hello {name}", kept: "Keep" },
+    })}\n`,
+    "utf8"
+  ),
+  writeFile(
+    join(receiptAppRoot, "src/locales/receipt/th.json"),
+    `${JSON.stringify({
+      greeting: "สวัสดี",
+      nested: { detail: "สวัสดี {name}", kept: "คงไว้" },
+    })}\n`,
     "utf8"
   ),
   writeFile(
@@ -692,6 +720,377 @@ if (
 ) {
   throw new Error("Packed build verifier did not consume V3 without semantics");
 }
+// Exercise the published CLI boundary: generation stability is separate from
+// current package/source authorization, including after a clean consumer clone.
+const versionBumpApp = join(temporaryRoot, "version-bump-app");
+await cp(receiptAppRoot, versionBumpApp, { recursive: true });
+async function generatedByteIdentity(app: string): Promise<string> {
+  const generated = join(app, "src/i18n/generated");
+  const entries = await readdir(generated, {
+    recursive: true,
+    withFileTypes: true,
+  });
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name))
+    .toSorted();
+  const hash = createHash("sha256");
+  for (const file of files) {
+    hash.update(
+      JSON.stringify(relative(generated, file).replaceAll("\\", "/"))
+    );
+    hash.update(
+      createHash("sha256")
+        .update(await readFile(file))
+        .digest()
+    );
+  }
+  return hash.digest("hex");
+}
+const versionGeneratedBefore = await generatedByteIdentity(versionBumpApp);
+const versionManifestPath = join(versionBumpApp, "package.json");
+const versionManifest = JSON.parse(
+  await readFile(versionManifestPath, "utf8")
+) as Record<string, unknown>;
+await writeFile(
+  versionManifestPath,
+  `${JSON.stringify({ ...versionManifest, version: "0.0.1" }, null, 2)}\n`
+);
+runFailure(
+  process.execPath,
+  ["verify-receipt.mjs", versionBumpApp],
+  installRoot,
+  /stale|corrupt/iu
+);
+run(process.execPath, [installedIntlCli, "generate"], versionBumpApp, 60_000);
+if ((await generatedByteIdentity(versionBumpApp)) !== versionGeneratedBefore) {
+  throw new Error("Packed CLI regenerated output for an app version-only bump");
+}
+runFailure(
+  process.execPath,
+  ["verify-receipt.mjs", versionBumpApp],
+  installRoot,
+  /stale|corrupt/iu
+);
+run(
+  process.execPath,
+  [installedIntlCli, "prove", "--format=stylish", "--no-color"],
+  versionBumpApp,
+  60_000
+);
+run(
+  process.execPath,
+  ["verify-receipt.mjs", versionBumpApp],
+  installRoot,
+  60_000
+);
+if ((await generatedByteIdentity(versionBumpApp)) !== versionGeneratedBefore) {
+  throw new Error(
+    "Packed fresh authorization changed version-only generated output"
+  );
+}
+const versionAuthority = await readFile(
+  await selectedAuthorityReceiptPath(versionBumpApp),
+  "utf8"
+);
+if (versionAuthority === (await readFile(receiptPath, "utf8"))) {
+  throw new Error(
+    "Packed fresh authorization did not bind the changed app manifest"
+  );
+}
+run(process.execPath, [installedIntlCli, "generate"], versionBumpApp, 60_000);
+if ((await generatedByteIdentity(versionBumpApp)) !== versionGeneratedBefore) {
+  throw new Error("Packed identical rerun changed generated output");
+}
+const generationIdentityEvidence = {
+  identicalRerunStable: true,
+  versionOnlyGeneratedHash: versionGeneratedBefore,
+  oldAuthorizationRejectedBeforeAndAfterGenerate: true,
+  freshAuthorizationVerified: true,
+};
+
+// Each fault edits one leaf (or removes exactly one required file). The
+// untouched keys prevent an earlier missing-key error from masking ICU checks.
+const localeApp = join(temporaryRoot, "locale-strictness-app");
+await cp(receiptAppRoot, localeApp, { recursive: true });
+const enPath = join(localeApp, "src/locales/receipt/en.json");
+const thPath = join(localeApp, "src/locales/receipt/th.json");
+const localeBaselines = new Map([
+  [enPath, await readFile(enPath)],
+  [thPath, await readFile(thPath)],
+]);
+async function provePackedBaseline(): Promise<void> {
+  run(
+    process.execPath,
+    [installedIntlCli, "prove", "--format=stylish", "--no-color"],
+    localeApp,
+    60_000
+  );
+  run(process.execPath, ["verify-receipt.mjs", localeApp], installRoot, 60_000);
+}
+async function withRestoredPackedLocales(
+  operation: () => Promise<void>,
+  verifyRestoration: () => Promise<void>
+): Promise<void> {
+  const failures: Array<unknown> = [];
+  try {
+    await operation();
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    for (const [path, bytes] of localeBaselines) {
+      await replaceOwnedFile(path, bytes);
+    }
+    await provePackedBaseline();
+    await verifyRestoration();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(
+      failures,
+      "Packed locale probe or baseline restoration failed"
+    );
+  }
+}
+async function editNestedTranslation(
+  edit: (nested: Record<string, string>) => void
+): Promise<void> {
+  const value = JSON.parse(await readFile(thPath, "utf8")) as {
+    nested: Record<string, string>;
+  };
+  edit(value.nested);
+  await replaceOwnedFile(thPath, `${JSON.stringify(value)}\n`);
+}
+const localeNegativeMatrix: Array<string> = [];
+await provePackedBaseline();
+for (const [name, mutate, diagnostic] of [
+  [
+    "missing-nested-en",
+    () => rm(enPath),
+    /receipt is missing configured locale en/u,
+  ],
+  [
+    "missing-nested-th",
+    () => rm(thPath),
+    /receipt is missing configured locale th/u,
+  ],
+  [
+    "missing-nested-key",
+    () =>
+      editNestedTranslation((nested) => {
+        delete nested.detail;
+      }),
+    /receipt\.nested locale keys differ between en and th: th is missing key detail/u,
+  ],
+  [
+    "extra-nested-key",
+    () =>
+      editNestedTranslation((nested) => {
+        nested.extra = "เพิ่ม";
+      }),
+    /receipt\.nested locale keys differ between en and th: th contains unexpected key extra/u,
+  ],
+  [
+    "empty-translation",
+    () =>
+      editNestedTranslation((nested) => {
+        nested.detail = "";
+      }),
+    /receipt\.nested\.detail th must be a non-empty translation string/u,
+  ],
+  [
+    "invalid-icu",
+    () =>
+      editNestedTranslation((nested) => {
+        nested.detail = "สวัสดี {name";
+      }),
+    /EXPECT_ARGUMENT_CLOSING_BRACE/u,
+  ],
+  [
+    "incompatible-contract",
+    () =>
+      editNestedTranslation((nested) => {
+        nested.detail = "สวัสดี {other}";
+      }),
+    /receipt\.nested\.detail has incompatible inferred argument contracts in th/u,
+  ],
+] satisfies Array<[string, () => Promise<void>, RegExp]>) {
+  const before = await generatedByteIdentity(localeApp);
+  const pointerPath = join(localeApp, "src/i18n/generated/current.json");
+  const pointerBefore = await readFile(pointerPath);
+  await withRestoredPackedLocales(
+    async () => {
+      await mutate();
+      runFailure(
+        process.execPath,
+        [installedIntlCli, "generate", "--format=stylish", "--no-color"],
+        localeApp,
+        diagnostic
+      );
+      runFailure(
+        process.execPath,
+        ["verify-receipt.mjs", localeApp],
+        installRoot,
+        new RegExp(`(?:${diagnostic.source})|stale|corrupt`, "iu")
+      );
+      if (
+        (await generatedByteIdentity(localeApp)) !== before ||
+        !(await readFile(pointerPath)).equals(pointerBefore)
+      ) {
+        throw new Error(
+          `Packed ${name} failure changed the prior generated state`
+        );
+      }
+    },
+    async () => {
+      if ((await generatedByteIdentity(localeApp)) !== before) {
+        throw new Error(
+          `Packed ${name} baseline restoration changed generated bytes`
+        );
+      }
+    }
+  );
+  localeNegativeMatrix.push(name);
+}
+
+// Execute the exact generated precompiled descriptor with the installed runtime.
+// Materialization is outside the authorized output, as in the existing loader
+// smoke: stock Node does not implement the framework's private carrier loader.
+await writeFile(
+  join(installRoot, "render-receipt.mjs"),
+  `
+import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { inflateRawSync } from "node:zlib";
+import { createIntlRuntime } from "@openmirai/intl/runtime";
+import { createPrecompiledBackend } from "@openmirai/intl/node";
+const generated = resolve(process.argv[2], "src/i18n/generated");
+const pointer = JSON.parse(await readFile(join(generated, "current.json"), "utf8"));
+const selected = join(generated, pointer.directory);
+const contract = JSON.parse(await readFile(join(selected, "catalog.contract.gen.json"), "utf8"));
+const index = contract.messages.findIndex((message) => message.path === "receipt.nested.detail");
+if (index < 0) throw new Error("Missing packed runtime message");
+const payload = await readFile(join(selected, "catalog.messages.gen.mjs"), "utf8");
+const marker = "// @generated by @openmirai/intl-compiler. Do not edit.\\n";
+const offset = payload.indexOf(marker);
+if (offset < 0) throw new Error("Missing generated payload marker");
+const encoded = payload.slice(offset + marker.length);
+const materialized = encoded.startsWith("import ") ? payload : inflateRawSync(Buffer.from(encoded.trim(), "base64")).toString("utf8");
+const temporary = await mkdtemp(resolve(".receipt-runtime-"));
+try {
+  const modulePath = join(temporary, "messages.mjs");
+  await writeFile(modulePath, materialized, { flag: "wx" });
+  const messages = await import(pathToFileURL(modulePath).href);
+  const { catalogManifest } = await import(pathToFileURL(join(selected, "catalog.manifest.gen.mjs")).href);
+  const values = JSON.parse(process.argv[3]);
+  const result = Object.fromEntries(["en", "th"].map((locale) => {
+    const runtime = createIntlRuntime({ backend: createPrecompiledBackend(), catalog: { manifest: catalogManifest, messages: [] }, locale });
+    return [locale, runtime.t(messages["m" + index], values)];
+  }));
+  process.stdout.write(JSON.stringify(result));
+} finally { await rm(temporary, { recursive: true, force: true }); }
+`
+);
+function renderPackedReceipt(values: Record<string, unknown>): string {
+  return run(
+    process.execPath,
+    ["render-receipt.mjs", localeApp, JSON.stringify(values)],
+    installRoot,
+    30_000
+  ).trim();
+}
+const baselineRendered = renderPackedReceipt({ name: "Mali" });
+if (
+  baselineRendered !== JSON.stringify({ en: "Hello Mali", th: "สวัสดี Mali" })
+) {
+  throw new Error(`Unexpected packed baseline runtime: ${baselineRendered}`);
+}
+const translationGeneratedBefore = await generatedByteIdentity(localeApp);
+const translationAuthorityBefore = await readFile(
+  await selectedAuthorityReceiptPath(localeApp)
+);
+await withRestoredPackedLocales(
+  async () => {
+    for (const [path, bytes] of localeBaselines) {
+      const value = JSON.parse(bytes.toString("utf8")) as {
+        nested: Record<string, string>;
+      };
+      value.nested.detail =
+        path === enPath
+          ? "Updated {count, number} items"
+          : "ปรับปรุง {count, number} รายการ";
+      await replaceOwnedFile(path, `${JSON.stringify(value)}\n`);
+    }
+    runFailure(
+      process.execPath,
+      ["verify-receipt.mjs", localeApp],
+      installRoot,
+      /stale|corrupt/iu
+    );
+    run(process.execPath, [installedIntlCli, "generate"], localeApp, 60_000);
+    if (
+      (await generatedByteIdentity(localeApp)) === translationGeneratedBefore
+    ) {
+      throw new Error(
+        "Valid translation/contract edit did not change generation"
+      );
+    }
+    runFailure(
+      process.execPath,
+      ["verify-receipt.mjs", localeApp],
+      installRoot,
+      /stale|corrupt/iu
+    );
+    await provePackedBaseline();
+    if (
+      (await readFile(await selectedAuthorityReceiptPath(localeApp))).equals(
+        translationAuthorityBefore
+      )
+    ) {
+      throw new Error("Changed translation retained old authority");
+    }
+    const rendered = renderPackedReceipt({ count: 7 });
+    if (
+      rendered !==
+      JSON.stringify({ en: "Updated 7 items", th: "ปรับปรุง 7 รายการ" })
+    ) {
+      throw new Error(`Unexpected updated packed runtime: ${rendered}`);
+    }
+    const unchanged = await generatedByteIdentity(localeApp);
+    run(process.execPath, [installedIntlCli, "generate"], localeApp, 60_000);
+    if ((await generatedByteIdentity(localeApp)) !== unchanged) {
+      throw new Error("Updated translation rerun changed generated bytes");
+    }
+    run(
+      process.execPath,
+      ["verify-receipt.mjs", localeApp],
+      installRoot,
+      60_000
+    );
+  },
+  async () => {
+    if (
+      (await generatedByteIdentity(localeApp)) !== translationGeneratedBefore ||
+      renderPackedReceipt({ name: "Mali" }) !== baselineRendered
+    ) {
+      throw new Error(
+        "Translation change did not restore baseline generation/runtime"
+      );
+    }
+  }
+);
+const translationChangeEvidence = {
+  generationChanged: true,
+  oldAuthorityRejected: true,
+  freshAuthorizationVerified: true,
+  runtimeLocales: ["en", "th"],
+  unchangedRerunStable: true,
+  baselineRestored: true,
+};
+
 type PackedReceipt = Readonly<{
   providerClosures: ReadonlyArray<
     Readonly<{ declarations: ReadonlyArray<number> }>
@@ -807,7 +1206,9 @@ await expectReceiptRejection(
       "export const stale = true;\n",
       "utf8"
     ),
-  /(?:source|V3 bound file) is stale or corrupt/u
+  // The full-source semantic observation can reject the shortened source while
+  // parsing the receipt, before the later ordinary source-hash diagnostic.
+  /(?:source|V3 bound file) is stale or corrupt|unknownBoundaries\[\d+\] byte range exceeds the receipt-bound source bytes/u
 );
 await expectReceiptRejection(
   "stale-config",
@@ -832,10 +1233,9 @@ if (!providerDeclaration) {
 await expectReceiptRejection(
   "stale-provider",
   (app) =>
-    writeFile(
+    replaceOwnedFile(
       join(app, providerDeclaration.path),
-      "export interface ReceiptProvider { readonly changed: true; }\n",
-      "utf8"
+      "export interface ReceiptProvider { readonly changed: true; }\n"
     ),
   /provider declaration is stale or corrupt|(?:V3 bound file|classifier control) is stale or corrupt/u
 );
@@ -972,6 +1372,9 @@ await writeFile(
             buildVerification.buildSemanticAnalysisRuns,
         },
         negativeMatrix: receiptNegativeMatrix,
+        localeNegativeMatrix,
+        translationChange: translationChangeEvidence,
+        generationIdentity: generationIdentityEvidence,
       },
       installed: true,
       isolatedInstall: true,
@@ -1010,6 +1413,9 @@ process.stdout.write(
         buildSemanticAnalysisRuns: buildVerification.buildSemanticAnalysisRuns,
       },
       negativeMatrix: receiptNegativeMatrix,
+      localeNegativeMatrix,
+      translationChange: translationChangeEvidence,
+      generationIdentity: generationIdentityEvidence,
     },
     isolatedInstall: true,
     otelDependencyResolvedTransitively: true,

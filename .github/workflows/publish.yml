@@ -21,11 +21,37 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
+  actions: read
 
 jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+          persist-credentials: false
+      - id: source
+        name: Resolve release source exactly once
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  native:
+    needs: resolve
+    uses: ./.github/workflows/native-build.yml
+    with:
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+
   publish:
+    needs: [resolve, native]
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     env:
       NPM_REGISTRY: https://registry.npmjs.org
@@ -34,7 +60,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.release_ref || github.ref }}
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -47,13 +74,15 @@ jobs:
       - name: Verify npm Trusted Publishing runtime
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016
           node -e '
             const major = Number(process.versions.node.split(".")[0]);
-            if (major < 24) {
-              throw new Error(`Node ${process.version} is too old for this release; require Node >= 24`);
+            if (major !== 24) {
+              throw new Error(`Node ${process.version} is unsupported for this release; require Node 24`);
             }
           '
           npm_version="$(npm --version)"
+          # shellcheck disable=SC2016
           node -e '
             const [major, minor, patch] = process.argv[1].split(".").map(Number);
             const supported = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
@@ -61,6 +90,28 @@ jobs:
               throw new Error(`npm ${process.argv[1]} is too old for Trusted Publishing; require npm >= 11.5.1`);
             }
           ' "$npm_version"
+      - name: Verify immutable release artifact metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.native.outputs.artifact_id }}
+          ARTIFACT_DIGEST: ${{ needs.native.outputs.artifact_digest }}
+        run: |
+          node --input-type=module <<'JS'
+          const response = await fetch(`${process.env.GITHUB_API_URL}/repos/${process.env.GITHUB_REPOSITORY}/actions/artifacts/${process.env.ARTIFACT_ID}`, {
+            headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}`, accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(30000),
+          });
+          if (!response.ok) throw new Error(`Artifact lookup failed: ${response.status}`);
+          const artifact = await response.json();
+          const digest = process.env.ARTIFACT_DIGEST.replace(/^sha256:/, '');
+          if (!/^[a-f0-9]{64}$/.test(digest) || artifact.digest !== `sha256:${digest}` || artifact.expired || String(artifact.workflow_run?.id) !== process.env.GITHUB_RUN_ID) throw new Error('Native release artifact identity mismatch');
+          JS
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.native.outputs.artifact_id }}
+          path: .tmp/native-release
+          digest-mismatch: error
+      - name: Install verified prebuilt assets into compiler package
+        run: node native/scripts/install-release.mjs .tmp/native-release/native
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
       - run: pnpm build
