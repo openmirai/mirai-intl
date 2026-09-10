@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "libraryParent": "76015e23dcfe60fb2f7470f43c7eac7f9a941c0f",
+  "scope": "Node bridge admission and lifecycle with mocked addon; no claim of real Rust saturation load",
+  "tests": 10,
+  "newCases": [
+    "65th pending request rejected",
+    "aggregate pending serialized bytes above64MiB rejected"
+  ],
+  "guarantees": [
+    "one active execution",
+    "accepted work drains",
+    "operational EACCES is not fallback",
+    "rejection does not leak pending counters",
+    "close after all accepted work completes"
+  ],
+  "log": {
+    "path": "/private/tmp/intl-native-queue-tests.log",
+    "sha256": "f1a000dda2d56ed913c5b88484eefa8a4f4f4aa4c1358f0ce7159d21919b02c5"
+  }
+}

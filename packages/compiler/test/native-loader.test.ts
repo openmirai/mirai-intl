@@ -283,3 +283,112 @@ it("retains only one Windows locked snapshot and retries cleanup at exit", async
     }
   }
 });
+
+it.each(["request count", "serialized bytes"] as const)(
+  "rejects excess pending %s, drains accepted work and preserves operational failures",
+  async (limit) => {
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    let executions = 0;
+    let completed = 0;
+    let active = 0;
+    let peakActive = 0;
+    let closed = 0;
+    const serializedSizes: Array<number> = [];
+    hooks.load = () => ({
+      ...binding,
+      NativeEngine: class {
+        async execute(source: string) {
+          const index = executions++;
+          // Retain only sizes, never 64 copies of large mock call arguments.
+          serializedSizes.push(Buffer.byteLength(source));
+          active++;
+          peakActive = Math.max(peakActive, active);
+          if (index === 0) {
+            started.resolve();
+            await gate.promise;
+          }
+          active--;
+          completed++;
+          return JSON.stringify(
+            index === 1
+              ? {
+                  ok: false,
+                  error: { code: "EACCES", message: "native read denied" },
+                }
+              : { ok: true, result: { canonical: true, hash: digest(good) } }
+          );
+        }
+        close() {
+          expect(active).toBe(0);
+          expect(completed).toBe(executions);
+          closed++;
+        }
+      },
+    });
+    const { nativeCanonicalReceipt, withNativeOperation } =
+      await import("../src/native-engine");
+    const count = limit === "request count" ? 64 : 2;
+    // Two independently serialized 32 MiB requests reach exactly 64 MiB.
+    // One shared ASCII input string, no giant parsed object or Buffer copies.
+    const overhead = Buffer.byteLength(
+      JSON.stringify({ operation: "canonicalReceipt", source: "" })
+    );
+    const source =
+      limit === "request count"
+        ? "{}\n"
+        : "x".repeat(32 * 1024 * 1024 - overhead);
+    await withNativeOperation(async () => {
+      const pending = Array.from({ length: count }, () =>
+        nativeCanonicalReceipt(source)
+      );
+      // Observe rejections before releasing the gate, including the injected
+      // operational error: it must remain EACCES, never unsupported fallback.
+      const drained = Promise.allSettled(pending);
+      try {
+        await started.promise;
+        expect(executions).toBe(1);
+        expect(closed).toBe(0);
+        await expect(nativeCanonicalReceipt("{}\n")).rejects.toMatchObject({
+          code: "ERR_INTL_NATIVE_ENGINE",
+          message:
+            limit === "request count"
+              ? "Native operation queue exceeds bound"
+              : "Native operation queued bytes exceed bound",
+        });
+        expect(executions).toBe(1);
+      } finally {
+        gate.resolve();
+        await drained;
+      }
+      const results = await drained;
+      expect(results).toHaveLength(count);
+      expect(results[1]).toMatchObject({
+        status: "rejected",
+        reason: { code: "EACCES", message: "native read denied" },
+      });
+      expect(results.filter((result) => result.status === "fulfilled")).toEqual(
+        Array.from({ length: count - 1 }, () => ({
+          status: "fulfilled",
+          value: true,
+        }))
+      );
+      expect(executions).toBe(count);
+      expect(peakActive).toBe(1);
+      const expectedSize =
+        limit === "serialized bytes"
+          ? 32 * 1024 * 1024
+          : Buffer.byteLength(
+              JSON.stringify({ operation: "canonicalReceipt", source })
+            );
+      expect(serializedSizes).toEqual(Array(count).fill(expectedSize));
+      // Both counters must be released even for failed accepted work, and the
+      // rejected excess request must not have incremented either counter.
+      await expect(nativeCanonicalReceipt(source)).resolves.toBe(true);
+      expect(executions).toBe(count + 1);
+      expect(closed).toBe(0);
+    });
+    expect(closed).toBe(1);
+    expect(completed).toBe(count + 1);
+  }
+);
