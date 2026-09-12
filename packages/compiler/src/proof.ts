@@ -49,6 +49,7 @@ import {
   verifyLoadedConventionCatalog,
 } from "./catalog";
 import type { ConventionOptions, LoadedConventionCatalog } from "./catalog";
+import { CATALOG_ARTIFACT_ABI } from "./compile";
 import {
   assertTrustedIntlCheckReceiptV3ClassifierAuthorityBinding,
   buildIntlCheckReceiptV3FromClassifierProjections,
@@ -137,7 +138,7 @@ export class IntlSourceAuthorizationError extends Error {
   }
 }
 
-const artifactAbi = "mirai-intl-artifact-v2";
+const artifactAbi = CATALOG_ARTIFACT_ABI;
 const proofDirectory = "build-proofs";
 
 export type IntlEmittedModuleV1 = Readonly<{

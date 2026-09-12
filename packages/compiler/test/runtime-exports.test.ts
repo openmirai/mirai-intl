@@ -187,8 +187,20 @@ describe("tree-shakeable runtime exports", () => {
     });
     const module = artifacts[greeting?.module ?? ""];
     expect(module).toMatch(/^\/\* eslint-disable \*\//u);
-    expect(module).toContain("Good morning");
-    expect(module).toContain("export const m7 =");
+    expect(module).toContain(
+      'const __c = /* @__PURE__ */ createMiraiIntlCallSites({"buildToken"'
+    );
+    expect(module).toContain(
+      'export const m7 = /* @__PURE__ */ __c.text(7, "msg_e992395661eadc1c", "greeting.morning", {"name":{"type":"string"}}, ["name"]);'
+    );
+    // portable-ir-v1 renders text from the host resource bundle, so the inline
+    // text renderers — and their locale payloads — are not emitted at all.
+    expect(module).not.toContain("Good morning");
+    expect(module).not.toContain("สวัสดีตอนเช้า");
+    expect(module).not.toContain("export const r7 =");
+    // Rich messages still need their emitted renderer.
+    expect(module).toContain("Deactivate ");
+    expect(module).toContain("catalogHash");
     expect(module).not.toContain("catalogTree");
     expect(artifacts).not.toHaveProperty("catalog.descriptors.gen.mjs");
     expect(
@@ -199,6 +211,44 @@ describe("tree-shakeable runtime exports", () => {
     expect(Object.keys(artifacts)).toHaveLength(
       8 + output.catalog.manifest.locales.length
     );
+  });
+
+  it("emits inline text renderers only for precompiled-v1 catalogs", () => {
+    const portable = requiredArtifact(
+      emitArtifacts(compileCatalog(catalogFixtureSource), "precompiled", {
+        compact: true,
+      }),
+      "catalog.messages.gen.mjs"
+    );
+    const precompiled = requiredArtifact(
+      emitArtifacts(
+        compileCatalog({
+          ...catalogFixtureSource,
+          rendererCapabilityId: "precompiled-v1",
+        }),
+        "precompiled",
+        { compact: true }
+      ),
+      "catalog.messages.gen.mjs"
+    );
+    const renderers = (module: string): number =>
+      module.match(/^const p\d+ = /gmu)?.length ?? 0;
+
+    // 13 fixture messages: 9 text, 2 rich, 2 value.
+    expect(renderers(portable)).toBe(4);
+    expect(renderers(precompiled)).toBe(13);
+    expect(portable).not.toContain("Good morning");
+    expect(precompiled).toContain("Good morning");
+    expect(precompiled).toContain(
+      'export const m7 = /* @__PURE__ */ __c.text(7, "msg_e992395661eadc1c", "greeting.morning", {"name":{"type":"string"}}, ["name"], undefined, p7);'
+    );
+    expect(portable).toContain('"rendererCapabilityId":"portable-ir-v1"');
+    expect(precompiled).toContain('"rendererCapabilityId":"precompiled-v1"');
+    for (const module of [portable, precompiled]) {
+      expect(module).not.toContain("createPrecompiledRuntimeMessage");
+      expect(module).not.toContain("createPrecompiledDescriptor");
+      expect(module).not.toMatch(/export const r\d+ =/u);
+    }
   });
 
   it("keeps locale guards prototype-safe and congruent with the manifest", async () => {

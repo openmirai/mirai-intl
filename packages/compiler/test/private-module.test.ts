@@ -36,6 +36,19 @@ const moduleSource = [
   "export const m1 = /* @__PURE__ */ createPrecompiledDescriptor(/* @__PURE__ */ defineMessageDescriptor({ validatorId: 1 }), p1, r1);",
   "",
 ].join("\n");
+const callSiteModuleSource = [
+  'import { createMiraiIntlCallSites, createPrecompiledLocaleRenderer } from "@openmirai/intl/runtime";',
+  "",
+  'const __c = /* @__PURE__ */ createMiraiIntlCallSites({ catalogId: "fixture" });',
+  "",
+  'export const m0 = /* @__PURE__ */ __c.text(0, "msg_0", "unrelated.text");',
+  "",
+  'export const m1 = /* @__PURE__ */ __c.text(1, "msg_1", "referenced.text");',
+  "",
+  'const p2 = /* @__PURE__ */ createPrecompiledLocaleRenderer({ en: () => ["REFERENCED_RICH"] });',
+  'export const m2 = /* @__PURE__ */ __c.rich(2, "msg_2", "referenced.rich", p2, ["strong"]);',
+  "",
+].join("\n");
 const authorizationArtifacts = emitArtifacts(
   compileCatalog(
     defineIntlConfig({
@@ -85,6 +98,25 @@ describe("private message virtual slices", () => {
     expect(sliced).not.toMatch(/\b[prm]0\b/u);
   });
 
+  it("carries the shared call-site prelude into every slice", () => {
+    const sliced = slicePrivateMessagesModule(callSiteModuleSource, [
+      "m1",
+      "m2",
+    ]);
+
+    expect(sliced).toContain("createMiraiIntlCallSites");
+    expect(sliced.match(/const __c = /gu)).toHaveLength(1);
+    expect(sliced).toContain("export const m1 = /* @__PURE__ */ __c.text(");
+    expect(sliced).toContain("const p2 = ");
+    expect(sliced).toContain("REFERENCED_RICH");
+    expect(sliced).not.toContain("unrelated.text");
+    expect(sliced).not.toMatch(/\bm0\b/u);
+    expect(sliced).not.toMatch(/\br\d+\b/u);
+    expect(
+      slicePrivateMessagesModule(callSiteModuleSource, ["m1"])
+    ).not.toContain("createPrecompiledLocaleRenderer({");
+  });
+
   it("rejects malformed, duplicate, extra, unknown, and incomplete requests", () => {
     expect(() =>
       privateMessageSliceSpecifier("./catalog.manifest.gen.mjs", ["message"])
@@ -100,7 +132,7 @@ describe("private message virtual slices", () => {
       )
     ).toThrowError(/unexpected fields/u);
     expect(() => slicePrivateMessagesModule(moduleSource, ["m9"])).toThrowError(
-      /complete p9\/r9\/m9 closure/u
+      /requires the m9 declaration/u
     );
     expect(() =>
       slicePrivateMessagesModule(
@@ -112,7 +144,18 @@ describe("private message virtual slices", () => {
       slicePrivateMessagesModule(moduleSource.replace(/^const p1 =.*$/mu, ""), [
         "m1",
       ])
-    ).toThrowError(/complete p1\/r1\/m1 closure/u);
+    ).toThrowError(/requires the p1 declaration referenced by m1/u);
+    expect(() =>
+      slicePrivateMessagesModule(
+        callSiteModuleSource.replace(/^const p2 =.*$/mu, ""),
+        ["m2"]
+      )
+    ).toThrowError(/requires the p2 declaration referenced by m2/u);
+    expect(() =>
+      slicePrivateMessagesModule(`${callSiteModuleSource}const __c = 1;\n`, [
+        "m1",
+      ])
+    ).toThrowError(/repeats __c/u);
     expect(() =>
       slicePrivateMessagesModule(
         `${moduleSource}export const m1 = undefined;\n`,

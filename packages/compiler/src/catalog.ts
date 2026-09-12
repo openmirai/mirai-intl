@@ -30,7 +30,11 @@ import type {
 } from "@openmirai/intl-abi";
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
-import { COMPILER_VERSION, compileCatalog } from "./compile";
+import {
+  CATALOG_ARTIFACT_ABI,
+  COMPILER_VERSION,
+  compileCatalog,
+} from "./compile";
 import { emitArtifacts } from "./emit";
 import type { DescriptorRepresentation, EmittedArtifacts } from "./emit";
 import {
@@ -3324,7 +3328,7 @@ export async function loadConventionCatalog(
   return loadConventionCatalogSnapshot(packageRoot, true);
 }
 
-const catalogArtifactAbi = "mirai-intl-artifact-v2";
+const catalogArtifactAbi = CATALOG_ARTIFACT_ABI;
 const applicationLockNames = [
   "pnpm-lock.yaml",
   "package-lock.json",

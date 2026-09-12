@@ -279,14 +279,18 @@ describe("Vite adapter", () => {
         `${carrier}?__mirai_intl_exports=m0`
       );
 
-      expect(source).toContain("Title");
-      expect(source?.match(/const p0 =/gu)).toHaveLength(1);
-      expect(source?.match(/export const r0 =/gu)).toHaveLength(1);
+      expect(source).toContain('"title"');
+      expect(source).not.toContain('"Title"');
+      expect(source?.match(/const __c = /gu)).toHaveLength(1);
       expect(source?.match(/export const m0 =/gu)).toHaveLength(1);
+      expect(source).not.toMatch(/export const r0 =/u);
       expect(watched).toEqual([currentFile, carrier, messages]);
-      expect(Buffer.byteLength(await readFile(carrier, "utf8"))).toBeLessThan(
-        Buffer.byteLength(await readFile(messages, "utf8"))
-      );
+      // The carrier is the manifest module: it never declares a call site, so
+      // importers pay for the manifest only and the slicer supplies the rest.
+      const carrierSource = await readFile(carrier, "utf8");
+      expect(carrierSource).toContain("export const catalogManifest = ");
+      expect(carrierSource).not.toMatch(/export const m\d+ =/u);
+      expect(carrierSource).not.toContain("createMiraiIntlCallSites");
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -384,13 +388,15 @@ describe("Vite adapter", () => {
         .map(({ code }) => code)
         .join("\n");
 
-      expect(initialCode).toContain("REFERENCED_DESCRIPTOR_SENTINEL");
-      expect(initialCode).toContain("REFERENCED_DESCRIPTOR_SENTINEL_TH");
+      expect(initialCode).toContain("components.toast.used");
+      expect(initialCode).not.toContain("components.toast.unrelated");
+      expect(deferredCode).toContain("components.toast.unrelated");
+      // portable-ir-v1 text messages carry no inline locale payload at all.
+      expect(initialCode).not.toContain("REFERENCED_DESCRIPTOR_SENTINEL");
       expect(initialCode).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL");
-      expect(initialCode).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL_TH");
-      expect(deferredCode).toContain("UNRELATED_DESCRIPTOR_SENTINEL");
-      expect(deferredCode).toContain("UNRELATED_DESCRIPTOR_SENTINEL_TH");
-      expect(initialCode.match(/validatorId/gu)).toHaveLength(2);
+      expect(deferredCode).not.toContain("UNRELATED_DESCRIPTOR_SENTINEL");
+      expect(initialCode.match(/__c\.text\(/gu)).toHaveLength(1);
+      expect(deferredCode.match(/__c\.text\(/gu)).toHaveLength(1);
       expect(Buffer.byteLength(initialCode, "utf8")).toBeLessThan(10_000);
       expect(entry.dynamicImports).toHaveLength(1);
       expect(

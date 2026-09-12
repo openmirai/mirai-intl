@@ -194,7 +194,13 @@ describe("generated named-key contract", () => {
       });
       expect(titleModule).toMatch(/^\/\* eslint-disable \*\//u);
       expect(titleModule).toContain("export const m6 =");
-      expect(titleModule).toContain("Short links");
+      expect(titleModule).toContain("pages.{-$locale}.short-links.title");
+      // portable-ir-v1 renders text from the resource bundle, so no inline
+      // text renderer (and no locale payload) is emitted for it.
+      expect(titleModule).not.toContain("Short links");
+      expect(titleModule).toContain(
+        "const __c = /* @__PURE__ */ createMiraiIntlCallSites("
+      );
       expect(titleModule).not.toContain("catalogTree");
       expect(titleModule).not.toContain("namespace_");
       await expect(

@@ -1,4 +1,5 @@
 import type {
+  CatalogManifest,
   IrNode,
   JsonObject,
   MessageDescriptor,
@@ -43,6 +44,17 @@ type CompactExport = Readonly<{
 }>;
 
 const privateMessagesModuleName = "catalog.messages.gen.mjs";
+/**
+ * Module-level binding that holds the shared call-site factories. The private
+ * message slicer carries this declaration into every slice, so the name is part
+ * of the emitted artifact format.
+ */
+export const callSitePreludeName = "__c";
+const stringResultSchemaInput = '{"type":"string"}';
+const callSiteRendererImport =
+  'import { createMiraiIntlCallSites, createPrecompiledLocaleRenderer, renderPrecompiledArgument, renderPrecompiledComponent, renderPrecompiledDate, renderPrecompiledNumber, renderPrecompiledPlural, renderPrecompiledPound, renderPrecompiledSelect, renderPrecompiledTime } from "@openmirai/intl/runtime";';
+const callSiteImport =
+  'import { createMiraiIntlCallSites } from "@openmirai/intl/runtime";';
 
 interface TreeNode {
   children: Map<string, TreeNode>;
@@ -402,17 +414,115 @@ function emitProxyNamespace(
   ];
 }
 
+/**
+ * The inline renderer is only authoritative for `precompiled-v1`. Every other
+ * renderer capability resolves text through the host resource bundle and reads
+ * the emitted renderer for rich (and structured value) messages alone, so text
+ * renderers there are dead weight.
+ */
+function emitsPrecompiledRenderer(
+  manifest: CatalogManifest,
+  message: RuntimeMessage
+): boolean {
+  return (
+    manifest.rendererCapabilityId === "precompiled-v1" ||
+    message.kind !== "text"
+  );
+}
+
+function callSiteSharedInput(manifest: CatalogManifest): string {
+  return canonicalJson({
+    buildToken: manifest.buildToken,
+    capabilitySetHash: manifest.capabilitySetHash,
+    catalogHash: manifest.hash,
+    catalogId: manifest.catalogId,
+    formatVersion: manifest.formatVersion,
+    rendererCapabilityId: manifest.rendererCapabilityId,
+    runtimeAbi: manifest.runtimeAbi,
+  });
+}
+
+function callSiteArguments(
+  message: RuntimeMessage,
+  rendererName: string | undefined
+): ReadonlyArray<string | undefined> {
+  const head = [
+    String(message.validatorId),
+    JSON.stringify(message.id),
+    JSON.stringify(message.path),
+  ];
+  const properties =
+    Object.keys(message.argumentSchema.properties).length > 0
+      ? canonicalJson(message.argumentSchema.properties)
+      : undefined;
+  const required =
+    message.argumentSchema.required.length > 0
+      ? canonicalJson(message.argumentSchema.required)
+      : undefined;
+  const formatterIds =
+    message.formatterIds.length > 0
+      ? canonicalJson(message.formatterIds)
+      : undefined;
+  const resultSchema = canonicalJson(message.resultSchema);
+  if (message.kind === "value") {
+    return [
+      ...head,
+      rendererName,
+      resultSchema,
+      properties,
+      required,
+      formatterIds,
+    ];
+  }
+  const derivedResultSchema =
+    resultSchema === stringResultSchemaInput ? undefined : resultSchema;
+  if (message.kind === "rich") {
+    return [
+      ...head,
+      rendererName,
+      canonicalJson(message.tags),
+      properties,
+      required,
+      formatterIds,
+      derivedResultSchema,
+    ];
+  }
+  return [
+    ...head,
+    properties,
+    required,
+    formatterIds,
+    rendererName,
+    derivedResultSchema,
+  ];
+}
+
+function emitCallSiteArgumentList(
+  message: RuntimeMessage,
+  rendererName: string | undefined
+): string {
+  const values = callSiteArguments(message, rendererName);
+  let end = values.length;
+  while (end > 0 && values[end - 1] === undefined) {
+    end -= 1;
+  }
+  return values
+    .slice(0, end)
+    .map((value) => value ?? "undefined")
+    .join(", ");
+}
+
 function emitMessageExports(
   output: CompileOutput,
   representation: DescriptorRepresentation,
   compact: boolean
 ): ReadonlyArray<string> {
+  const callSites = compact && representation === "precompiled";
   return output.catalog.messages.flatMap((message, index) => {
     const descriptor = output.descriptors[index];
     if (!descriptor) {
       throw new Error(`Message ${message.path} has no descriptor`);
     }
-    const defined = `/* @__PURE__ */ defineMessageDescriptor(${descriptorInput(descriptor)})`;
     const descriptorName = messageExportName(message.path, index, compact);
     const runtimeName = runtimeMessageExportName(message.path, index, compact);
     if (representation === "precompiled") {
@@ -421,6 +531,25 @@ function emitMessageExports(
         index,
         compact
       );
+      if (callSites) {
+        const renderer = emitsPrecompiledRenderer(
+          output.catalog.manifest,
+          message
+        );
+        const argumentList = emitCallSiteArgumentList(
+          message,
+          renderer ? rendererName : undefined
+        );
+        return [
+          ...(renderer
+            ? [
+                `const ${rendererName} = /* @__PURE__ */ ${emitPrecompiledRenderer(message)};`,
+              ]
+            : []),
+          `export const ${descriptorName} = /* @__PURE__ */ ${callSitePreludeName}.${message.kind}(${argumentList});`,
+        ];
+      }
+      const defined = `/* @__PURE__ */ defineMessageDescriptor(${descriptorInput(descriptor)})`;
       return [
         `const ${rendererName} = /* @__PURE__ */ ${emitPrecompiledRenderer(message)};`,
         `export const ${runtimeName} = /* @__PURE__ */ createPrecompiledRuntimeMessage(${runtimeMessageInput(message, representation)}, ${rendererName});`,
@@ -429,7 +558,7 @@ function emitMessageExports(
     }
     return [
       `export const ${runtimeName} = ${runtimeMessageInput(message, representation)};`,
-      `export const ${descriptorName} = ${defined};`,
+      `export const ${descriptorName} = /* @__PURE__ */ defineMessageDescriptor(${descriptorInput(descriptor)});`,
     ];
   });
 }
@@ -441,14 +570,24 @@ function emitPrivateMessagesModule(
   if (output.catalog.messages.length === 0) {
     return "";
   }
-  const imports =
-    representation === "precompiled"
-      ? [
-          'import { createPrecompiledDescriptor, createPrecompiledLocaleRenderer, createPrecompiledRuntimeMessage, defineMessageDescriptor, renderPrecompiledArgument, renderPrecompiledComponent, renderPrecompiledDate, renderPrecompiledNumber, renderPrecompiledPlural, renderPrecompiledPound, renderPrecompiledSelect, renderPrecompiledTime } from "@openmirai/intl/runtime";',
-        ]
-      : ['import { defineMessageDescriptor } from "@openmirai/intl/runtime";'];
+  if (representation !== "precompiled") {
+    return [
+      'import { defineMessageDescriptor } from "@openmirai/intl/runtime";',
+      "",
+      ...emitMessageExports(output, representation, true).flatMap((entry) => [
+        entry,
+        "",
+      ]),
+    ].join("\n");
+  }
+  const manifest = output.catalog.manifest;
+  const renderers = output.catalog.messages.some((message) =>
+    emitsPrecompiledRenderer(manifest, message)
+  );
   return [
-    ...imports,
+    renderers ? callSiteRendererImport : callSiteImport,
+    "",
+    `const ${callSitePreludeName} = /* @__PURE__ */ createMiraiIntlCallSites(${callSiteSharedInput(manifest)});`,
     "",
     ...emitMessageExports(output, representation, true).flatMap((entry) => [
       entry,

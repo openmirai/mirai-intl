@@ -1,8 +1,19 @@
-import { messageBrand } from "@openmirai/intl-abi";
+import {
+  defineMessageDescriptor,
+  emptyObjectSchema,
+  messageBrand,
+} from "@openmirai/intl-abi";
 import type {
   DescriptorInput,
+  DescriptorKind,
+  FormatVersion,
   MessageDescriptor,
+  ObjectSchema,
+  RendererCapabilityId,
+  RuntimeAbi,
   RuntimeMessage,
+  Sha256,
+  ValueSchema,
 } from "@openmirai/intl-abi";
 
 import type { PrecompiledMessageRenderer } from "./backend";
@@ -164,6 +175,202 @@ export function createPrecompiledRuntimeMessage<M extends RuntimeMessage>(
     writable: false,
   });
   return Object.freeze(output) as M;
+}
+
+/**
+ * Fields that every call site of one generated catalog repeats verbatim. The
+ * compiler emits them once per module and the builders below rebuild the exact
+ * per-call-site descriptor and runtime message from them.
+ */
+export type MiraiIntlCallSiteShared = Readonly<{
+  buildToken: string;
+  capabilitySetHash: Sha256;
+  catalogHash: Sha256;
+  catalogId: string;
+  formatVersion: FormatVersion;
+  rendererCapabilityId: RendererCapabilityId;
+  runtimeAbi: RuntimeAbi;
+}>;
+
+export type MiraiIntlCallSiteProperties = Readonly<Record<string, ValueSchema>>;
+
+export type MiraiIntlCallSites = Readonly<{
+  rich: (
+    validatorId: number,
+    messageId: string,
+    path: string,
+    renderer: PrecompiledMessageRenderer,
+    tags: ReadonlyArray<string>,
+    properties?: MiraiIntlCallSiteProperties,
+    required?: ReadonlyArray<string>,
+    formatterIds?: ReadonlyArray<string>,
+    resultSchema?: ValueSchema
+  ) => PrecompiledDescriptor<MessageDescriptor>;
+  text: (
+    validatorId: number,
+    messageId: string,
+    path: string,
+    properties?: MiraiIntlCallSiteProperties,
+    required?: ReadonlyArray<string>,
+    formatterIds?: ReadonlyArray<string>,
+    renderer?: PrecompiledMessageRenderer,
+    resultSchema?: ValueSchema
+  ) => PrecompiledDescriptor<MessageDescriptor>;
+  value: (
+    validatorId: number,
+    messageId: string,
+    path: string,
+    renderer: PrecompiledMessageRenderer,
+    resultSchema: ValueSchema,
+    properties?: MiraiIntlCallSiteProperties,
+    required?: ReadonlyArray<string>,
+    formatterIds?: ReadonlyArray<string>
+  ) => PrecompiledDescriptor<MessageDescriptor>;
+}>;
+
+const stringResultSchema = { type: "string" } as const satisfies ValueSchema;
+const noCallSiteStrings: ReadonlyArray<string> = Object.freeze([]);
+
+function callSiteArgumentSchema(
+  properties: MiraiIntlCallSiteProperties | undefined,
+  required: ReadonlyArray<string> | undefined
+): ObjectSchema {
+  if (!properties && !required) {
+    return emptyObjectSchema;
+  }
+  return {
+    additionalProperties: false,
+    properties: properties ?? {},
+    required: required ?? noCallSiteStrings,
+    type: "object",
+  };
+}
+
+function createCallSite(
+  shared: MiraiIntlCallSiteShared,
+  kind: DescriptorKind,
+  validatorId: number,
+  messageId: string,
+  path: string,
+  argumentSchema: ObjectSchema,
+  formatterIds: ReadonlyArray<string>,
+  resultSchema: ValueSchema,
+  tags: ReadonlyArray<string>,
+  renderer: PrecompiledMessageRenderer | undefined
+): PrecompiledDescriptor<MessageDescriptor> {
+  const descriptor = defineMessageDescriptor({
+    buildToken: shared.buildToken,
+    capabilitySetHash: shared.capabilitySetHash,
+    catalogHash: shared.catalogHash,
+    catalogId: shared.catalogId,
+    formatVersion: shared.formatVersion,
+    kind,
+    messageId,
+    path,
+    rendererCapabilityId: shared.rendererCapabilityId,
+    runtimeAbi: shared.runtimeAbi,
+    validatorId,
+  } satisfies DescriptorInput<string, string, DescriptorKind>);
+  const message = {
+    argumentSchema,
+    formatterIds,
+    id: messageId,
+    kind,
+    path,
+    provenanceRef: `message:${messageId}`,
+    resultSchema,
+    tags,
+    validatorId,
+  } satisfies RuntimeMessage;
+  return createPrecompiledDescriptor(
+    descriptor,
+    renderer,
+    renderer
+      ? createPrecompiledRuntimeMessage(message, renderer)
+      : Object.freeze(message)
+  );
+}
+
+/**
+ * Build the per-call-site descriptor factories for one generated catalog. The
+ * emitted module calls this once and then emits a single factory call per
+ * message instead of repeating the seven invariant descriptor fields, the
+ * derived runtime-message metadata, and — outside `precompiled-v1` — an unused
+ * inline text renderer.
+ */
+export function createMiraiIntlCallSites(
+  shared: MiraiIntlCallSiteShared
+): MiraiIntlCallSites {
+  const callSites: MiraiIntlCallSites = {
+    rich: (
+      validatorId,
+      messageId,
+      path,
+      renderer,
+      tags,
+      properties,
+      required,
+      formatterIds,
+      resultSchema
+    ) =>
+      createCallSite(
+        shared,
+        "rich",
+        validatorId,
+        messageId,
+        path,
+        callSiteArgumentSchema(properties, required),
+        formatterIds ?? noCallSiteStrings,
+        resultSchema ?? stringResultSchema,
+        tags,
+        renderer
+      ),
+    text: (
+      validatorId,
+      messageId,
+      path,
+      properties,
+      required,
+      formatterIds,
+      renderer,
+      resultSchema
+    ) =>
+      createCallSite(
+        shared,
+        "text",
+        validatorId,
+        messageId,
+        path,
+        callSiteArgumentSchema(properties, required),
+        formatterIds ?? noCallSiteStrings,
+        resultSchema ?? stringResultSchema,
+        noCallSiteStrings,
+        renderer
+      ),
+    value: (
+      validatorId,
+      messageId,
+      path,
+      renderer,
+      resultSchema,
+      properties,
+      required,
+      formatterIds
+    ) =>
+      createCallSite(
+        shared,
+        "value",
+        validatorId,
+        messageId,
+        path,
+        callSiteArgumentSchema(properties, required),
+        formatterIds ?? noCallSiteStrings,
+        resultSchema,
+        noCallSiteStrings,
+        renderer
+      ),
+  };
+  return Object.freeze(callSites);
 }
 
 export function getPrecompiledRenderer(
