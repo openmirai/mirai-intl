@@ -4,25 +4,30 @@ import { inflateRawSync } from "node:zlib";
 
 import ts from "typescript";
 
+import { callSitePreludeName } from "./emit";
+
 const privateCarrierModuleName = "catalog.manifest.gen.mjs";
 const privateMessagesModuleName = "catalog.messages.gen.mjs";
 const sliceParameter = "__mirai_intl_exports";
-const descriptorExport = /^m(?<index>0|[1-9]\d*)$/u;
-const declarationName = /^(?<kind>[mpr])(?<index>0|[1-9]\d*)$/u;
+const descriptorExport = /^m(?:0|[1-9]\d*)$/u;
+const declarationName = /^[mpr](?:0|[1-9]\d*)$/u;
 const contentHash = /^sha256:(?<hash>[a-f\d]{64})$/u;
 const generatedFacadePrefix = "// @mirai-intl-selector ";
 const maximumCachedModules = 8;
 
-type IndexedStatement = Readonly<{
+type StatementRange = Readonly<{
   end: number;
-  index?: string;
-  kind?: string;
   start: number;
 }>;
 
+type IndexedDeclaration = StatementRange &
+  Readonly<{
+    dependencies: ReadonlyArray<string>;
+  }>;
+
 type PrivateMessageModuleIndex = Readonly<{
-  closures: ReadonlyMap<string, ReadonlyArray<IndexedStatement>>;
-  imports: ReadonlyArray<IndexedStatement>;
+  declarations: ReadonlyMap<string, IndexedDeclaration>;
+  preamble: ReadonlyArray<StatementRange>;
   source: string;
 }>;
 
@@ -292,6 +297,37 @@ export async function authorizePrivateMessageSliceRequest(
   };
 }
 
+/**
+ * Collect the same-module declarations an emitted statement depends on. The
+ * generated shapes are `const pN = …`, `export const rN = …` and
+ * `export const mN = …`; a call-site export may reference its own `pN` renderer
+ * and legacy payloads also reference `rN`. Property names are skipped so the
+ * shared `__c.text` prelude never contributes a dependency.
+ */
+function declarationDependencies(
+  initializer: ts.Expression | undefined
+): ReadonlyArray<string> {
+  if (!initializer) {
+    return [];
+  }
+  const dependencies = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) {
+      if (declarationName.test(node.text)) {
+        dependencies.add(node.text);
+      }
+      return;
+    }
+    if (ts.isPropertyAccessExpression(node)) {
+      visit(node.expression);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(initializer);
+  return [...dependencies];
+}
+
 function indexPrivateMessagesModule(
   source: string,
   fileName: string
@@ -310,15 +346,16 @@ function indexPrivateMessagesModule(
     true,
     ts.ScriptKind.JS
   );
-  const closures = new Map<string, Array<IndexedStatement>>();
-  const imports: Array<IndexedStatement> = [];
+  const declarations = new Map<string, IndexedDeclaration>();
+  const preamble: Array<StatementRange> = [];
+  let prelude = false;
   for (const statement of sourceFile.statements) {
     const range = {
       end: statement.getEnd(),
       start: statement.getFullStart(),
     };
     if (ts.isImportDeclaration(statement)) {
-      imports.push(range);
+      preamble.push(range);
       continue;
     }
     if (!ts.isVariableStatement(statement)) {
@@ -337,22 +374,34 @@ function indexPrivateMessagesModule(
         "Private message module declarations must use identifier bindings"
       );
     }
-    const match = declarationName.exec(declaration.name.text);
-    const index = match?.groups?.index;
-    const kind = match?.groups?.kind;
-    if (!index || !kind) {
+    const name = declaration.name.text;
+    if (name === callSitePreludeName) {
+      if (prelude) {
+        throw new TypeError(
+          `Private message module repeats ${callSitePreludeName}`
+        );
+      }
+      prelude = true;
+      preamble.push(range);
+      continue;
+    }
+    if (!declarationName.test(name)) {
       throw new TypeError(
-        `Private message module has unexpected binding ${declaration.name.text}`
+        `Private message module has unexpected binding ${name}`
       );
     }
-    const statements = closures.get(index) ?? [];
-    statements.push({ ...range, index, kind });
-    closures.set(index, statements);
+    if (declarations.has(name)) {
+      throw new TypeError(`Private message module repeats ${name}`);
+    }
+    declarations.set(name, {
+      ...range,
+      dependencies: declarationDependencies(declaration.initializer),
+    });
   }
 
   const indexed = {
-    closures,
-    imports,
+    declarations,
+    preamble,
     source,
   } satisfies PrivateMessageModuleIndex;
   moduleIndexCache.delete(fileName);
@@ -454,34 +503,43 @@ export function slicePrivateMessagesModule(
   descriptors: ReadonlyArray<string>,
   fileName = privateMessagesModuleName
 ): string {
-  const selected = new Set(
-    canonicalDescriptorExports(descriptors).map((name) => name.slice(1))
-  );
   const moduleIndex = indexPrivateMessagesModule(source, fileName);
-  const statements: Array<IndexedStatement> = [...moduleIndex.imports];
-  for (const selectedIndex of selected) {
-    const closure = moduleIndex.closures.get(selectedIndex);
-    const kinds = new Set<string>();
-    for (const statement of closure ?? []) {
-      if (statement.kind === undefined || kinds.has(statement.kind)) {
-        throw new TypeError(
-          `Private message module repeats ${statement.kind ?? "an unknown binding"}${selectedIndex}`
-        );
-      }
-      kinds.add(statement.kind);
-      statements.push(statement);
+  const selected = new Map<string, IndexedDeclaration>();
+  const order: Array<string> = [];
+  const include = (name: string, requiredBy?: string): void => {
+    if (selected.has(name)) {
+      return;
     }
-    if (
-      kinds.size !== 3 ||
-      !kinds.has("p") ||
-      !kinds.has("r") ||
-      !kinds.has("m")
-    ) {
+    const declaration = moduleIndex.declarations.get(name);
+    if (!declaration) {
       throw new TypeError(
-        `Private message slice requires the complete p${selectedIndex}/r${selectedIndex}/m${selectedIndex} closure`
+        requiredBy
+          ? `Private message slice requires the ${name} declaration referenced by ${requiredBy}`
+          : `Private message slice requires the ${name} declaration`
       );
     }
+    selected.set(name, declaration);
+    order.push(name);
+  };
+  for (const descriptor of canonicalDescriptorExports(descriptors)) {
+    include(descriptor);
   }
+  for (let cursor = 0; cursor < order.length; cursor += 1) {
+    const name = order[cursor];
+    const declaration = name === undefined ? undefined : selected.get(name);
+    if (name === undefined || !declaration) {
+      continue;
+    }
+    for (const dependency of declaration.dependencies) {
+      include(dependency, name);
+    }
+  }
+  const statements: ReadonlyArray<StatementRange> = [
+    ...moduleIndex.preamble,
+    ...[...selected.values()].toSorted(
+      (left, right) => left.start - right.start
+    ),
+  ];
   return `${statements
     .map((statement) => source.slice(statement.start, statement.end).trim())
     .join("\n\n")}\n`;

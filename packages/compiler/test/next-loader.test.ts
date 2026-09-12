@@ -161,12 +161,13 @@ describe("mirai intl Next loader", () => {
       const carrierSource = await readFile(carrier, "utf8");
       const sliced = await runLoader(root, carrier, carrierSource, request);
 
-      expect(sliced.code).toContain("Compare plans");
+      expect(sliced.code).toContain("pages.compare.diffs.title");
+      expect(sliced.code).not.toContain("Compare plans");
       expect(sliced.code).not.toContain("Compare <strong>");
       expect(sliced.code).not.toContain("difference");
-      expect(sliced.code.match(/const p\d+ =/gu)).toHaveLength(1);
-      expect(sliced.code.match(/export const r\d+ =/gu)).toHaveLength(1);
+      expect(sliced.code.match(/const __c = /gu)).toHaveLength(1);
       expect(sliced.code.match(/export const m\d+ =/gu)).toHaveLength(1);
+      expect(sliced.code).not.toMatch(/export const r\d+ =/u);
       expect(sliced.dependencies).toEqual([
         join(generatedRoot, "current.json"),
         privateModule,
@@ -248,8 +249,12 @@ describe("mirai intl Next loader", () => {
         join(firstDirectory, messageModule),
         "utf8"
       );
-      expect(firstPrivateModule).toContain("Short links");
+      expect(firstPrivateModule).toContain(
+        "pages.{-$locale}.short-links.title"
+      );
+      // Rich messages keep their emitted renderer; text messages do not.
       expect(firstPrivateModule).toContain("Manage");
+      expect(firstPrivateModule).not.toContain("Short links");
       expect(firstPrivateModule).toMatch(/export const m\d+ =/u);
       expect(firstPrivateModule.length).toBeGreaterThan(1_000);
 

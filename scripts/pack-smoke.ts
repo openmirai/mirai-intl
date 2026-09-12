@@ -192,10 +192,10 @@ const catalogArtifacts = emitArtifacts(catalogOutput, "precompiled", {
   compact: true,
 });
 if (
-  catalogOutput.catalog.manifest.compilerVersion !== "mirai-intl-artifact-v2"
+  catalogOutput.catalog.manifest.compilerVersion !== "mirai-intl-artifact-v3"
 ) {
   throw new Error(
-    `Built catalog ABI ${catalogOutput.catalog.manifest.compilerVersion} does not match mirai-intl-artifact-v2`
+    `Built catalog ABI ${catalogOutput.catalog.manifest.compilerVersion} does not match mirai-intl-artifact-v3`
   );
 }
 const smokeSuffix = `smoke.${catalogOutput.catalog.manifest.hash.slice(7, 19)}`;

@@ -20,6 +20,7 @@ import { writeArtifactSet } from "../packages/compiler/test/non-authoritative-wr
 import {
   treeShakingCatalogSource,
   unusedNamespaceSentinel,
+  usedMessageIdSentinel,
   usedMessageSentinel,
 } from "./fixtures/catalog";
 
@@ -149,7 +150,7 @@ async function bundleContents(directory: string): Promise<
       0
     ),
     referencedMessageFound: contents.some((content) =>
-      content.includes(Buffer.from(usedMessageSentinel))
+      content.includes(Buffer.from(usedMessageIdSentinel))
     ),
     unrelatedMessageFound: contents.some((content) =>
       content.includes(Buffer.from(unusedNamespaceSentinel))

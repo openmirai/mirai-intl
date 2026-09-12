@@ -157,7 +157,7 @@ await writeFile(
     "  capabilitySetHash: sha,",
     '  catalogId: "browser-recovery-smoke",',
     '  catalogPackage: "browser-recovery-smoke",',
-    '  compilerVersion: "mirai-intl-artifact-v2",',
+    '  compilerVersion: "mirai-intl-artifact-v3",',
     "  formatVersion: 1,",
     "  formatterVersions: {},",
     "  hash: sha,",

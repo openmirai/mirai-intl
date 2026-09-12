@@ -191,7 +191,9 @@ describe("compact catalog contracts", () => {
     );
     expect(privateSource).toMatch(/^import /u);
     expect(privateSource.match(/export const m\d+ =/gu)).toHaveLength(700);
-    expect(privateSource.match(/export const r\d+ =/gu)).toHaveLength(700);
+    expect(privateSource.match(/const p\d+ =/gu)).toHaveLength(700);
+    expect(privateSource.match(/const __c = /gu)).toHaveLength(1);
+    expect(privateSource).not.toMatch(/export const r\d+ =/u);
     expect(privateSource).not.toContain("catalogTree");
     expect(privateSource).not.toContain("namespace_");
     expect(privateSource).not.toContain("registry");

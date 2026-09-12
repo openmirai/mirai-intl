@@ -29,8 +29,16 @@ import type { CatalogSource, MessageSource } from "./source";
 import compilerPackage from "../package.json" with { type: "json" };
 
 export const COMPILER_VERSION = compilerPackage.version;
-/** Generated payload ABI, intentionally independent of the compiler release. */
-export const CATALOG_ARTIFACT_ABI = "mirai-intl-artifact-v2";
+/**
+ * Generated payload ABI, intentionally independent of the compiler release.
+ *
+ * v3 replaces the per-call-site `pN`/`rN`/`mN` triple in
+ * `catalog.messages.gen.mjs` with a module-level `createMiraiIntlCallSites`
+ * prelude plus one factory call per message. The private message slicer is
+ * coupled to that statement grammar, so an older compiler must not slice a v3
+ * payload. See `docs/adr/0003-shared-call-site-emission.md`.
+ */
+export const CATALOG_ARTIFACT_ABI = "mirai-intl-artifact-v3";
 const LOCALE_POLICY = "exact-then-primary-then-source-v1";
 const customFormatterStyle = /^custom:([^:]+)(?::([^:]*))?$/u;
 const safeFormatterId = /^[\dA-Za-z][\dA-Za-z._/-]{0,127}$/u;

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { emptyObjectSchema } from "@openmirai/intl-abi";
-import { defineIntlConfig } from "../../packages/compiler/src/internal";
+import { defineIntlConfig, sha256 } from "../../packages/compiler/src/internal";
 import type { CatalogSource } from "../../packages/compiler/src/internal";
 
 export interface FiveFieldValues {
@@ -81,6 +81,13 @@ export const unusedNamespaceSentinel =
   );
 
 export const usedMessageSentinel = "USED_MESSAGE_SENTINEL_CATALOG_V1";
+
+/**
+ * Generated-only marker for the referenced message. `portable-ir-v1` renders
+ * text through the host resource bundle, so the translation itself is not
+ * emitted into the message module; the derived message id is.
+ */
+export const usedMessageIdSentinel = `msg_${sha256("used.greeting").slice(7, 23)}`;
 
 export const treeShakingCatalogSource = defineIntlConfig({
   buildId: "catalog-tree-shaking-benchmark",
