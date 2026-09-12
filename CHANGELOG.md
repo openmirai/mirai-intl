@@ -1,5 +1,22 @@
 # Changelog
 
+# [0.4.0](https://github.com/openmirai/mirai-intl/compare/v0.3.29...v0.4.0) (2026-09-12)
+
+
+### Performance Improvements
+
+* **compiler:** emit one shared call-site factory per message ([7f31526](https://github.com/openmirai/mirai-intl/commit/7f315267c9c7bbaf9cc341dbd4ed9f81a46d6578))
+
+
+### BREAKING CHANGES
+
+* **compiler:** `CATALOG_ARTIFACT_ABI` moves from `mirai-intl-artifact-v2` to
+`mirai-intl-artifact-v3`. The private message slicer is coupled to the emitted
+statement grammar, so an older compiler must not slice a newer payload.
+Consumers must clear `src/i18n/generated/builds/**`, regenerate and
+re-authorize, then commit the refreshed `current.json`, `catalog.lock.json`,
+`catalog-generation-receipt.v1.json`, and `index.ts`.
+
 ## [0.3.29](https://github.com/openmirai/mirai-intl/compare/v0.3.28...v0.3.29) (2026-09-09)
 
 
