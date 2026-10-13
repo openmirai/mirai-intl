@@ -180,6 +180,7 @@ describe("dormant V3 authority publication", () => {
         "v3-receipt-installed",
         "v3-set-installed",
         "before-selector-rename",
+        "fingerprint-verified",
       ] as const;
       for (const interrupted of boundaries) {
         await expect(
@@ -289,6 +290,103 @@ describe("dormant V3 authority publication", () => {
         })
       ).rejects.toThrow("immutable object is corrupt");
       expect(await readFile(selectorPath, "utf8")).toBe(selectorBytes);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 180_000);
+
+  it("commits a valid publication whose work before its verified commit window outlasts the window", async () => {
+    const root = await createConventionApp();
+    try {
+      await authorizeConventionCatalog(root, {
+        collectEnvironment: false,
+        dormantV3: true,
+      });
+      const selectorPath = conventionCheckReceiptSelectorPath(root);
+      const selectorBytes = await readFile(selectorPath, "utf8");
+      await writeFile(join(root, "src/quiet.ts"), "export const quiet = 2;\n");
+      // A loaded machine: the content-addressed installs, selector staging and
+      // the complete fingerprint verification take 25 s, past the 20 s window.
+      let clock = 0;
+      await expect(
+        authorizeConventionCatalog(root, {
+          collectEnvironment: false,
+          dormantV3: true,
+          dormantV3PublicationBoundary(boundary) {
+            if (boundary === "v3-set-installed") {
+              clock += 10_000;
+            } else if (boundary === "before-selector-rename") {
+              clock += 15_000;
+            }
+          },
+          dormantV3PublicationNow: () => clock,
+        })
+      ).resolves.toBeDefined();
+      expect(clock).toBe(25_000);
+      expect(await readFile(selectorPath, "utf8")).not.toBe(selectorBytes);
+      await expect(verifyConventionCheckReceipt(root)).resolves.toBeDefined();
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 120_000);
+
+  it("refuses a stale commit once its verified commit window closes, without retrying", async () => {
+    const root = await createConventionApp();
+    try {
+      await authorizeConventionCatalog(root, {
+        collectEnvironment: false,
+        dormantV3: true,
+      });
+      const selectorPath = conventionCheckReceiptSelectorPath(root);
+      const selectorBytes = await readFile(selectorPath, "utf8");
+      await writeFile(join(root, "src/quiet.ts"), "export const quiet = 2;\n");
+      let clock = 0;
+      let verifications = 0;
+      await expect(
+        authorizeConventionCatalog(root, {
+          collectEnvironment: false,
+          dormantV3: true,
+          dormantV3PublicationBoundary(boundary) {
+            if (boundary === "fingerprint-verified") {
+              verifications += 1;
+              clock += 20_000;
+            }
+          },
+          dormantV3PublicationNow: () => clock,
+        })
+      ).rejects.toThrow("publication deadline expired");
+      expect(verifications).toBe(1);
+      expect(await readFile(selectorPath, "utf8")).toBe(selectorBytes);
+      expect(
+        (await readdir(join(selectorPath, ".."))).filter((name) =>
+          name.endsWith(".tmp")
+        )
+      ).toEqual([]);
+
+      const facadePath = join(root, "src/i18n/generated/index.ts");
+      const facadeBytes = await readFile(facadePath, "utf8");
+      await expect(
+        authorizeConventionCatalog(root, {
+          collectEnvironment: false,
+          dormantV3: true,
+          async dormantV3PublicationBoundary(boundary) {
+            if (boundary === "fingerprint-verified") {
+              await writeFile(facadePath, `${facadeBytes}\n`, "utf8");
+            }
+          },
+        })
+      ).rejects.toThrow("generated facade mutated");
+      expect(await readFile(selectorPath, "utf8")).toBe(selectorBytes);
+      await writeFile(facadePath, facadeBytes, "utf8");
+
+      await expect(
+        authorizeConventionCatalog(root, {
+          collectEnvironment: false,
+          dormantV3: true,
+        })
+      ).resolves.toBeDefined();
+      expect(await readFile(selectorPath, "utf8")).not.toBe(selectorBytes);
+      await expect(verifyConventionCheckReceipt(root)).resolves.toBeDefined();
     } finally {
       await rm(root, { force: true, recursive: true });
     }
