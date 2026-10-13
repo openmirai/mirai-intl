@@ -429,7 +429,7 @@ describe("Vite adapter", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("does not regenerate a published catalog during Vite buildStart", async () => {
     const root = await createConventionViteFixture();

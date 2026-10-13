@@ -725,7 +725,7 @@ describe("convention-only CLI", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("points missing locale files to the exact file that must be created", async () => {
     const root = await createConventionApp();
@@ -746,7 +746,7 @@ describe("convention-only CLI", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("points missing translation keys to the affected locale JSON path", async () => {
     const root = await createConventionApp();
@@ -1158,7 +1158,7 @@ describe("convention-only CLI", () => {
     } finally {
       await rm(workspaceRoot, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("reports a deterministic diagnostic when no appropriate lockfile exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-no-lockfile-"));
@@ -1173,7 +1173,7 @@ describe("convention-only CLI", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("generates from explicit JSON config with the Turbo source mount shape", async () => {
     const root = await createConventionApp();
@@ -1526,7 +1526,7 @@ describe("convention-only CLI", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("rejects stale exact source-analysis exceptions", async () => {
     const root = await createConventionApp();

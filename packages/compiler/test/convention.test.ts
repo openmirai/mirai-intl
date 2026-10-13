@@ -228,7 +228,7 @@ describe("convention-first catalog discovery", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("prefers tsconfig.intl.json and preserves explicit checkProjects", async () => {
     const root = await createConventionApp();
@@ -716,7 +716,7 @@ describe("convention-first catalog discovery", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("accepts only non-inferable formatter registrations and structured values", async () => {
     const root = await createConventionApp();

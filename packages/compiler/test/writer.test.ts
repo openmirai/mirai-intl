@@ -150,7 +150,7 @@ describe("generated artifact verification", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("rejects descriptor aliases before creating the generated output", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-writer-"));

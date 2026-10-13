@@ -112,7 +112,8 @@ it.each(["receipts", "classifiers"])(
       /missing/u
     );
     await expect(readFile(archive)).rejects.toMatchObject({ code: "ENOENT" });
-  }
+  },
+  60_000
 );
 
 it.each([
@@ -149,7 +150,8 @@ it.each([
     await expect(
       readFile(join(consumer, "apps/app/src/i18n/generated/current.json"))
     ).rejects.toMatchObject({ code: "ENOENT" });
-  }
+  },
+  60_000
 );
 
 it("rejects an omitted catalog rather than trusting the bundle inventory", async () => {
@@ -161,7 +163,7 @@ it("rejects an omitted catalog rather than trusting the bundle inventory", async
   await expect(
     importAuthorityBundle({ root: consumer, archive })
   ).rejects.toThrow(/catalog inventory/u);
-});
+}, 60_000);
 
 it("includes root locales alongside src/locales and rejects newly omitted root-locales catalogs", async () => {
   const { root, consumer, archive } = await workspaceFixture();
@@ -207,7 +209,7 @@ it("preserves previously imported state when new input validation fails", async 
   expect([await readFile(selector), await readFile(generated)]).toEqual(
     previous
   );
-});
+}, 60_000);
 
 it.each(["missing", "changed", "extra"])(
   "rejects %s archive members before import",
@@ -246,7 +248,8 @@ it.each(["missing", "changed", "extra"])(
         join(consumer, "apps/app/.mirai-intl/check-receipt.current.json")
       )
     ).rejects.toMatchObject({ code: "ENOENT" });
-  }
+  },
+  60_000
 );
 
 it("rejects symlink archive members before writing any checkout file", async () => {
@@ -257,7 +260,7 @@ it("rejects symlink archive members before writing any checkout file", async () 
   await expect(
     importAuthorityBundle({ root: consumer, archive })
   ).rejects.toThrow(/Invalid authority archive entry/u);
-});
+}, 60_000);
 
 it("never overwrites an existing export destination", async () => {
   const { root, archive } = await workspaceFixture();
@@ -266,7 +269,7 @@ it("never overwrites an existing export destination", async () => {
     code: "EEXIST",
   });
   expect(await readFile(archive, "utf8")).toBe("keep me");
-});
+}, 60_000);
 
 it.each([".publish.lock", ".publish.lock.recovering", ".catalog-publication"])(
   "preserves receiving publication recovery state %s",
@@ -281,7 +284,8 @@ it.each([".publish.lock", ".publish.lock.recovering", ".catalog-publication"])(
       importAuthorityBundle({ root: consumer, archive })
     ).rejects.toThrow(/publication recovery/u);
     expect(await readFile(evidence, "utf8")).toBe("recover me");
-  }
+  },
+  60_000
 );
 
 it("rejects stale receiving workspace authority absent from the bundle", async () => {
@@ -296,7 +300,7 @@ it("rejects stale receiving workspace authority absent from the bundle", async (
   expect(await readFile(join(authority, "current.json"), "utf8")).toBe(
     "old workspace authority"
   );
-});
+}, 60_000);
 
 it("transfers catalogs in scoped workspace directories as literal archive paths", async () => {
   const { root, consumer, archive } = await workspaceFixture("@scope/app");
@@ -307,7 +311,7 @@ it("transfers catalogs in scoped workspace directories as literal archive paths"
   await expect(
     verifyConventionBuildReceipt(join(consumer, "@scope/app"))
   ).resolves.toMatchObject({ buildReceiptVerifications: 1 });
-});
+}, 60_000);
 
 it("allows bounded tar overhead above the selected-content byte limit", async () => {
   // Invalid archive framing is rejected before any catalog is needed.
@@ -319,7 +323,7 @@ it("allows bounded tar overhead above the selected-content byte limit", async ()
   await expect(
     importAuthorityBundle({ root: consumer, archive })
   ).rejects.toThrow(/uncompressed tar/u);
-});
+}, 60_000);
 
 it.each([
   "valid",

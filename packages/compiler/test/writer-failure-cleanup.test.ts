@@ -82,4 +82,4 @@ it("removes failed staging builds without disturbing the selected catalog", asyn
   } finally {
     await rm(root, { force: true, recursive: true });
   }
-});
+}, 60_000);

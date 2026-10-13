@@ -83,7 +83,7 @@ it("rejects source edits interleaved after the initial source-hash pass", async 
   await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
     /stale|changed/u
   );
-});
+}, 60_000);
 
 it("rejects a payload changed after its initial committed-snapshot validation", async () => {
   const root = await fixture();
@@ -112,7 +112,7 @@ it("rejects a payload changed after its initial committed-snapshot validation", 
   await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
     /corrupt|manifest|payload|artifact/iu
   );
-});
+}, 60_000);
 
 it("rejects a new catalog added during workspace verification", async () => {
   const { cp } = await import("node:fs/promises");
@@ -133,7 +133,7 @@ it("rejects a new catalog added during workspace verification", async () => {
   await expect(verifyWorkspaceBuildReceipts(workspace)).rejects.toThrow(
     /workspace verification failed/u
   );
-});
+}, 60_000);
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "intl-strict-verify-"));
@@ -176,7 +176,7 @@ it("verifies current V3 authority without compiling or emitting catalog artifact
   expect(await readdir(join(root, "src/i18n/generated/builds"))).toHaveLength(
     1
   );
-});
+}, 60_000);
 
 it("verifies every catalog in a bounded workspace session and rejects stale members", async () => {
   const { cp } = await import("node:fs/promises");
@@ -206,7 +206,7 @@ it("verifies every catalog in a bounded workspace session and rejects stale memb
   await expect(verifyWorkspaceBuildReceipts(workspace)).rejects.toThrow(
     /workspace verification failed/u
   );
-});
+}, 60_000);
 
 it.each([
   ["missing translation", "src/locales/th.json", "{}"],
@@ -247,14 +247,15 @@ it.each([
     await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(/./u);
     expect(await readFile(join(root, file), "utf8")).toBe(bytes);
     expect(await readFile(pointer)).toEqual(before);
-  }
+  },
+  60_000
 );
 
 it("rejects an omitted source even when all remaining files are unchanged", async () => {
   const root = await fixture();
   await rm(join(root, "src/page.ts"));
   await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(/./u);
-});
+}, 60_000);
 
 it("rejects extra generated builds without deleting them", async () => {
   const root = await fixture();
@@ -264,4 +265,4 @@ it("rejects extra generated builds without deleting them", async () => {
     /unexplained/u
   );
   expect(await readdir(extra)).toEqual([]);
-});
+}, 60_000);

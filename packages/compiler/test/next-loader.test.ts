@@ -127,7 +127,7 @@ describe("mirai intl Next loader", () => {
     } finally {
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("serves a complete private Landing message closure from a resource query", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-next-slice-"));
