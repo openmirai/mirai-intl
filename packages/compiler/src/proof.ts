@@ -97,6 +97,7 @@ type AuthorizationOptions = ConventionOptions &
     dormantV3PublicationBoundary?: (
       boundary:
         | "before-selector-rename"
+        | "fingerprint-verified"
         | "selector-renamed"
         | "v2-receipt-installed"
         | "v2-set-installed"
@@ -108,7 +109,10 @@ type AuthorizationOptions = ConventionOptions &
     dormantV3?: boolean;
     /** @internal Recheck every non-classifier publication fingerprint. */
     dormantV3PublicationFingerprintVerification?: () => Promise<void>;
-    /** @internal Absolute monotonic publication deadline from performance.now(). */
+    /**
+     * @internal Absolute monotonic commit deadline from performance.now().
+     * Defaults to the commit window opened by the fingerprint verification.
+     */
     dormantV3PublicationDeadlineMs?: number;
     /** @internal Deterministic monotonic clock for publication cutoff tests. */
     dormantV3PublicationNow?: () => number;
@@ -140,6 +144,17 @@ export class IntlSourceAuthorizationError extends Error {
 
 const artifactAbi = CATALOG_ARTIFACT_ABI;
 const proofDirectory = "build-proofs";
+/**
+ * The selector commits only inside this window after the commit-last
+ * fingerprint verification has passed: the classifier frontier revalidation
+ * and the staged-bytes barrier both run inside it. The window bounds how stale
+ * that verification may be at the commit point. It does not include the
+ * verification itself, whose every observation is checked against the sealed
+ * analysis inputs, or the content-addressed installs and selector staging,
+ * which stay inert until the rename; on a slow machine those can take longer
+ * than the window without making the verified inputs stale.
+ */
+const dormantV3CommitWindowMs = 20_000;
 
 export type IntlEmittedModuleV1 = Readonly<{
   /** JavaScript asset path, relative to the deployed artifact root. */
@@ -712,6 +727,8 @@ async function writePackageAuthoritySelector(
   const selectorPath = conventionCheckReceiptSelectorPath(root);
   const verify = (source: string): void =>
     verifyDormantV2SelectorBytes(source, authoritySetHash);
+  const now = options.dormantV3PublicationNow ?? (() => performance.now());
+  let commitDeadline: number | undefined;
   const verifyLive = async (): Promise<void> => {
     if (!options.dormantV3PublicationFingerprintVerification) {
       throw new Error(
@@ -719,16 +736,15 @@ async function writePackageAuthoritySelector(
       );
     }
     await options.dormantV3PublicationFingerprintVerification();
+    commitDeadline =
+      options.dormantV3PublicationDeadlineMs ?? now() + dormantV3CommitWindowMs;
+    await options.dormantV3PublicationBoundary?.("fingerprint-verified");
     await revalidateMiraiIntlClassifierFinalizedTransactionAfterInputVerificationV3(
       finalized
     );
   };
   const verifyCommitBarrier = (stagedPath: string): void => {
-    const now = options.dormantV3PublicationNow ?? (() => performance.now());
-    if (
-      options.dormantV3PublicationDeadlineMs === undefined ||
-      now() >= options.dormantV3PublicationDeadlineMs
-    ) {
+    if (commitDeadline === undefined || now() >= commitDeadline) {
       throw new Error("Mirai Intl dormant V3 publication deadline expired");
     }
     assertPackageArtifactDirectorySync(root, dirname(stagedPath));
@@ -2123,10 +2139,12 @@ async function createConventionCheckReceipt(
               finalVerificationOptions.dormantV3PublicationBoundary,
           }
         : {}),
-      dormantV3PublicationDeadlineMs:
-        finalVerificationOptions.dormantV3PublicationDeadlineMs ??
-        (finalVerificationOptions.dormantV3PublicationNow?.() ??
-          performance.now()) + 20_000,
+      ...(finalVerificationOptions.dormantV3PublicationDeadlineMs === undefined
+        ? {}
+        : {
+            dormantV3PublicationDeadlineMs:
+              finalVerificationOptions.dormantV3PublicationDeadlineMs,
+          }),
       dormantV3PublicationFingerprintVerification: verifyPublicationFingerprint,
       dormantV3PublicationNow:
         finalVerificationOptions.dormantV3PublicationNow ??
