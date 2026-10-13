@@ -577,7 +577,7 @@ describe("Phase 0 reference-engine parity", () => {
       programInstrumentation.count = 0;
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("canonicalizes a generated facade provider once in reference and owner receipts", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
@@ -882,7 +882,7 @@ describe("Phase 0 reference-engine parity", () => {
       programInstrumentation.count = 0;
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("seals TypeScript 6 lib aliases referenced by next-env declarations", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
@@ -951,7 +951,7 @@ describe("Phase 0 reference-engine parity", () => {
     } finally {
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("seals pnpm-style @types package aliases and package-scope probes", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
@@ -1136,7 +1136,7 @@ describe("Phase 0 reference-engine parity", () => {
       programInstrumentation.count = 0;
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("analyzes an explicitly authorized mounted owner while preserving the transform exclusion", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));

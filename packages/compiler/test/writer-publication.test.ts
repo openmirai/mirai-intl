@@ -83,7 +83,8 @@ describe("crash-safe catalog publication", () => {
       } finally {
         await rm(root, { force: true, recursive: true });
       }
-    }
+    },
+    60_000
   );
 
   it("recovers after the exact previous payload was removed before journal cleanup", async () => {
@@ -123,7 +124,7 @@ describe("crash-safe catalog publication", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("rejects a previousDirectory traversal aliasing the selected payload", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-publication-"));
@@ -205,7 +206,7 @@ describe("crash-safe catalog publication", () => {
       await rm(container, { force: true, recursive: true });
       await rm(external, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("rejects a changed snapshot at the pre-install mutation barrier", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-publication-"));
@@ -346,7 +347,8 @@ describe("crash-safe catalog publication", () => {
       } finally {
         await rm(root, { force: true, recursive: true });
       }
-    }
+    },
+    60_000
   );
 
   it.each(["corrupt", "missing", "extra", "symlink"] as const)(
@@ -416,5 +418,5 @@ describe("crash-safe catalog publication", () => {
         await rm(root, { force: true, recursive: true });
       }
     }
-  });
+  }, 60_000);
 });

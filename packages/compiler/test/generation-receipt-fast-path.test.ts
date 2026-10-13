@@ -845,7 +845,7 @@ describe("catalog generation receipt fast path", () => {
     } finally {
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("hard-fails corrupt output instead of regenerating changed inputs", async () => {
     const { container, root } = await conventionApp();

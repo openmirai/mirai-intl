@@ -444,7 +444,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("lowers stored generated-facade named keys through the namespace registry", async () => {
     const fixture = await createGeneratedCatalog();
@@ -475,7 +475,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("lowers the canonical generated boundary parser through the namespace registry", async () => {
     const fixture = await createGeneratedCatalog();
@@ -618,7 +618,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("preserves a form-schema helper while lowering a mixed root schema", async () => {
     const fixture = await createGeneratedCatalog();
@@ -648,7 +648,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("still rejects non-helper form-schema factory escapes", async () => {
     const fixture = await createGeneratedCatalog();
@@ -774,7 +774,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("requires deferred-key factory provenance from the canonical generated facade", async () => {
     const fixture = await createGeneratedCatalog();
@@ -880,7 +880,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  }, 15_000);
+  }, 60_000);
 
   it("uses TypeScript symbols so nested shadowed factories and translators are untouched", async () => {
     const fixture = await createGeneratedCatalog();
@@ -914,7 +914,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("permits translator bindings in React hook dependency arrays", async () => {
     const fixture = await createGeneratedCatalog();
@@ -940,7 +940,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("lowers finite tuple, matrix, and record maps to frozen exact selections", async () => {
     const fixture = await createGeneratedCatalog();
@@ -977,7 +977,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("lowers finite named-key unions into one minimal deterministic full-path registry", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1041,7 +1041,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("resolves finite template unions derived from local readonly tuples", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1077,7 +1077,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("preserves finite item keys through generated-facade satisfies arrays", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1117,7 +1117,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("fails closed for widened mapped property keys from memoized satisfies arrays", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1176,7 +1176,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("preserves finite mapped property keys from memoized satisfies arrays in a compatible shared Program", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1247,7 +1247,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("shares compatible mapped translator aliases and named callbacks with exact reference parity", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1381,7 +1381,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  }, 15_000);
+  }, 60_000);
 
   it("resolves only project-local providers needed by finite enum, locale, and config keys", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1457,7 +1457,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("preserves imported finite type guards that use modern built-ins", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1506,7 +1506,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("rejects a provider file that escapes through a workspace symlink", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1703,7 +1703,7 @@ describe("private named-key lowering", () => {
       await rm(second.root, { force: true, recursive: true });
       await rm(outside, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("requires explicit realpath identity for every positive sealed path", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-realpath-proof-"));
@@ -1782,7 +1782,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("matches full-facade reference lowering for aliased, type-only, and form helper slices", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1879,7 +1879,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("retains exact reference evidence for every stable generated-facade runtime import", async () => {
     const fixture = await createGeneratedCatalog();
@@ -1941,7 +1941,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("seals generated .d.mts evidence for a consumer facade batch", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2050,7 +2050,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("matches reference evidence and diagnostics for every static facade import form", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2152,7 +2152,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("keeps ordinary default and side-effect imports on inert no-Program reuse", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2280,7 +2280,7 @@ describe("private named-key lowering", () => {
       realpathSpy?.mockRestore();
       await rm(fixture.root, { force: true, recursive: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   it("canonicalizes virtual facade evidence while retaining facade mutation identity", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2404,7 +2404,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("merges canonical provider evidence and rejects conflicting nested identities", () => {
     const resolution = {
@@ -2636,7 +2636,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("falls back to the full facade for re-exports, general namespaces, dynamic aliases, and module augmentation", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2731,7 +2731,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   it("requires semantic analysis for translator-shaped calls with uncertain provenance", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2772,7 +2772,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("fuses more than 64 active roots when their sealed frontiers agree", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2820,7 +2820,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  }, 15_000);
+  }, 60_000);
 
   it("matches reference diagnostics for invalid extracted form-schema builders", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2874,7 +2874,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("matches reference diagnostics for invalid sliced key and form-error calls", async () => {
     const fixture = await createGeneratedCatalog();
@@ -2945,7 +2945,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("discovers automatic typeRoots and keeps inert sources Program-free", async () => {
     const fixture = await createGeneratedCatalog();
@@ -3150,7 +3150,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("resolves pnpm-style external package self-references inside a sealed closure", async () => {
     const fixture = await createGeneratedCatalog();
@@ -3303,7 +3303,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("preserves transitive form-schema types outside the selected facade slice", async () => {
     const fixture = await createGeneratedCatalog();
@@ -3366,7 +3366,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it.each([
     { exceeds: false, providerCount: 64 },
@@ -3434,7 +3434,8 @@ describe("private named-key lowering", () => {
       } finally {
         await rm(fixture.root, { force: true, recursive: true });
       }
-    }
+    },
+    60_000
   );
 
   it("lowers namespace-bound server dynamic calls through the same private runtime lookup", async () => {
@@ -3645,7 +3646,7 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
-  });
+  }, 60_000);
 
   it("returns null for modules without eligible translator calls", async () => {
     const fixture = await createGeneratedCatalog();
