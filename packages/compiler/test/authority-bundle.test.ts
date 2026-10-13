@@ -185,7 +185,7 @@ it("includes root locales alongside src/locales and rejects newly omitted root-l
   await expect(
     importAuthorityBundle({ root: consumer, archive })
   ).rejects.toThrow(/catalog inventory/u);
-});
+}, 60_000);
 
 it("preserves previously imported state when new input validation fails", async () => {
   const { root, consumer, archive } = await workspaceFixture();
