@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/openmirai/mirai-intl/compare/v0.4.0...v0.4.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **compiler:** bound the publication deadline to the verified commit window ([2e3a08c](https://github.com/openmirai/mirai-intl/commit/2e3a08ce94cf402e823e346c20dc54bd8006629b))
+
 # [0.4.0](https://github.com/openmirai/mirai-intl/compare/v0.3.29...v0.4.0) (2026-09-12)
 
 
