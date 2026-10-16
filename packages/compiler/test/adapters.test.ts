@@ -22,10 +22,20 @@ import {
   defineIntlConfig,
   emitArtifacts,
 } from "../src/internal";
+import { loadConventionCatalog } from "../src/catalog";
+import type * as Catalog from "../src/catalog";
 import type { CatalogSource } from "../src/internal";
 import { withMiraiIntl } from "../src/next";
 import { miraiIntlVite } from "../src/vite";
 import { writeArtifactSet } from "./non-authoritative-writer";
+
+vi.mock("../src/catalog", async (importOriginal) => {
+  const original = await importOriginal<typeof Catalog>();
+  return {
+    ...original,
+    loadConventionCatalog: vi.fn(original.loadConventionCatalog),
+  };
+});
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
@@ -789,6 +799,42 @@ describe("Vite adapter", () => {
         ).resolves.toEqual([]);
       }
       expect(logger.error).toHaveBeenCalledTimes(prospective.length);
+      cleanup();
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("starts no catalog walk for a server without a file watcher", async () => {
+    const root = await createConventionViteFixture();
+    const watcher = {
+      add: vi.fn(),
+      off: vi.fn(),
+      on: vi.fn(),
+    };
+    try {
+      const publisher = miraiIntlVite({ root });
+      await publisher.buildStart.call({ addWatchFile: vi.fn() });
+
+      const plugin = miraiIntlVite();
+      plugin.configResolved({ root });
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+      vi.mocked(loadConventionCatalog).mockClear();
+      // `vitest run` serves with `server.watch: null`. The walk would only feed
+      // the watcher, and nothing would wait for it before the process exits.
+      const cleanup = plugin.configureServer({
+        config: { logger: { error: vi.fn() }, server: { watch: null } },
+        restart: vi.fn(async () => {}),
+        watcher,
+      });
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      expect(loadConventionCatalog).not.toHaveBeenCalled();
+      expect(watcher.add.mock.calls).toEqual([
+        [join(root, "src/i18n/generated/current.json")],
+      ]);
       cleanup();
     } finally {
       await rm(root, { force: true, recursive: true });
