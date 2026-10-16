@@ -1,5 +1,13 @@
 import { compareCanonicalStrings } from "./canonical";
 
+/**
+ * Internal semantic-engine selector. It lives here, outside the TypeScript-
+ * loading analyzer, so authorization reuse can bind it without loading
+ * TypeScript.
+ */
+export const SEMANTIC_ENGINE_ENVIRONMENT =
+  "MIRAI_INTL_INTERNAL_SEMANTIC_ENGINE" as const;
+
 export type SemanticProviderResolution = Readonly<{
   controlFiles: ReadonlyArray<
     Readonly<{

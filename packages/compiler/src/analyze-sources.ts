@@ -15,6 +15,7 @@ import type { MiraiIntlClassifierWorkspaceTransactionV3 } from "./classifier-can
 import type { IntlCheckExceptionV1 } from "@openmirai/intl-abi";
 import { resolveConventionSourceUniverse } from "./ownership";
 import { collectConventionSourceFiles } from "./source-discovery";
+import { SEMANTIC_ENGINE_ENVIRONMENT } from "./semantic-providers";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import { transformMiraiIntlOwnerBatch } from "./transform";
 import type {
@@ -75,7 +76,6 @@ export type ConventionSourceSnapshot = Readonly<{
   sourceHash: `sha256:${string}`;
 }>;
 
-const internalSemanticEngineEnvironment = "MIRAI_INTL_INTERNAL_SEMANTIC_ENGINE";
 const minimumSemanticSourcesPerWorker = 24;
 
 type SemanticOwnerAnalysis = Readonly<{
@@ -434,7 +434,7 @@ function resolveSemanticEngine(
   if (explicit !== undefined) {
     return explicit;
   }
-  const value = process.env[internalSemanticEngineEnvironment];
+  const value = process.env[SEMANTIC_ENGINE_ENVIRONMENT];
   if (value === undefined || value === "owner-batch") {
     return "owner-batch";
   }
@@ -442,7 +442,7 @@ function resolveSemanticEngine(
     return "reference";
   }
   throw new Error(
-    `Invalid ${internalSemanticEngineEnvironment}: ${JSON.stringify(value)}`
+    `Invalid ${SEMANTIC_ENGINE_ENVIRONMENT}: ${JSON.stringify(value)}`
   );
 }
 

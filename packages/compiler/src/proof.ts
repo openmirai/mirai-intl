@@ -22,7 +22,7 @@ import {
 } from "node:path";
 import { performance } from "node:perf_hooks";
 
-import { RUNTIME_ABI } from "@openmirai/intl-abi";
+import { INTL_CHECK_RECEIPT_DIRECTORY, RUNTIME_ABI } from "@openmirai/intl-abi";
 import type {
   IntlBuildProofTargetV1,
   IntlBuildProofV1,
@@ -32,6 +32,7 @@ import type {
   IntlCheckReceiptV2,
   IntlSemanticAuthorizationObservationV2,
   PackageAuthoritySetV1,
+  Sha256,
 } from "@openmirai/intl-abi";
 
 import {
@@ -73,6 +74,7 @@ import {
   conventionPackageAuthoritySetPath,
   conventionPackageClassifierAuthorityPath,
   verifyConventionBuildReceipt,
+  verifySelectedConventionAuthoritySetV3,
 } from "./check-receipt";
 import {
   computeApplicationPackageIdentity,
@@ -85,6 +87,7 @@ import {
   verifyProviderResolutionFrontier,
 } from "./provider-resolution-identity";
 import type { ProviderResolutionFrontierInput } from "./provider-resolution-identity";
+import { SEMANTIC_ENGINE_ENVIRONMENT } from "./semantic-providers";
 import { collectConventionSourceFiles } from "./source-discovery";
 import type * as OwnershipModule from "./ownership";
 import { verifyCommittedArtifactSnapshot } from "./writer";
@@ -397,14 +400,15 @@ function assertAuditableModule(
   }
 }
 
-async function writeProof(
+/** Replace one canonical JSON file atomically: a reader sees the old or new bytes, never a torn file. */
+async function writeCanonicalJsonFile(
   path: string,
-  proof: IntlBuildProofV1
+  value: unknown
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
   try {
-    await writeFile(temporary, `${canonicalJson(proof)}\n`, "utf8");
+    await writeFile(temporary, `${canonicalJson(value)}\n`, "utf8");
     await rename(temporary, path);
   } finally {
     await rm(temporary, { force: true });
@@ -841,7 +845,7 @@ export async function publishDormantConventionAuthorityV3(
     | "dormantV3PublicationNow"
   > &
     Readonly<{ activateV3?: boolean }> = {}
-): Promise<void> {
+): Promise<Sha256> {
   const root = resolve(packageRoot);
   assertTrustedIntlCheckReceiptV3ClassifierAuthorityBinding(binding);
   const v2Bytes = v2Receipt
@@ -991,25 +995,20 @@ export async function publishDormantConventionAuthorityV3(
     },
     options.dormantV3PublicationBoundary
   );
+  const activatedSetHash = options.activateV3
+    ? v3SetHash
+    : (v2SetHash ??
+      (() => {
+        throw new Error("Mirai Intl V2 activation requires a V2 set");
+      })());
   await writePackageAuthoritySelector(
     root,
-    dormantV2SelectorBytes(
-      options.activateV3
-        ? v3SetHash
-        : (v2SetHash ??
-            (() => {
-              throw new Error("Mirai Intl V2 activation requires a V2 set");
-            })())
-    ),
-    options.activateV3
-      ? v3SetHash
-      : (v2SetHash ??
-          (() => {
-            throw new Error("Mirai Intl V2 activation requires a V2 set");
-          })()),
+    dormantV2SelectorBytes(activatedSetHash),
+    activatedSetHash,
     finalized,
     options
   );
+  return activatedSetHash;
 }
 
 function packageIdentity(
@@ -1483,12 +1482,7 @@ async function createConventionCheckReceipt(
   loaded: LoadedConventionCatalog,
   finalVerificationOptions: AuthorizationOptions,
   semanticModules: Promise<SemanticModules>
-): Promise<
-  Readonly<{
-    receipt: IntlCheckReceipt;
-    verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
-  }>
-> {
+): Promise<ConventionAuthorization> {
   const profileStarted = performance.now();
   let profilePrior = profileStarted;
   const profilePhases: Array<
@@ -2125,7 +2119,7 @@ async function createConventionCheckReceipt(
     finalVerification = verification;
     markProfilePhase("publication-precommit-verification");
   };
-  await publishDormantConventionAuthorityV3(
+  const authoritySetHash = await publishDormantConventionAuthorityV3(
     resolve(packageRoot),
     universe.workspaceRoot,
     receiptV2 ?? null,
@@ -2166,10 +2160,18 @@ async function createConventionCheckReceipt(
     );
   }
   return {
+    authoritySetHash,
     receipt,
     verification: finalVerification,
   };
 }
+
+type ConventionAuthorization = Readonly<{
+  /** The package authority set this authorization activated. */
+  authoritySetHash: Sha256;
+  receipt: IntlCheckReceipt;
+  verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
+}>;
 
 /**
  * Materialize source authority and return the environment-aware catalog
@@ -2180,12 +2182,7 @@ async function createConventionCheckReceipt(
 export async function authorizeConventionCatalog(
   packageRoot: string,
   finalVerificationOptions: AuthorizationOptions = {}
-): Promise<
-  Readonly<{
-    receipt: IntlCheckReceipt;
-    verification: Awaited<ReturnType<typeof verifyLoadedConventionCatalog>>;
-  }>
-> {
+): Promise<ConventionAuthorization> {
   const profileStarted = performance.now();
   const root = resolve(packageRoot);
   const semanticModules = Promise.all([
@@ -2207,10 +2204,14 @@ export async function authorizeConventionCatalog(
     finalVerificationOptions,
     semanticModules
   );
-  await rm(join(root, ".mirai-intl", "check-receipt.v1.json"), {
+  await removeLegacyCheckReceipt(root);
+  return authorization;
+}
+
+async function removeLegacyCheckReceipt(root: string): Promise<void> {
+  await rm(join(root, INTL_CHECK_RECEIPT_DIRECTORY, "check-receipt.v1.json"), {
     force: true,
   });
-  return authorization;
 }
 
 /** Materialize, verify and atomically persist deterministic source authority. */
@@ -2223,6 +2224,126 @@ export async function proveConventionCatalog(
       validateEnvironment: process.env.MIRAI_INTL_WORKSPACE_CHILD === "1",
     })
   ).receipt;
+}
+
+/*
+ * Authorization reuse for `check --workspace`.
+ *
+ * A catalog's selected V3 authority set binds by content every input its
+ * verdict reads: each source of the universe and the universe itself, the
+ * check-project configs, the classifier's resolution evidence, the semantic
+ * provider closure, the generated catalog with its generation inputs (catalog
+ * sources, locales, normalized config with its check exceptions), the package
+ * manifest and lockfile, and the compiler, TypeScript, TypeScript-lib and ICU
+ * parser identities. A build trusts that set after the same verification.
+ * Two verdict inputs live outside it: the JavaScript runtime (its Intl data
+ * decides which plural categories a locale has) and the semantic-engine
+ * selector. The reuse record binds those to the set a full authorization
+ * activated. The set is reused only when the record names it for this exact
+ * runtime and the set verifies against the live workspace; any missing,
+ * partial, foreign or corrupt record or authority, and any changed byte, runs
+ * the full authorization instead.
+ */
+const authorizationReuseName = "authorization-reuse.v1.json";
+
+type AuthorizationReuseRecordV1 = Readonly<{
+  authoritySetHash: Sha256;
+  runtime: Readonly<{
+    arch: string;
+    cldr: string | null;
+    icu: string | null;
+    node: string;
+    platform: string;
+    semanticEngine: string | null;
+    tz: string | null;
+    unicode: string | null;
+  }>;
+  schemaVersion: 1;
+}>;
+
+function authorizationReusePath(root: string): string {
+  return join(root, INTL_CHECK_RECEIPT_DIRECTORY, authorizationReuseName);
+}
+
+function authorizationReuseRecord(
+  authoritySetHash: Sha256
+): AuthorizationReuseRecordV1 {
+  return {
+    authoritySetHash,
+    runtime: {
+      arch: process.arch,
+      cldr: process.versions.cldr ?? null,
+      icu: process.versions.icu ?? null,
+      node: process.version,
+      platform: process.platform,
+      semanticEngine: process.env[SEMANTIC_ENGINE_ENVIRONMENT] ?? null,
+      tz: process.versions.tz ?? null,
+      unicode: process.versions.unicode ?? null,
+    },
+    schemaVersion: 1,
+  };
+}
+
+/** The selected receipt when it may stand for a full authorization, else undefined. */
+async function reusableSelectedAuthority(
+  root: string
+): Promise<IntlCheckReceipt | undefined> {
+  const path = authorizationReusePath(root);
+  const entry = await lstat(path).catch(() => undefined);
+  if (!entry?.isFile()) {
+    return undefined;
+  }
+  try {
+    const recorded = await readFile(path, "utf8");
+    const named: unknown = Reflect.get(
+      Object(JSON.parse(recorded)),
+      "authoritySetHash"
+    );
+    // Byte equality with the record this runtime would write rejects partial,
+    // non-canonical and foreign-runtime records before any verification work.
+    if (
+      typeof named !== "string" ||
+      recorded !==
+        `${canonicalJson(authorizationReuseRecord(named as Sha256))}\n`
+    ) {
+      return undefined;
+    }
+    await validateConventionEnvironment({ repositoryRoot: root });
+    const { authoritySetHash, verification } =
+      await verifySelectedConventionAuthoritySetV3(root);
+    return authoritySetHash === named ? verification.receipt : undefined;
+  } catch {
+    // A stale or corrupt record or authority is never a verdict: the full
+    // authorization below decides, with its own diagnostics.
+    return undefined;
+  }
+}
+
+/**
+ * Authorize one catalog of a workspace check: reuse its selected authority set
+ * when nothing it binds has changed, otherwise run the full authorization and
+ * record the set it activated.
+ *
+ * @internal Used by `check --workspace`.
+ */
+export async function authorizeWorkspaceConventionCatalog(
+  packageRoot: string
+): Promise<Readonly<{ receipt: IntlCheckReceipt; reused: boolean }>> {
+  const root = await realpath(resolve(packageRoot));
+  const reused = await reusableSelectedAuthority(root);
+  if (reused) {
+    await removeLegacyCheckReceipt(root);
+    return { receipt: reused, reused: true };
+  }
+  const { authoritySetHash, receipt } = await authorizeConventionCatalog(root, {
+    collectEnvironment: false,
+    validateEnvironment: true,
+  });
+  await writeCanonicalJsonFile(
+    authorizationReusePath(root),
+    authorizationReuseRecord(authoritySetHash)
+  );
+  return { receipt, reused: false };
 }
 
 /** Reject a missing, stale, malformed, or non-canonical source receipt. */
@@ -2257,7 +2378,7 @@ export async function writeProvisionalBuildProof(
     state: "provisional" as const,
     target,
   } satisfies IntlBuildProofV1;
-  await writeProof(proofPath(root, target, "provisional"), proof);
+  await writeCanonicalJsonFile(proofPath(root, target, "provisional"), proof);
   return proof;
 }
 
@@ -2293,7 +2414,7 @@ export async function finalizeBuildProof(
     ...provisional,
     state: "finalized" as const,
   } satisfies IntlBuildProofV1;
-  await writeProof(proofPath(root, target, "finalized"), finalized);
+  await writeCanonicalJsonFile(proofPath(root, target, "finalized"), finalized);
   return finalized;
 }
 
@@ -2344,7 +2465,7 @@ export async function finalizeBuildProofTargets(
 
   await Promise.all(
     proofs.map((proof) =>
-      writeProof(proofPath(root, proof.target, "finalized"), proof)
+      writeCanonicalJsonFile(proofPath(root, proof.target, "finalized"), proof)
     )
   );
   return proofs;

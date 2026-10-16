@@ -56,6 +56,7 @@ import {
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
 import { discoverWorkspaceCatalogs } from "./workspace-catalogs";
+import { collectConventionSourceFiles } from "./source-discovery";
 import { verifyProviderResolutionFrontier } from "./provider-resolution-identity";
 import { reconstructProjectRootFiles } from "./source-universe-identity";
 import type {
@@ -1103,12 +1104,28 @@ interface ReceiptVerificationSession {
   finalChecks: Array<{ index: number; verify: () => Promise<void> }>;
 }
 
+type ReceiptV3VerificationOptions = Readonly<{
+  /** Verify a staged generated catalog instead of the package's own. */
+  generatedRoot?: string;
+  /** Defer the return-barrier checks to the workspace session. */
+  session?: ReceiptVerificationSession | undefined;
+  /**
+   * Also require every discovered package source to be a regular file of the
+   * authorized universe, as a full authorization does. Discovery outside the
+   * owner projects is part of the check verdict, not of the build contract.
+   */
+  sourceDiscovery?: boolean;
+}>;
+
 async function verifyConventionBuildReceiptV3(
   root: string,
   workspace: string,
   receipt: IntlCheckReceiptV3,
-  transferredGeneratedRoot?: string,
-  session?: ReceiptVerificationSession
+  {
+    generatedRoot: transferredGeneratedRoot,
+    session,
+    sourceDiscovery = false,
+  }: ReceiptV3VerificationOptions = {}
 ): Promise<IntlBuildReceiptVerification> {
   const fresh = await loadFreshConventionCatalogGenerationInput(
     root,
@@ -1252,6 +1269,24 @@ async function verifyConventionBuildReceiptV3(
     if (canonicalJson(reconstructedOwners) !== canonicalJson(receiptOwners)) {
       throw new Error("Mirai Intl authorized source universe is stale");
     }
+    if (sourceDiscovery) {
+      const authorized = new Set(receipt.sources.map(({ file }) => file));
+      for (const file of await collectConventionSourceFiles(
+        root,
+        loaded.discovery.output
+      )) {
+        const entry = await lstat(file);
+        if (
+          entry.isSymbolicLink() ||
+          !entry.isFile() ||
+          !authorized.has(relativePath(workspace, await realpath(file)))
+        ) {
+          throw new Error(
+            `Mirai Intl discovered source is outside the authorized universe: ${relativePath(workspace, file)}`
+          );
+        }
+      }
+    }
   };
   await verifySourceUniverse();
   const immutable = fresh.integrity.immutable;
@@ -1372,12 +1407,48 @@ export async function verifyTransferredConventionBuildReceipt(
       "Authority transfer requires selected immutable V3 authority"
     );
   }
-  return verifyConventionBuildReceiptV3(
-    root,
-    workspace,
-    receipt,
-    await realpath(generatedRoot)
-  );
+  return verifyConventionBuildReceiptV3(root, workspace, receipt, {
+    generatedRoot: await realpath(generatedRoot),
+  });
+}
+
+/**
+ * Verify the selected immutable V3 authority set against the live workspace,
+ * exactly as a build does, and name the set that was verified. Any other
+ * selection (legacy V2, a V2 set, no selector) is rejected.
+ *
+ * @internal Authorization reuse for the workspace check.
+ */
+export async function verifySelectedConventionAuthoritySetV3(
+  packageRoot: string
+): Promise<
+  Readonly<{
+    authoritySetHash: Sha256;
+    verification: IntlBuildReceiptVerification;
+  }>
+> {
+  const root = await realpath(resolve(packageRoot));
+  const workspace = await workspaceRoot(root);
+  const { authoritySetHash, receipt, selection } =
+    await readConventionCheckReceipt(root);
+  if (
+    selection !== "authority-set" ||
+    authoritySetHash === undefined ||
+    receipt.schemaVersion !== 3
+  ) {
+    throw new Error(
+      "Mirai Intl authorization reuse requires a selected immutable V3 authority set"
+    );
+  }
+  return {
+    authoritySetHash,
+    verification: await verifyConventionBuildReceiptV3(
+      root,
+      workspace,
+      receipt,
+      { sourceDiscovery: true }
+    ),
+  };
 }
 
 /** Verify exact receipt-bound bytes without running TypeScript semantic analysis. */
@@ -1477,13 +1548,9 @@ async function verifyConventionBuildReceiptWithIdentity(
   const workspace = await workspaceRoot(root);
   const { receipt } = await readConventionCheckReceipt(root);
   if (receipt.schemaVersion === 3) {
-    return verifyConventionBuildReceiptV3(
-      root,
-      workspace,
-      receipt,
-      undefined,
-      session
-    );
+    return verifyConventionBuildReceiptV3(root, workspace, receipt, {
+      session,
+    });
   }
   const loaded = await loadConventionCatalog(root);
   await Promise.all([

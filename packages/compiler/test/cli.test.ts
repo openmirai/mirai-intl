@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { delimiter, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -82,6 +83,22 @@ function runCliWithEnvironment(
 
 function runCli(root: string, ...arguments_: ReadonlyArray<string>) {
   return runCliWithEnvironment(root, process.env, ...arguments_);
+}
+
+/** Like runCli, but resolves when the CLI exits so several can run at once. */
+function runCliConcurrently(
+  root: string,
+  ...arguments_: ReadonlyArray<string>
+) {
+  return promisify(execFile)(process.execPath, [tsx, cli, ...arguments_], {
+    cwd: root,
+    encoding: "utf8",
+    env: process.env,
+    killSignal: "SIGKILL",
+    maxBuffer: 4 * 1024 * 1024,
+    shell: false,
+    timeout: 60_000,
+  });
 }
 
 async function requireBuiltCli(): Promise<string> {
@@ -308,6 +325,7 @@ describe("convention-only CLI", () => {
             { findings: 0, path: "apps/auth", valid: true },
             { findings: 0, path: "packages/i18n", valid: true },
           ],
+          authorizationReuses: 0,
           checkerProjects: 0,
           ownerProjects: 2,
           semanticAuthorizationRuns: 1,
@@ -344,6 +362,76 @@ describe("convention-only CLI", () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 90_000);
+
+  it("reuses unchanged workspace catalogs and re-authorizes only a changed one", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const shared = join(workspace, "packages/i18n");
+    const app = join(workspace, "apps/auth");
+    try {
+      await writeFile(
+        join(workspace, "pnpm-workspace.yaml"),
+        "packages:\n  - packages/*\n  - apps/*\n"
+      );
+      await writeFile(
+        join(workspace, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\nimporters:\n\n  packages/i18n:\n    dependencies: {}\n\n  apps/auth:\n    dependencies: {}\n"
+      );
+      for (const [root, name] of [
+        [shared, "@example/shared-i18n"],
+        [app, "@example/auth"],
+      ] as const) {
+        await writeConventionApp(root);
+        await writeJson(join(root, "package.json"), {
+          dependencies: { vite: "8.1.4" },
+          name,
+          version: "1.0.0",
+        });
+        await writeFile(join(root, "src/page.ts"), "export const page = 1;\n");
+        expect(runCli(root, "generate").status).toBe(0);
+      }
+
+      // Two commit hooks at once: each authorizes, neither tears the other's record.
+      const hooks = await Promise.all([
+        runCliConcurrently(workspace, "check", "--workspace", "--format=json"),
+        runCliConcurrently(workspace, "check", "--workspace", "--format=json"),
+      ]);
+      for (const hook of hooks) {
+        expect(JSON.parse(hook.stdout)).toMatchObject({ success: true });
+      }
+
+      const unchanged = runCli(workspace, "check", "--workspace", "--no-color");
+      expect(unchanged.status, `${unchanged.stdout}${unchanged.stderr}`).toBe(
+        0
+      );
+      expect(unchanged.stdout).toBe(
+        "mirai-intl check ✓ 2 catalogs · 1 authorization · 0 files · 2 reused\n"
+      );
+
+      await writeFile(join(app, "src/page.ts"), "export const page = 2;\n");
+      const changed = runCli(
+        workspace,
+        "check",
+        "--workspace",
+        "--format=json"
+      );
+      expect(changed.status, `${changed.stdout}${changed.stderr}`).toBe(0);
+      expect(JSON.parse(changed.stdout).summary).toEqual({
+        authorizationReuses: 1,
+        catalogCount: 2,
+        checkerProjects: 0,
+        ownerProjects: 2,
+        projects: [
+          { findings: 0, path: "apps/auth", valid: true },
+          { findings: 0, path: "packages/i18n", valid: true },
+        ],
+        semanticAuthorizationRuns: 1,
+        semanticFilesAnalyzed: 1,
+        valid: true,
+      });
+    } finally {
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 180_000);
 
   it.each([
     {
@@ -600,6 +688,7 @@ describe("convention-only CLI", () => {
         summary: {
           catalogCount: 1,
           projects: [{ findings: 2, path: "apps/auth", valid: false }],
+          authorizationReuses: 0,
           checkerProjects: 0,
           ownerProjects: 1,
           semanticAuthorizationRuns: 1,
