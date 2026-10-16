@@ -45,7 +45,10 @@ import {
   loadConventionCatalog,
   verifyLoadedConventionCatalog,
 } from "./catalog";
-import { verifyCommittedArtifactSnapshot } from "./writer";
+import {
+  isAbandonedPublicationLockEntry,
+  verifyCommittedArtifactSnapshot,
+} from "./writer";
 import {
   parseCanonicalCatalogCurrentPointer,
   parseCanonicalCatalogGenerationReceipt,
@@ -1161,14 +1164,23 @@ async function verifyConventionBuildReceiptV3(
     "index.ts",
   ]);
   const verifyGeneratedInventory = async () => {
-    for (const entry of await readdir(loaded.outputRoot, {
-      withFileTypes: true,
-    })) {
-      if (!allowed.has(entry.name) || entry.isSymbolicLink()) {
-        throw new Error(
-          `Mirai Intl generated catalog contains unexplained state: ${entry.name}`
-        );
-      }
+    const unexplained = (
+      await readdir(loaded.outputRoot, { withFileTypes: true })
+    ).filter((entry) => !allowed.has(entry.name) || entry.isSymbolicLink());
+    // A dead publisher's lock is no catalog state; a live owner's is a
+    // publication in progress. Verification repairs neither.
+    const abandoned = await Promise.all(
+      unexplained.map((entry) =>
+        transferredGeneratedRoot === undefined && entry.isFile()
+          ? isAbandonedPublicationLockEntry(loaded.outputRoot, entry.name)
+          : false
+      )
+    );
+    const entry = unexplained.find((_, index) => !abandoned[index]);
+    if (entry !== undefined) {
+      throw new Error(
+        `Mirai Intl generated catalog contains unexplained state: ${entry.name}`
+      );
     }
   };
   await verifyGeneratedInventory();

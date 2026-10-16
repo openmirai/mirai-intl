@@ -251,6 +251,40 @@ it.each([
   60_000
 );
 
+it("accepts a dead publisher's lock without repairing it", async () => {
+  const root = await fixture();
+  const lock = join(root, "src/i18n/generated/.publish.lock");
+  const deadOwnerLock = `${JSON.stringify({
+    acquiredAtMs: 0,
+    ownerToken: "killed-owner",
+    pid: 999_999_999,
+    processStartedAtMs: 0,
+    schemaVersion: 1,
+  })}\n`;
+  await writeFile(lock, deadOwnerLock);
+  await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
+    verifiedCatalogs: 1,
+  });
+  expect(await readFile(lock, "utf8")).toBe(deadOwnerLock);
+}, 60_000);
+
+it("rejects a live publisher's lock without repairing it", async () => {
+  const root = await fixture();
+  const lock = join(root, "src/i18n/generated/.publish.lock");
+  const liveOwnerLock = `${JSON.stringify({
+    acquiredAtMs: Date.now(),
+    ownerToken: "live-owner",
+    pid: process.ppid,
+    processStartedAtMs: 0,
+    schemaVersion: 1,
+  })}\n`;
+  await writeFile(lock, liveOwnerLock);
+  await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+    "Mirai Intl generated catalog contains unexplained state: .publish.lock"
+  );
+  expect(await readFile(lock, "utf8")).toBe(liveOwnerLock);
+}, 60_000);
+
 it("rejects an omitted source even when all remaining files are unchanged", async () => {
   const root = await fixture();
   await rm(join(root, "src/page.ts"));

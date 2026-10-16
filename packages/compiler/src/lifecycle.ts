@@ -23,6 +23,7 @@ import {
   parseCanonicalCatalogPublicationJournal,
 } from "./generation-snapshot";
 import type { MiraiIntlTransformOptions } from "./transform";
+import { recoverAbandonedPublicationLock } from "./writer";
 
 export type GeneratedCatalogState = Readonly<{
   changed: boolean;
@@ -245,6 +246,11 @@ async function reusePublishedGeneration(
     generatedRoot
   );
 
+  // A publication killed mid-flight leaves its lock behind. Recover a dead
+  // owner's lock state the way the writer does before judging the root; a live
+  // owner's lock stays and is refused below, and an interrupted journal goes to
+  // writer recovery.
+  await recoverAbandonedPublicationLock(canonicalGeneratedRoot);
   const topLevel = (
     await readdir(generatedRoot, { withFileTypes: true })
   ).toSorted((left, right) => compareCanonicalStrings(left.name, right.name));
