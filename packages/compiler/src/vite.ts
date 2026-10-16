@@ -59,6 +59,7 @@ type MiraiIntlViteWatcher = Readonly<{
 type MiraiIntlViteServer = Readonly<{
   config: Readonly<{
     logger: Readonly<{ error(message: string): void }>;
+    server?: Readonly<{ watch?: unknown }>;
   }>;
   restart(): Promise<void>;
   watcher: MiraiIntlViteWatcher;
@@ -339,10 +340,13 @@ export function miraiIntlVite(
         }
       };
       // Discovery from buildStart is already available for fixtures; app boot
-      // defers discovery and attaches watchers once it resolves.
+      // defers discovery and attaches watchers once it resolves. A server
+      // without a file watcher (`server.watch: null`, as in `vitest run`) gets
+      // no deferred walk: it would only feed the watcher, and nothing waits for
+      // it, so it would hold the process open after its last test.
       if (localeRoots.length > 0) {
         addDevelopmentWatchInputs();
-      } else {
+      } else if (server.config.server?.watch !== null) {
         void ensureDiscovery().then(addDevelopmentWatchInputs);
       }
       server.watcher.on("add", requireRestart);
