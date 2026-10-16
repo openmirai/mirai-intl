@@ -945,7 +945,42 @@ async function releasePublicationLock(
   await rm(lockPath);
 }
 
+// Publications of one output root in this process take turns in memory. A waiting
+// publication then never polls the generated root and never competes with the lock
+// owner for the I/O thread pool; the file lock still decides between processes.
+const publicationTurns = new Map<string, Promise<void>>();
+
 async function withPublicationLock<Value>(
+  root: string,
+  outputRoot: string,
+  operation: (ownerToken: string) => Promise<Value>
+): Promise<Value> {
+  const previous = publicationTurns.get(outputRoot) ?? Promise.resolve();
+  let finishTurn = (): void => undefined;
+  const turn = new Promise<void>((resolve) => {
+    finishTurn = resolve;
+  });
+  const queue = previous.then(() => turn);
+  publicationTurns.set(outputRoot, queue);
+  try {
+    await previous;
+    return await withPublicationFileLock(root, outputRoot, operation);
+  } finally {
+    finishTurn();
+    if (publicationTurns.get(outputRoot) === queue) {
+      publicationTurns.delete(outputRoot);
+    }
+  }
+}
+
+async function waitBeforePublicationLockRetry(attempt: number): Promise<void> {
+  if (attempt === publicationLockAttempts - 1) {
+    throw new Error("Unable to acquire generated catalog publication lock");
+  }
+  await delay(publicationLockRetryMs);
+}
+
+async function withPublicationFileLock<Value>(
   root: string,
   outputRoot: string,
   operation: (ownerToken: string) => Promise<Value>
@@ -972,10 +1007,14 @@ async function withPublicationLock<Value>(
   for (let attempt = 0; attempt < publicationLockAttempts; attempt += 1) {
     await canonicalOutputRoot(root, outputRoot);
     if (!(await recoverAbandonedRecoveryClaim(outputRoot, recoveryPath))) {
-      if (attempt === publicationLockAttempts - 1) {
-        throw new Error("Unable to acquire generated catalog publication lock");
-      }
-      await delay(publicationLockRetryMs);
+      await waitBeforePublicationLockRetry(attempt);
+      continue;
+    }
+    // While a live owner holds the lock, wait by reading it only: a candidate
+    // would cost a write, an fsync and a link in the directory being published.
+    const owner = await publicationLockSnapshot(outputRoot, lockPath);
+    if (owner !== undefined && !stalePublicationLock(owner)) {
+      await waitBeforePublicationLockRetry(attempt);
       continue;
     }
     acquired = await installPublicationLock(
@@ -991,10 +1030,7 @@ async function withPublicationLock<Value>(
     if (await recoverStalePublicationLock(outputRoot, lockPath)) {
       continue;
     }
-    if (attempt === publicationLockAttempts - 1) {
-      throw new Error("Unable to acquire generated catalog publication lock");
-    }
-    await delay(publicationLockRetryMs);
+    await waitBeforePublicationLockRetry(attempt);
   }
   if (!acquired) {
     throw new Error("Unable to acquire generated catalog publication lock");
