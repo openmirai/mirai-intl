@@ -122,6 +122,10 @@ const publicationLockAttempts = 1_000;
 const publicationLockRetryMs = 10;
 const publicationRecoveryClaimStaleAfterMs = 5_000;
 const publicationLockStaleAfterMs = 30_000;
+const publicationLockName = ".publish.lock";
+const publicationRecoveryClaimName = `${publicationLockName}.recovering`;
+const publicationLockCandidatePattern =
+  /^\.publish\.lock\.[\da-f-]+\.candidate$/u;
 const processStartedAtMs = Math.round(Date.now() - process.uptime() * 1_000);
 const emptyPublicationLockRecoveryHooks: PublicationLockRecoveryHooks =
   Object.freeze({});
@@ -752,11 +756,96 @@ async function recoverAbandonedRecoveryClaim(
   if (claim === undefined) {
     return true;
   }
-  if (Date.now() - claim.ctimeMs < publicationRecoveryClaimStaleAfterMs) {
+  if (!abandonedRecoveryClaim(claim)) {
     return false;
   }
   await removePublicationLockIfOwned(recoveryPath, claim);
   return !(await recoveryClaimExists(recoveryPath));
+}
+
+/** A recovery claim outlives a recovery only when its recoverer is gone. */
+function abandonedRecoveryClaim(claim: PublicationLockSnapshot): boolean {
+  return Date.now() - claim.ctimeMs >= publicationRecoveryClaimStaleAfterMs;
+}
+
+function isPublicationLockEntryName(name: string): boolean {
+  return (
+    name === publicationLockName ||
+    name === publicationRecoveryClaimName ||
+    publicationLockCandidatePattern.test(name)
+  );
+}
+
+/**
+ * Whether a publication-lock entry of the generated root was left by an owner
+ * that is gone: a lock or lock candidate whose owner process is dead, or a
+ * recovery claim older than any recovery takes. These are the rules the writer
+ * recovers by; a live owner's entry is never abandoned. Read-only, for
+ * verifiers, which never repair.
+ */
+export async function isAbandonedPublicationLockEntry(
+  outputRoot: string,
+  name: string
+): Promise<boolean> {
+  if (!isPublicationLockEntryName(name)) {
+    return false;
+  }
+  const root = await realpath(outputRoot);
+  const recoveryClaim = name === publicationRecoveryClaimName;
+  const snapshot = await publicationLockSnapshot(
+    root,
+    join(root, name),
+    recoveryClaim
+      ? "Generated catalog publication recovery claim"
+      : "Generated catalog publication lock"
+  );
+  if (snapshot === undefined) {
+    return false;
+  }
+  return recoveryClaim
+    ? abandonedRecoveryClaim(snapshot)
+    : stalePublicationLock(snapshot);
+}
+
+/**
+ * Clear the publication-lock state a killed publisher left in the generated
+ * root (an abandoned recovery claim, a lock whose owner is dead, dead owners'
+ * lock candidates) through the writer's own recovery, so a publication killed
+ * mid-flight never reads as unexplained state. A live owner's state stays for
+ * the caller to refuse; an interrupted journal stays for the next publication
+ * to recover under the lock.
+ */
+export async function recoverAbandonedPublicationLock(
+  outputRoot: string
+): Promise<void> {
+  const root = await realpath(outputRoot);
+  const names = (await readdir(root, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && isPublicationLockEntryName(entry.name))
+    .map((entry) => entry.name);
+  if (
+    names.length === 0 ||
+    !(await recoverAbandonedRecoveryClaim(
+      root,
+      join(root, publicationRecoveryClaimName)
+    ))
+  ) {
+    return;
+  }
+  await recoverStalePublicationLock(root, join(root, publicationLockName));
+  for (const name of names) {
+    if (!publicationLockCandidatePattern.test(name)) {
+      continue;
+    }
+    const path = join(root, name);
+    const candidate = await publicationLockSnapshot(
+      root,
+      path,
+      "Generated catalog publication lock candidate"
+    );
+    if (candidate !== undefined && stalePublicationLock(candidate)) {
+      await removePublicationLockIfOwned(path, candidate);
+    }
+  }
 }
 
 async function removePublicationLockIfOwned(
@@ -784,7 +873,7 @@ async function installPublicationLock(
 ): Promise<boolean> {
   const candidatePath = join(
     outputRoot,
-    `.publish.lock.${ownerToken}.candidate`
+    `${publicationLockName}.${ownerToken}.candidate`
   );
   const handle = await open(candidatePath, "wx", 0o600);
   let accepted = false;
@@ -863,8 +952,8 @@ async function withPublicationLock<Value>(
 ): Promise<Value> {
   await canonicalOutputRoot(root, outputRoot);
   await assertConfinedDirectory(outputRoot, root, "Generated output root");
-  const lockPath = join(outputRoot, ".publish.lock");
-  const recoveryPath = `${lockPath}.recovering`;
+  const lockPath = join(outputRoot, publicationLockName);
+  const recoveryPath = join(outputRoot, publicationRecoveryClaimName);
   if (!isWithin(outputRoot, lockPath) || !isWithin(outputRoot, recoveryPath)) {
     throw new Error(
       "Generated catalog publication lock escapes the generated output root"
@@ -936,6 +1025,42 @@ type PublicationJournal = CatalogPublicationJournalV1;
 const publicationDirectoryName = ".catalog-publication";
 const journalFileName = "journal.v1.json";
 const receiptFileName = "catalog-generation-receipt.v1.json";
+/** The control files replaceTextFile writes through a temporary sibling. */
+const replacedControlNames: ReadonlySet<string> = new Set([
+  "catalog.lock.json",
+  "current.json",
+  "index.ts",
+  journalFileName,
+  receiptFileName,
+]);
+const replacementTemporaryPattern =
+  /^\.(.+)\.[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\.tmp$/u;
+
+/**
+ * Whether an entry is the temporary sibling a control-file replacement writes
+ * before its rename. A publisher killed in between leaves it behind. It holds
+ * no state: the file it would have replaced and the journal still decide.
+ */
+export function isControlReplacementTemporary(name: string): boolean {
+  const control = replacementTemporaryPattern.exec(name)?.[1];
+  return control !== undefined && replacedControlNames.has(control);
+}
+
+/** Only a publication holding the lock may call this: no live owner remains. */
+async function removeAbandonedReplacementTemporaries(
+  directory: string
+): Promise<void> {
+  const abandoned = (await readdir(directory, { withFileTypes: true })).filter(
+    (entry) => entry.isFile() && isControlReplacementTemporary(entry.name)
+  );
+  if (abandoned.length > 0) {
+    await Promise.all(
+      abandoned.map((entry) => rm(join(directory, entry.name)))
+    );
+    await syncDirectory(directory);
+  }
+}
+
 function assertSha256(value: string, label: string): asserts value is Sha256 {
   if (!/^sha256:[\da-f]{64}$/u.test(value)) {
     throw new Error(`${label} must be a canonical SHA-256 identity`);
@@ -2195,6 +2320,10 @@ async function runPublication(
     await mkdir(publicationRoot);
     await syncDirectory(root);
   }
+  // Under the lock no replacement is in flight: a temporary sibling left here
+  // is a killed publisher's, never renamed into place.
+  await removeAbandonedReplacementTemporaries(outputRoot);
+  await removeAbandonedReplacementTemporaries(publicationRoot);
 
   let journal = await readJournal(outputRoot, publicationRoot);
   await assertPublicationArea(outputRoot, publicationRoot, journal);

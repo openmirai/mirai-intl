@@ -251,6 +251,53 @@ it.each([
   60_000
 );
 
+it("accepts a dead publisher's lock without repairing it", async () => {
+  const root = await fixture();
+  const lock = join(root, "src/i18n/generated/.publish.lock");
+  const deadOwnerLock = `${JSON.stringify({
+    acquiredAtMs: 0,
+    ownerToken: "killed-owner",
+    pid: 999_999_999,
+    processStartedAtMs: 0,
+    schemaVersion: 1,
+  })}\n`;
+  await writeFile(lock, deadOwnerLock);
+  await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
+    verifiedCatalogs: 1,
+  });
+  expect(await readFile(lock, "utf8")).toBe(deadOwnerLock);
+}, 60_000);
+
+it("accepts a control replacement a killed publisher never renamed without repairing it", async () => {
+  const root = await fixture();
+  const temporary = join(
+    root,
+    "src/i18n/generated/.current.json.6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f.tmp"
+  );
+  await writeFile(temporary, '{"contentHash":');
+  await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
+    verifiedCatalogs: 1,
+  });
+  expect(await readFile(temporary, "utf8")).toBe('{"contentHash":');
+}, 60_000);
+
+it("rejects a live publisher's lock without repairing it", async () => {
+  const root = await fixture();
+  const lock = join(root, "src/i18n/generated/.publish.lock");
+  const liveOwnerLock = `${JSON.stringify({
+    acquiredAtMs: Date.now(),
+    ownerToken: "live-owner",
+    pid: process.ppid,
+    processStartedAtMs: 0,
+    schemaVersion: 1,
+  })}\n`;
+  await writeFile(lock, liveOwnerLock);
+  await expect(verifyConventionBuildReceipt(root)).rejects.toThrow(
+    "Mirai Intl generated catalog contains unexplained state: .publish.lock"
+  );
+  expect(await readFile(lock, "utf8")).toBe(liveOwnerLock);
+}, 60_000);
+
 it("rejects an omitted source even when all remaining files are unchanged", async () => {
   const root = await fixture();
   await rm(join(root, "src/page.ts"));

@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
 } from "node:fs";
+import type { Dirent } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -23,6 +24,10 @@ import {
   parseCanonicalCatalogPublicationJournal,
 } from "./generation-snapshot";
 import type { MiraiIntlTransformOptions } from "./transform";
+import {
+  isControlReplacementTemporary,
+  recoverAbandonedPublicationLock,
+} from "./writer";
 
 export type GeneratedCatalogState = Readonly<{
   changed: boolean;
@@ -171,6 +176,14 @@ async function assertGeneratedRootConfinement(
   return canonicalGeneratedRoot;
 }
 
+/**
+ * A control-file replacement a killed publisher never renamed holds no state;
+ * the next publication removes it under the lock.
+ */
+function holdsGeneratedState(entry: Dirent): boolean {
+  return !(entry.isFile() && isControlReplacementTemporary(entry.name));
+}
+
 async function hasRecoverablePublicationJournal(
   generatedRoot: string
 ): Promise<boolean> {
@@ -184,7 +197,9 @@ async function hasRecoverablePublicationJournal(
       "Generated publication staging area is not a regular directory"
     );
   }
-  const entries = await readdir(publicationRoot, { withFileTypes: true });
+  const entries = (
+    await readdir(publicationRoot, { withFileTypes: true })
+  ).filter(holdsGeneratedState);
   const journalKind = await pathKind(join(publicationRoot, "journal.v1.json"));
   if (journalKind === "missing") {
     if (entries.length === 0) {
@@ -245,9 +260,14 @@ async function reusePublishedGeneration(
     generatedRoot
   );
 
-  const topLevel = (
-    await readdir(generatedRoot, { withFileTypes: true })
-  ).toSorted((left, right) => compareCanonicalStrings(left.name, right.name));
+  // A publication killed mid-flight leaves its lock behind. Recover a dead
+  // owner's lock state the way the writer does before judging the root; a live
+  // owner's lock stays and is refused below, and an interrupted journal goes to
+  // writer recovery.
+  await recoverAbandonedPublicationLock(canonicalGeneratedRoot);
+  const topLevel = (await readdir(generatedRoot, { withFileTypes: true }))
+    .filter(holdsGeneratedState)
+    .toSorted((left, right) => compareCanonicalStrings(left.name, right.name));
   if (topLevel.length === 0) {
     return undefined;
   }
