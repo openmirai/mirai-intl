@@ -1835,7 +1835,7 @@ async function collectEnvironment(
 
 /** @internal Preserve fail-closed lockfile/workspace membership validation. */
 export async function validateConventionEnvironment(
-  loaded: LoadedConventionCatalog
+  loaded: Pick<LoadedConventionCatalog, "repositoryRoot">
 ): Promise<void> {
   await pnpmLockfileEvidence(loaded.repositoryRoot);
 }

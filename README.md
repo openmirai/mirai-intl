@@ -349,6 +349,12 @@ pnpm exec mirai-intl check
 - `check` verifies catalog artifacts and authorizes the complete source tree.
   It catches unknown keys, widened dynamic strings, translator escapes, and
   high-confidence hardcoded user-facing text.
+- `check --workspace` authorizes every catalog of a pnpm workspace. A catalog
+  whose selected authority still verifies against every byte it binds, and
+  was authorized under the same Node.js runtime, is reused instead of analysed
+  again (`authorizationReuses` in the JSON summary). Any changed input, or a
+  missing or damaged reuse record, runs the full authorization; `prove` in a
+  package always runs it.
 - `catalog-check` validates catalog artifacts without replacing full source
   authorization.
 - `contract` prints the explicit compiler contract for tooling integrations.

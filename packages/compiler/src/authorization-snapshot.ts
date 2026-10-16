@@ -3358,6 +3358,32 @@ function parseClassifierBindingsV3(
       references.push(boundaryReference);
     }
   });
+  // Every binding of a candidate index reads the same projections: group them
+  // once per index (a binding per source used to regroup the whole index).
+  const projectionsByIndex = new Map<
+    Ref,
+    ReadonlyMap<Ref, ReadonlyArray<GeneratedFacadeProjectedRootV3>>
+  >();
+  const projectionsByBoundaryOf = (
+    candidateIndex: Ref,
+    selectedIndex: GeneratedFacadeCandidateIndexV3
+  ): ReadonlyMap<Ref, ReadonlyArray<GeneratedFacadeProjectedRootV3>> => {
+    const cached = projectionsByIndex.get(candidateIndex);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const grouped = new Map<Ref, Array<GeneratedFacadeProjectedRootV3>>();
+    for (const projection of selectedIndex.projections) {
+      const entries = grouped.get(projection.boundary);
+      if (entries === undefined) {
+        grouped.set(projection.boundary, [projection]);
+      } else {
+        entries.push(projection);
+      }
+    }
+    projectionsByIndex.set(candidateIndex, grouped);
+    return grouped;
+  };
   const bindings = array(value, "Intl check receipt V3.classifierBindings").map(
     (entry, index): IntlSourceClassifierBindingV3 => {
       const context = `Intl check receipt V3.classifierBindings[${index}]`;
@@ -3445,18 +3471,10 @@ function parseClassifierBindingsV3(
           "must reference this source boundary ledger"
         );
       }
-      const projectionsByBoundary = new Map<
-        Ref,
-        Array<GeneratedFacadeProjectedRootV3>
-      >();
-      for (const projection of selectedIndex.projections) {
-        const entries = projectionsByBoundary.get(projection.boundary);
-        if (entries === undefined) {
-          projectionsByBoundary.set(projection.boundary, [projection]);
-        } else {
-          entries.push(projection);
-        }
-      }
+      const projectionsByBoundary = projectionsByBoundaryOf(
+        candidateIndex,
+        selectedIndex
+      );
       for (const boundary of boundaries) {
         const projections = projectionsByBoundary.get(boundary) ?? [];
         if (projections.length === 0) {
@@ -5074,6 +5092,24 @@ function validateClassifierAuthorityIndexEvidence(
     ),
     `${context}.indexBinding.barePackageProofs`
   );
+  // First match per boundary, as the scans these replace returned.
+  const projectionByBoundary = new Map<Ref, GeneratedFacadeProjectedRootV3>();
+  for (const projection of receiptIndex.projections) {
+    if (!projectionByBoundary.has(projection.boundary)) {
+      projectionByBoundary.set(projection.boundary, projection);
+    }
+  }
+  const requestByBoundary = new Map<
+    Ref,
+    IntlSourceClassifierBindingV3["requests"][number]
+  >();
+  for (const binding of bindings) {
+    for (const request of binding.requests) {
+      if (!requestByBoundary.has(request.boundary)) {
+        requestByBoundary.set(request.boundary, request);
+      }
+    }
+  }
   for (const [proofIndex, proofValue] of portableBareProofs.entries()) {
     const proof = record(
       proofValue,
@@ -5086,9 +5122,7 @@ function validateClassifierAuthorityIndexEvidence(
     const boundaryReference =
       ownerBoundaryRefs[localBoundaryReference] ??
       fail(context, "bare-package proof references an unknown owner boundary");
-    const projection = receiptIndex.projections.find(
-      (entry) => entry.boundary === boundaryReference
-    );
+    const projection = projectionByBoundary.get(boundaryReference);
     if (
       projection === undefined ||
       proof.resolverFrontierHash !== resolverFrontierHash ||
@@ -5097,9 +5131,7 @@ function validateClassifierAuthorityIndexEvidence(
     ) {
       fail(context, "bare-package proof does not match receipt projection");
     }
-    const request = bindings
-      .flatMap((binding) => binding.requests)
-      .find((entry) => entry.boundary === boundaryReference);
+    const request = requestByBoundary.get(boundaryReference);
     if (request !== undefined) {
       const frontier = receipt.tables.frontiers[request.frontier];
       const expectedControlFiles =

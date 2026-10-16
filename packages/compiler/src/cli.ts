@@ -36,6 +36,7 @@ import type {
 import type {
   IntlBuildVerificationCountersV2,
   IntlBuildProofTargetV1,
+  IntlCheckReceipt,
   IntlSemanticAuthorizationObservationV2,
 } from "@openmirai/intl-abi";
 import {
@@ -125,22 +126,52 @@ function messageSummary(count: number | undefined): string {
 }
 
 function authorizationSummary(
-  counters: IntlSemanticAuthorizationObservationV2
+  counters: IntlSemanticAuthorizationObservationV2 &
+    Readonly<{ authorizationReuses?: number }>
 ): string {
-  return ` · ${counters.semanticAuthorizationRuns} authorization · ${counters.semanticFilesAnalyzed} files`;
+  const reused = counters.authorizationReuses ?? 0;
+  return ` · ${counters.semanticAuthorizationRuns} authorization · ${counters.semanticFilesAnalyzed} files${reused > 0 ? ` · ${reused} reused` : ""}`;
+}
+
+/** One workspace catalog's authorization, analysed now or reused unchanged. */
+type CatalogAuthorizationObservation = IntlSemanticAuthorizationObservationV2 &
+  Readonly<{
+    authorizationReuses: number;
+    checkerProjects: number;
+    ownerProjects: number;
+  }>;
+
+function catalogAuthorizationObservation(
+  receipt: IntlCheckReceipt,
+  reused: boolean
+): CatalogAuthorizationObservation {
+  return {
+    authorizationReuses: reused ? 1 : 0,
+    checkerProjects: receipt.counters.checkerProjects,
+    ownerProjects: receipt.counters.ownerProjects,
+    semanticAuthorizationRuns: reused
+      ? 0
+      : receipt.counters.semanticAuthorizationRuns,
+    semanticFilesAnalyzed: reused ? 0 : receipt.counters.semanticFilesAnalyzed,
+  };
 }
 
 function workspaceAuthorizationCounters(
   observations: ReadonlyArray<
     IntlSemanticAuthorizationObservationV2 &
       Readonly<{
+        authorizationReuses?: number;
         checkerProjects?: number;
         ownerProjects?: number;
       }>
   >
-): IntlSemanticAuthorizationObservationV2 &
-  Readonly<{ checkerProjects: number; ownerProjects: number }> {
+): CatalogAuthorizationObservation {
   return {
+    authorizationReuses: observations.reduce(
+      (total, observation) =>
+        total + (finiteNumber(observation.authorizationReuses) ?? 0),
+      0
+    ),
     checkerProjects: observations.reduce(
       (total, observation) =>
         total + (finiteNumber(observation.checkerProjects) ?? 0),
@@ -390,8 +421,7 @@ async function checkWorkspace(output: ReporterOptions): Promise<void> {
   const roots = await discoverWorkspaceCatalogs(workspaceRoot);
   const diagnostics: Array<CliDiagnostic> = [];
   const catalogs: Array<{
-    authorization?: IntlSemanticAuthorizationObservationV2 &
-      Readonly<{ checkerProjects: number; ownerProjects: number }>;
+    authorization?: CatalogAuthorizationObservation;
     diagnostics: Array<CliDiagnostic>;
     receipt?: unknown;
     report?: unknown;
@@ -580,8 +610,7 @@ async function authorizeWorkspaceCatalogChild(
   resourceLanes = 1,
   ioThreads = 1
 ): Promise<{
-  authorization?: IntlSemanticAuthorizationObservationV2 &
-    Readonly<{ checkerProjects: number; ownerProjects: number }>;
+  authorization?: CatalogAuthorizationObservation;
   diagnostics: Array<CliDiagnostic>;
   root: string;
 }> {
@@ -674,6 +703,7 @@ async function authorizeWorkspaceCatalogChild(
   const summary = childReport.summary ?? {};
   return {
     authorization: {
+      authorizationReuses: finiteNumber(summary.authorizationReuses) ?? 0,
       checkerProjects: finiteNumber(summary.checkerProjects) ?? 0,
       ownerProjects: finiteNumber(summary.ownerProjects) ?? 0,
       semanticAuthorizationRuns:
@@ -690,27 +720,19 @@ async function authorizeWorkspaceCatalogInProcess(
   workspaceRoot: string
 ): ReturnType<typeof authorizeWorkspaceCatalogChild> {
   const workspacePath = relative(workspaceRoot, root).split("\\").join("/");
-  const { authorizeConventionCatalog, IntlSourceAuthorizationError } =
+  const { authorizeWorkspaceConventionCatalog, IntlSourceAuthorizationError } =
     await import("./proof");
   try {
-    const { receipt } = await authorizeConventionCatalog(root, {
-      collectEnvironment: false,
-      validateEnvironment: true,
-    });
+    const { receipt, reused } = await authorizeWorkspaceConventionCatalog(root);
     return {
-      authorization: {
-        checkerProjects: receipt.counters.checkerProjects,
-        ownerProjects: receipt.counters.ownerProjects,
-        semanticAuthorizationRuns: receipt.counters.semanticAuthorizationRuns,
-        semanticFilesAnalyzed: receipt.counters.semanticFilesAnalyzed,
-      },
+      authorization: catalogAuthorizationObservation(receipt, reused),
       diagnostics: [],
       root: workspacePath,
     };
   } catch (error) {
     if (error instanceof IntlSourceAuthorizationError) {
       return {
-        authorization: error.observation,
+        authorization: { ...error.observation, authorizationReuses: 0 },
         diagnostics: sourceDiagnostics(error.diagnostics, root).map(
           (diagnostic) => ({
             ...diagnostic,
@@ -907,6 +929,7 @@ function reportSummary(
     summary.changed = value.changed;
   }
   if (command === "check" || command === "prove") {
+    copyNumber("authorizationReuses", authorization);
     copyNumber("semanticAuthorizationRuns", authorization);
     copyNumber("semanticFilesAnalyzed", authorization);
     copyNumber("ownerProjects", authorization);
@@ -1126,6 +1149,22 @@ async function main(): Promise<void> {
       reporter,
       `${summary.catalogId} · ${summary.locales}${messageSummary(
         summary.messageCount
+      )}`
+    );
+    return;
+  }
+  if (command === "prove" && process.env.MIRAI_INTL_WORKSPACE_CHILD === "1") {
+    const { authorizeWorkspaceConventionCatalog } = await import("./proof");
+    const { receipt, reused } = await authorizeWorkspaceConventionCatalog(
+      process.cwd()
+    );
+    const authorization = catalogAuthorizationObservation(receipt, reused);
+    await report(
+      command,
+      { authorization, receipt },
+      reporter,
+      `${receipt.sources.length} source${receipt.sources.length === 1 ? "" : "s"} authorized${authorizationSummary(
+        authorization
       )}`
     );
     return;
