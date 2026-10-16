@@ -268,6 +268,19 @@ it("accepts a dead publisher's lock without repairing it", async () => {
   expect(await readFile(lock, "utf8")).toBe(deadOwnerLock);
 }, 60_000);
 
+it("accepts a control replacement a killed publisher never renamed without repairing it", async () => {
+  const root = await fixture();
+  const temporary = join(
+    root,
+    "src/i18n/generated/.current.json.6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f.tmp"
+  );
+  await writeFile(temporary, '{"contentHash":');
+  await expect(verifyConventionBuildReceipt(root)).resolves.toMatchObject({
+    verifiedCatalogs: 1,
+  });
+  expect(await readFile(temporary, "utf8")).toBe('{"contentHash":');
+}, 60_000);
+
 it("rejects a live publisher's lock without repairing it", async () => {
   const root = await fixture();
   const lock = join(root, "src/i18n/generated/.publish.lock");

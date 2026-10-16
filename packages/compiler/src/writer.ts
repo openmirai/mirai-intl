@@ -1025,6 +1025,42 @@ type PublicationJournal = CatalogPublicationJournalV1;
 const publicationDirectoryName = ".catalog-publication";
 const journalFileName = "journal.v1.json";
 const receiptFileName = "catalog-generation-receipt.v1.json";
+/** The control files replaceTextFile writes through a temporary sibling. */
+const replacedControlNames: ReadonlySet<string> = new Set([
+  "catalog.lock.json",
+  "current.json",
+  "index.ts",
+  journalFileName,
+  receiptFileName,
+]);
+const replacementTemporaryPattern =
+  /^\.(.+)\.[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\.tmp$/u;
+
+/**
+ * Whether an entry is the temporary sibling a control-file replacement writes
+ * before its rename. A publisher killed in between leaves it behind. It holds
+ * no state: the file it would have replaced and the journal still decide.
+ */
+export function isControlReplacementTemporary(name: string): boolean {
+  const control = replacementTemporaryPattern.exec(name)?.[1];
+  return control !== undefined && replacedControlNames.has(control);
+}
+
+/** Only a publication holding the lock may call this: no live owner remains. */
+async function removeAbandonedReplacementTemporaries(
+  directory: string
+): Promise<void> {
+  const abandoned = (await readdir(directory, { withFileTypes: true })).filter(
+    (entry) => entry.isFile() && isControlReplacementTemporary(entry.name)
+  );
+  if (abandoned.length > 0) {
+    await Promise.all(
+      abandoned.map((entry) => rm(join(directory, entry.name)))
+    );
+    await syncDirectory(directory);
+  }
+}
+
 function assertSha256(value: string, label: string): asserts value is Sha256 {
   if (!/^sha256:[\da-f]{64}$/u.test(value)) {
     throw new Error(`${label} must be a canonical SHA-256 identity`);
@@ -2284,6 +2320,10 @@ async function runPublication(
     await mkdir(publicationRoot);
     await syncDirectory(root);
   }
+  // Under the lock no replacement is in flight: a temporary sibling left here
+  // is a killed publisher's, never renamed into place.
+  await removeAbandonedReplacementTemporaries(outputRoot);
+  await removeAbandonedReplacementTemporaries(publicationRoot);
 
   let journal = await readJournal(outputRoot, publicationRoot);
   await assertPublicationArea(outputRoot, publicationRoot, journal);

@@ -130,6 +130,9 @@ const deadOwnerLock = `${JSON.stringify({
   schemaVersion: 1,
 })}\n`;
 
+/** A replacement's temporary sibling, as a publisher killed before its rename leaves it. */
+const replacementSuffix = "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f.tmp";
+
 async function publicationLockEntries(
   generated: string
 ): Promise<Array<string>> {
@@ -313,6 +316,87 @@ describe("catalog generation receipt fast path", () => {
       await rm(container, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("ignores a control replacement a killed publisher never renamed until the next publication removes it", async () => {
+    const { container, root } = await conventionApp();
+    const generated = join(root, "src/i18n/generated");
+    const temporary = `.current.json.${replacementSuffix}`;
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      await writeFile(join(generated, temporary), '{"contentHash":');
+
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: false,
+      });
+      await writeFile(
+        join(root, "src/locales/global/en.json"),
+        `${JSON.stringify({ appName: "Changed input {edition}" })}\n`
+      );
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: true,
+      });
+      expect(await readdir(generated)).not.toContain(temporary);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it.each([
+    ["pointer", `.current.json.${replacementSuffix}`],
+    ["journal", `.catalog-publication/.journal.v1.json.${replacementSuffix}`],
+  ])(
+    "recovers a publication killed while replacing its %s",
+    async (_replaced, temporary) => {
+      const { container, root } = await conventionApp();
+      const generated = join(root, "src/i18n/generated");
+      try {
+        instrumentation.interruptAfterState = "RECEIPT_INSTALLED";
+        await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+          "Injected lifecycle RECEIPT_INSTALLED interruption"
+        );
+        await writeFile(join(generated, ".publish.lock"), deadOwnerLock);
+        await writeFile(join(generated, temporary), "{");
+
+        await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+          changed: true,
+        });
+        expect(
+          (await readdir(generated)).filter((name) => name.startsWith("."))
+        ).toEqual([]);
+        await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+          changed: false,
+        });
+      } finally {
+        await rm(container, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
+  it.each([
+    ".current.json.not-a-replacement.tmp",
+    `.payload.js.${replacementSuffix}`,
+  ])(
+    "still refuses unexplained generated state %s",
+    async (name) => {
+      const { container, root } = await conventionApp();
+      const generated = join(root, "src/i18n/generated");
+      try {
+        await ensureMiraiIntlCatalog({ root });
+        await writeFile(join(generated, name), "{");
+
+        await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
+          `Generated catalog contains unexplained state ${name}`
+        );
+        await expect(readFile(join(generated, name), "utf8")).resolves.toBe(
+          "{"
+        );
+      } finally {
+        await rm(container, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
 
   it("still refuses a publication lock whose owner is alive", async () => {
     const { container, root } = await conventionApp();

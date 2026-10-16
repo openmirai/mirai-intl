@@ -47,6 +47,7 @@ import {
 } from "./catalog";
 import {
   isAbandonedPublicationLockEntry,
+  isControlReplacementTemporary,
   verifyCommittedArtifactSnapshot,
 } from "./writer";
 import {
@@ -1166,7 +1167,12 @@ async function verifyConventionBuildReceiptV3(
   const verifyGeneratedInventory = async () => {
     const unexplained = (
       await readdir(loaded.outputRoot, { withFileTypes: true })
-    ).filter((entry) => !allowed.has(entry.name) || entry.isSymbolicLink());
+    ).filter(
+      (entry) =>
+        (!allowed.has(entry.name) || entry.isSymbolicLink()) &&
+        // A replacement a killed publisher never renamed holds no state.
+        !(entry.isFile() && isControlReplacementTemporary(entry.name))
+    );
     // A dead publisher's lock is no catalog state; a live owner's is a
     // publication in progress. Verification repairs neither.
     const abandoned = await Promise.all(
