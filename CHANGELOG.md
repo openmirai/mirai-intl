@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.2](https://github.com/openmirai/mirai-intl/compare/v0.4.1...v0.4.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **compiler:** ignore a control replacement a killed publisher never renamed ([960d2b6](https://github.com/openmirai/mirai-intl/commit/960d2b64bd30c63e8a3f4f161b35cd1f55acf86b))
+* **compiler:** recover a killed publication's lock before judging generated state ([ab1c877](https://github.com/openmirai/mirai-intl/commit/ab1c877c8a5a329438e4179a13b2bba22581f7c7))
+* **compiler:** start no catalog walk for a Vite server without a file watcher ([600a94f](https://github.com/openmirai/mirai-intl/commit/600a94f01304fdc7d45f2fba5364a3fd68728e62))
+
+
+### Performance Improvements
+
+* **compiler:** group a candidate index's projections once when parsing a V3 receipt ([3ade71a](https://github.com/openmirai/mirai-intl/commit/3ade71a6bc2847999c3b10d85d3d403a2cadae9b))
+* **compiler:** let a waiting publication wait without polling the generated root ([e5e3936](https://github.com/openmirai/mirai-intl/commit/e5e393610e096c272b6d00fd69dbf043c263aefa))
+* **compiler:** reuse a catalog's verified authority in the workspace check ([52ddeda](https://github.com/openmirai/mirai-intl/commit/52ddedaa0a5dbedb79d98df23ecf7d68c7829b86))
+
 ## [0.4.1](https://github.com/openmirai/mirai-intl/compare/v0.4.0...v0.4.1) (2026-10-13)
 
 
