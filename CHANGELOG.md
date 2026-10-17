@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/openmirai/mirai-intl/compare/v0.4.3...v0.4.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* **intl-i18next:** take i18next as a peer and widen every peer range ([ab090cd](https://github.com/openmirai/mirai-intl/commit/ab090cd43802eef6b017ab8c1469016852871aa3))
+
 ## [0.4.3](https://github.com/openmirai/mirai-intl/compare/v0.4.2...v0.4.3) (2026-10-17)
 
 

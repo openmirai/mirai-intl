@@ -1,6 +1,6 @@
 {
   "name": "@openmirai/intl-i18next",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -29,15 +29,17 @@
   },
   "dependencies": {
     "@openmirai/intl-runtime": "workspace:*",
-    "i18next": "26.4.1",
-    "react-i18next": "17.0.13"
+    "react-i18next": "^17.0.13"
   },
   "devDependencies": {
-    "react": "19.2.8"
+    "i18next": "26.4.7",
+    "i18next-icu": "2.5.0",
+    "react": "19.3.1"
   },
   "peerDependencies": {
-    "i18next-icu": "2.4.4",
-    "react": "19.2.7 || 19.2.8"
+    "i18next": "^26.3.6",
+    "i18next-icu": "^2.4.4",
+    "react": "^19.2.7"
   },
   "peerDependenciesMeta": {
     "i18next-icu": {
