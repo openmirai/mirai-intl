@@ -27,6 +27,7 @@ import type { MiraiIntlTransformOptions } from "./transform";
 import {
   isControlReplacementTemporary,
   recoverAbandonedPublicationLock,
+  waitForLivePublicationLockState,
 } from "./writer";
 
 export type GeneratedCatalogState = Readonly<{
@@ -260,11 +261,52 @@ async function reusePublishedGeneration(
     generatedRoot
   );
 
-  // A publication killed mid-flight leaves its lock behind. Recover a dead
-  // owner's lock state the way the writer does before judging the root; a live
-  // owner's lock stays and is refused below, and an interrupted journal goes to
-  // writer recovery.
-  await recoverAbandonedPublicationLock(canonicalGeneratedRoot);
+  // A publication in another process (a parallel hook, a dev server) holds the
+  // lock while it writes: wait for it the way a publication waits, then judge
+  // what it published. A publication killed mid-flight leaves its lock behind:
+  // recover a dead owner's lock state the way the writer does; an interrupted
+  // journal goes to writer recovery. A publication that takes the lock after
+  // the wait changes the root under judgment: wait for it and judge again. Any
+  // other failure is judged once more before it stands, since a publication
+  // may have changed the root and finished before the failure was seen; a real
+  // defect fails again. Waits share one budget and fail at its deadline.
+  let attempt = 0;
+  let judgedAgain = false;
+  for (;;) {
+    attempt = await waitForLivePublicationLockState(
+      canonicalGeneratedRoot,
+      attempt
+    );
+    await recoverAbandonedPublicationLock(canonicalGeneratedRoot);
+    try {
+      return await judgePublishedGeneration(
+        root,
+        generatedRoot,
+        canonicalGeneratedRoot
+      );
+    } catch (error) {
+      const waited = await waitForLivePublicationLockState(
+        canonicalGeneratedRoot,
+        attempt
+      );
+      if (waited === attempt) {
+        if (judgedAgain) {
+          throw error;
+        }
+        judgedAgain = true;
+      } else {
+        judgedAgain = false;
+      }
+      attempt = waited;
+    }
+  }
+}
+
+async function judgePublishedGeneration(
+  root: string,
+  generatedRoot: string,
+  canonicalGeneratedRoot: string
+): Promise<LoadedConventionCatalog | undefined> {
   const topLevel = (await readdir(generatedRoot, { withFileTypes: true }))
     .filter(holdsGeneratedState)
     .toSorted((left, right) => compareCanonicalStrings(left.name, right.name));

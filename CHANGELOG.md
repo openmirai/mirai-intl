@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/openmirai/mirai-intl/compare/v0.4.4...v0.4.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **compiler:** let ensure wait for a live publication lock instead of refusing it ([f246aa6](https://github.com/openmirai/mirai-intl/commit/f246aa6bc92ed38cb14920971755cc53023b0804))
+
 ## [0.4.4](https://github.com/openmirai/mirai-intl/compare/v0.4.3...v0.4.4) (2026-10-17)
 
 
