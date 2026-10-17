@@ -50,26 +50,42 @@ beforeEach(() => {
 it("lets publications in one process take turns instead of retrying the file lock", async () => {
   const root = await mkdtemp(join(tmpdir(), "mirai-intl-lock-wait-"));
   try {
+    const artifactSets = Array.from({ length: 6 }, (_, index) =>
+      index % 2 === 0 ? constants : precompiled
+    );
+    // A publication takes its turn after its own output-root checks, so
+    // concurrent calls reach the queue in whatever order those checks finish,
+    // not in call order. Each one finishes within its turn, so the order they
+    // finish in is the turn order, and the last turn's build is the one left.
+    const finished: Array<number> = [];
     const writes = await Promise.all(
-      Array.from({ length: 6 }, (_, index) =>
-        writeArtifactSet(root, index % 2 === 0 ? constants : precompiled)
-      )
+      artifactSets.map(async (artifacts, index) => {
+        const result = await writeArtifactSet(root, artifacts);
+        finished.push(index);
+        return result;
+      })
     );
 
     // One lock candidate per publication: a waiting publication never writes,
     // fsyncs and links a candidate while another one holds the lock.
     expect(lockCandidates.opened).toBe(writes.length);
-    const last = writes.at(-1);
-    if (!last) {
+    expect(writes[0]?.contentHash).not.toBe(writes[1]?.contentHash);
+    const lastTurn = finished.at(-1);
+    const last = lastTurn === undefined ? undefined : writes[lastTurn];
+    const lastArtifacts =
+      lastTurn === undefined ? undefined : artifactSets[lastTurn];
+    if (finished.length !== writes.length || !last || !lastArtifacts) {
       throw new Error("Concurrent writer evidence is incomplete");
     }
     await expect(readdir(join(root, "builds"))).resolves.toEqual([
       last.contentHash.slice(7),
     ]);
-    await expect(verifyArtifactSet(root, precompiled)).resolves.toMatchObject({
-      changed: false,
-      contentHash: last.contentHash,
-    });
+    await expect(verifyArtifactSet(root, lastArtifacts)).resolves.toMatchObject(
+      {
+        changed: false,
+        contentHash: last.contentHash,
+      }
+    );
   } finally {
     await rm(root, { force: true, recursive: true });
   }

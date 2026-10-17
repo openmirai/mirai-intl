@@ -19,6 +19,7 @@ import {
   canonicalHash,
   canonicalJson,
   compareCanonicalStrings,
+  createCanonicalJsonEncoder,
   sha256,
 } from "./canonical";
 import { composeCatalog } from "./compose";
@@ -297,24 +298,29 @@ function localeHashes(
   locales: ReadonlyArray<string>,
   messages: ReadonlyArray<RuntimeMessage>
 ): Readonly<Record<string, `sha256:${string}`>> {
+  // Every locale's hash input repeats each message's schemas, formatter ids
+  // and tags; one encoder encodes those shared structures once, not per locale.
+  const encode = createCanonicalJsonEncoder();
   return Object.fromEntries(
     locales.map((locale) => [
       locale,
-      canonicalHash(
-        messages.map((message) => ({
-          argumentSchema: message.argumentSchema,
-          formatterIds: message.formatterIds,
-          id: message.id,
-          kind: message.kind,
-          path: message.path,
-          payload:
-            message.kind === "value"
-              ? (message.localeValues?.[locale] ?? null)
-              : (message.localeNodes?.[locale] ?? []),
-          resultSchema: message.resultSchema,
-          tags: message.tags,
-          validatorId: message.validatorId,
-        }))
+      sha256(
+        encode(
+          messages.map((message) => ({
+            argumentSchema: message.argumentSchema,
+            formatterIds: message.formatterIds,
+            id: message.id,
+            kind: message.kind,
+            path: message.path,
+            payload:
+              message.kind === "value"
+                ? (message.localeValues?.[locale] ?? null)
+                : (message.localeNodes?.[locale] ?? []),
+            resultSchema: message.resultSchema,
+            tags: message.tags,
+            validatorId: message.validatorId,
+          }))
+        )
       ),
     ])
   );

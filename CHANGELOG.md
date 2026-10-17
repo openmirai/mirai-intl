@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/openmirai/mirai-intl/compare/v0.4.2...v0.4.3) (2026-10-17)
+
+
+### Performance Improvements
+
+* **compiler:** cut the canonical JSON and syntax-hash cost of an authorization ([6773136](https://github.com/openmirai/mirai-intl/commit/6773136623292ad464b7dcdea5635be670e2273b))
+
 ## [0.4.2](https://github.com/openmirai/mirai-intl/compare/v0.4.1...v0.4.2) (2026-10-16)
 
 
