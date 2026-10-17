@@ -597,26 +597,34 @@ const preparedCandidateSourceBindings = new WeakMap<
   PreparedCandidateSourceBinding
 >();
 
-function updateCandidateSyntaxHash(
-  hash: ReturnType<typeof createHash>,
-  node: ts.Node
-): void {
-  const tokenText =
-    !ts.isSourceFile(node) &&
-    "text" in node &&
-    typeof (node as Readonly<{ text?: unknown }>).text === "string"
-      ? (node as Readonly<{ text: string }>).text
-      : "";
-  hash.update(
-    `(${node.kind}:${node.pos}:${node.end}:${JSON.stringify(tokenText)}`
-  );
-  ts.forEachChild(node, (child) => updateCandidateSyntaxHash(hash, child));
-  hash.update(")");
-}
+/** Hash input buffered before one `update`: per-node updates cost more than hashing. */
+const candidateSyntaxHashChunk = 64 * 1024;
 
+/**
+ * The SHA-256 of `(kind:pos:end:"text"` … `)` for every node, depth first.
+ * Every piece is well-formed text (JSON.stringify escapes lone surrogates), so
+ * hashing the pieces in larger runs hashes exactly the same UTF-8 bytes.
+ */
 function candidateSyntaxHash(sourceFile: ts.SourceFile): `sha256:${string}` {
   const hash = createHash("sha256");
-  updateCandidateSyntaxHash(hash, sourceFile);
+  let pending = "";
+  const visit = (node: ts.Node): void => {
+    const tokenText =
+      !ts.isSourceFile(node) &&
+      "text" in node &&
+      typeof (node as Readonly<{ text?: unknown }>).text === "string"
+        ? (node as Readonly<{ text: string }>).text
+        : "";
+    pending += `(${node.kind}:${node.pos}:${node.end}:${JSON.stringify(tokenText)}`;
+    if (pending.length >= candidateSyntaxHashChunk) {
+      hash.update(pending);
+      pending = "";
+    }
+    ts.forEachChild(node, visit);
+    pending += ")";
+  };
+  visit(sourceFile);
+  hash.update(pending);
   return `sha256:${hash.digest("hex")}`;
 }
 

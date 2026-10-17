@@ -138,6 +138,63 @@ describe("classifier V3 candidate-index shadow", () => {
     ).rejects.toThrow("prepared classifier source AST mutated");
   });
 
+  it("refuses a prepared syntax tree mutated far past its first hashed chunk", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "mirai-intl-prepared-large-"))
+    );
+    const facade = join(root, "generated/index.ts");
+    const id = join(root, "source.ts");
+    // Thousands of declarations put the last token well past one 64 KiB run
+    // of syntax-hash input.
+    const source = `import "./generated";\n${Array.from(
+      { length: 4000 },
+      (_, index) => `export const value${index} = "été ${index}";\n`
+    ).join("")}`;
+    await write(join(root, "package.json"), '{"name":"prepared-large"}\n');
+    await write(facade, "export const value = 1;\n");
+    await write(id, source);
+    const options = {
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    } satisfies ts.CompilerOptions;
+    const checkpoint = (preparedSourceFile: ts.SourceFile) =>
+      buildMiraiIntlCandidateCheckpointShadow({
+        executionMode: "production-proof",
+        generatedFacadePath: facade,
+        options,
+        owner: "tsconfig.json",
+        sources: [{ id, preparedSourceFile, source }],
+        workspaceRoot: root,
+      });
+
+    await expect(
+      checkpoint(
+        createMiraiIntlPreparedCandidateSourceFile(id, source, options)
+      )
+    ).resolves.toBeDefined();
+
+    const mutated = createMiraiIntlPreparedCandidateSourceFile(
+      id,
+      source,
+      options
+    );
+    const last = mutated.statements.at(-1);
+    const declaration =
+      last && ts.isVariableStatement(last)
+        ? last.declarationList.declarations[0]
+        : undefined;
+    if (
+      !declaration?.initializer ||
+      !ts.isStringLiteral(declaration.initializer)
+    ) {
+      throw new Error("Prepared classifier large fixture was not parsed");
+    }
+    Object.assign(declaration.initializer, { text: "changed" });
+    await expect(checkpoint(mutated)).rejects.toThrow(
+      "prepared classifier source AST mutated"
+    );
+  });
+
   it("uses proof-first precedence and resolves only conservative candidates", async () => {
     const root = await realpath(
       await mkdtemp(join(tmpdir(), "mirai-intl-proof-first-"))
