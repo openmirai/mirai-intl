@@ -217,13 +217,15 @@ function generate(
 }
 
 describe("canonical JSON encoder", () => {
+  // CPU-bound by design: 3,000 deterministic values took 4.7 s on a machine at
+  // load ~160, so this test has its own budget instead of the 5-s default.
   it("writes the oracle's bytes and refuses what the oracle refuses for generated values", () => {
     for (let seed = 1; seed <= 3000; seed += 1) {
       const value = generate(random(seed), 5, []);
       const expected = outcome(oracle, value);
       expect(outcome(canonicalJson, value), `seed ${seed}`).toEqual(expected);
     }
-  });
+  }, 30_000);
 
   it("keeps the oracle's answer for every edge it defines", () => {
     const sparse = [1, , 3]; // oxlint-disable-line no-sparse-arrays
