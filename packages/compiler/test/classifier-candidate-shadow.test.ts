@@ -138,6 +138,9 @@ describe("classifier V3 candidate-index shadow", () => {
     ).rejects.toThrow("prepared classifier source AST mutated");
   });
 
+  // CPU-bound by design: two checkpoints over 4,000 declarations took 4.2 s on
+  // a machine at load ~130, so this test has its own budget instead of the 5-s
+  // default.
   it("refuses a prepared syntax tree mutated far past its first hashed chunk", async () => {
     const root = await realpath(
       await mkdtemp(join(tmpdir(), "mirai-intl-prepared-large-"))
@@ -193,7 +196,7 @@ describe("classifier V3 candidate-index shadow", () => {
     await expect(checkpoint(mutated)).rejects.toThrow(
       "prepared classifier source AST mutated"
     );
-  });
+  }, 30_000);
 
   it("uses proof-first precedence and resolves only conservative candidates", async () => {
     const root = await realpath(
