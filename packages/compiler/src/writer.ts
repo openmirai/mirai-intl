@@ -808,12 +808,42 @@ export async function isAbandonedPublicationLockEntry(
 }
 
 /**
+ * Waits, reading only, while a live owner holds publication-lock state of the
+ * generated root (the lock, a lock candidate or a recovery claim): a reader of
+ * the root then judges what that publication left, never a half-written root.
+ * It waits the way a publication waits for the lock, with the same retry
+ * interval, attempt budget and deadline error. Pass the attempt an earlier
+ * wait returned to continue its budget. State a dead owner left stays for
+ * recoverAbandonedPublicationLock.
+ */
+export async function waitForLivePublicationLockState(
+  outputRoot: string,
+  attempt = 0
+): Promise<number> {
+  const root = await realpath(outputRoot);
+  for (let next = attempt; ; next += 1) {
+    const names = (await readdir(root, { withFileTypes: true }))
+      .filter(
+        (entry) => entry.isFile() && isPublicationLockEntryName(entry.name)
+      )
+      .map((entry) => entry.name);
+    const abandoned = await Promise.all(
+      names.map((name) => isAbandonedPublicationLockEntry(root, name))
+    );
+    if (abandoned.every(Boolean)) {
+      return next;
+    }
+    await waitBeforePublicationLockRetry(next);
+  }
+}
+
+/**
  * Clear the publication-lock state a killed publisher left in the generated
  * root (an abandoned recovery claim, a lock whose owner is dead, dead owners'
  * lock candidates) through the writer's own recovery, so a publication killed
  * mid-flight never reads as unexplained state. A live owner's state stays for
- * the caller to refuse; an interrupted journal stays for the next publication
- * to recover under the lock.
+ * the caller to wait for (waitForLivePublicationLockState); an interrupted
+ * journal stays for the next publication to recover under the lock.
  */
 export async function recoverAbandonedPublicationLock(
   outputRoot: string

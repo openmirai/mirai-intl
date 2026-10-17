@@ -10,9 +10,13 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
+import type * as Catalog from "../src/catalog";
 import type * as Compile from "../src/compile";
 import type * as Emit from "../src/emit";
 import type * as Writer from "../src/writer";
@@ -24,6 +28,7 @@ import { catalogFixtureSource } from "../../../test/fixtures/catalog";
 
 const instrumentation = vi.hoisted(() => ({
   compileCalls: 0,
+  duringReuseValidation: undefined as undefined | (() => Promise<void>),
   emitCalls: 0,
   interruptAfterState: undefined as PublicationState | undefined,
   mutateAfterPointerCommit: undefined as undefined | (() => Promise<void>),
@@ -42,6 +47,25 @@ vi.mock("typescript", async (importOriginal) => {
     },
   });
   return { ...actual, default: instrumented };
+});
+
+vi.mock("../src/catalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof Catalog>();
+  return {
+    ...actual,
+    // Reuse loads the generation input after it has read the generated root
+    // and before it confirms the root did not change: mid-validation.
+    loadConventionCatalogGenerationInput: async (
+      ...arguments_: Parameters<
+        typeof actual.loadConventionCatalogGenerationInput
+      >
+    ) => {
+      const hook = instrumentation.duringReuseValidation;
+      instrumentation.duringReuseValidation = undefined;
+      await hook?.();
+      return actual.loadConventionCatalogGenerationInput(...arguments_);
+    },
+  };
 });
 
 vi.mock("../src/compile", async (importOriginal) => {
@@ -130,6 +154,17 @@ const deadOwnerLock = `${JSON.stringify({
   schemaVersion: 1,
 })}\n`;
 
+/** What a publisher in another, still running process holds: its parent pid lives. */
+function liveOwnerLock(): string {
+  return `${JSON.stringify({
+    acquiredAtMs: Date.now(),
+    ownerToken: "live-owner",
+    pid: process.ppid,
+    processStartedAtMs: 0,
+    schemaVersion: 1,
+  })}\n`;
+}
+
 /** A replacement's temporary sibling, as a publisher killed before its rename leaves it. */
 const replacementSuffix = "6f1c2d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f.tmp";
 
@@ -144,6 +179,7 @@ async function publicationLockEntries(
 describe("catalog generation receipt fast path", () => {
   beforeEach(() => {
     instrumentation.compileCalls = 0;
+    instrumentation.duringReuseValidation = undefined;
     instrumentation.emitCalls = 0;
     instrumentation.interruptAfterState = undefined;
     instrumentation.mutateAfterPointerCommit = undefined;
@@ -398,26 +434,103 @@ describe("catalog generation receipt fast path", () => {
     60_000
   );
 
-  it("still refuses a publication lock whose owner is alive", async () => {
+  it("waits for a live owner's publication and reuses the generation once the lock is released", async () => {
+    const { container, root } = await conventionApp();
+    const generated = join(root, "src/i18n/generated");
+    const lock = join(generated, ".publish.lock");
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      instrumentation.compileCalls = 0;
+      await writeFile(lock, liveOwnerLock());
+
+      const ensured = ensureMiraiIntlCatalog({ root });
+      await delay(300);
+      await rm(lock);
+
+      await expect(ensured).resolves.toMatchObject({ changed: false });
+      expect(instrumentation.compileCalls).toBe(0);
+      expect(await publicationLockEntries(generated)).toEqual([]);
+    } finally {
+      await rm(lock, { force: true });
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("waits for a publication that takes the lock while reuse validates the root", async () => {
+    const { container, root } = await conventionApp();
+    const generated = join(root, "src/i18n/generated");
+    const lock = join(generated, ".publish.lock");
+    let released: Promise<void> | undefined;
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      instrumentation.duringReuseValidation = async () => {
+        await writeFile(lock, liveOwnerLock());
+        released = delay(300).then(() => rm(lock));
+      };
+
+      await expect(ensureMiraiIntlCatalog({ root })).resolves.toMatchObject({
+        changed: false,
+      });
+      expect(released).toBeDefined();
+      expect(await publicationLockEntries(generated)).toEqual([]);
+    } finally {
+      await released?.catch(() => undefined);
+      await rm(lock, { force: true });
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("takes over the lock of an owner that dies while ensure waits for it", async () => {
+    const { container, root } = await conventionApp();
+    const generated = join(root, "src/i18n/generated");
+    const owner = spawn(
+      process.execPath,
+      ["-e", "setTimeout(() => {}, 60000)"],
+      {
+        stdio: "ignore",
+      }
+    );
+    try {
+      await ensureMiraiIntlCatalog({ root });
+      await writeFile(
+        join(generated, ".publish.lock"),
+        `${JSON.stringify({
+          acquiredAtMs: Date.now(),
+          ownerToken: "dying-owner",
+          pid: owner.pid,
+          processStartedAtMs: 0,
+          schemaVersion: 1,
+        })}\n`
+      );
+
+      const ensured = ensureMiraiIntlCatalog({ root });
+      await delay(300);
+      const exited = once(owner, "exit");
+      owner.kill("SIGKILL");
+      await exited;
+
+      await expect(ensured).resolves.toMatchObject({ changed: false });
+      expect(await publicationLockEntries(generated)).toEqual([]);
+    } finally {
+      owner.kill("SIGKILL");
+      await rm(container, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("fails at the publication lock deadline while a live owner keeps its lock", async () => {
     const { container, root } = await conventionApp();
     const generated = join(root, "src/i18n/generated");
     try {
       await ensureMiraiIntlCatalog({ root });
-      const liveOwnerLock = `${JSON.stringify({
-        acquiredAtMs: Date.now(),
-        ownerToken: "live-owner",
-        pid: process.ppid,
-        processStartedAtMs: 0,
-        schemaVersion: 1,
-      })}\n`;
-      await writeFile(join(generated, ".publish.lock"), liveOwnerLock);
+      const lock = liveOwnerLock();
+      await writeFile(join(generated, ".publish.lock"), lock);
 
       await expect(ensureMiraiIntlCatalog({ root })).rejects.toThrow(
-        "Generated catalog contains unexplained state .publish.lock"
+        "Unable to acquire generated catalog publication lock"
       );
       await expect(
         readFile(join(generated, ".publish.lock"), "utf8")
-      ).resolves.toBe(liveOwnerLock);
+      ).resolves.toBe(lock);
     } finally {
       await rm(container, { force: true, recursive: true });
     }
