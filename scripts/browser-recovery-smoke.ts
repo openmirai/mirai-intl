@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { readSmokePeerVersions } from "./smoke-peers";
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const smokeRoot = join(repositoryRoot, ".tmp", "browser-recovery-smoke");
 const packsRoot = join(smokeRoot, "packs");
@@ -88,14 +90,16 @@ const packedPackages = Object.fromEntries(
 
 await mkdir(consumerRoot, { recursive: true });
 await mkdir(join(consumerRoot, "locales"), { recursive: true });
+const smokePeerVersions = await readSmokePeerVersions(repositoryRoot);
 await writeFile(
   join(consumerRoot, "package.json"),
   `${JSON.stringify(
     {
       dependencies: {
         "@openmirai/intl-i18next": packedPackages["@openmirai/intl-i18next"],
-        react: process.env.MIRAI_INTL_SMOKE_REACT_VERSION ?? "19.2.8",
-        "react-dom": process.env.MIRAI_INTL_SMOKE_REACT_VERSION ?? "19.2.8",
+        i18next: smokePeerVersions.i18next,
+        react: smokePeerVersions.react,
+        "react-dom": smokePeerVersions["react-dom"],
       },
       devDependencies: { vite: "7.3.6" },
       name: "mirai-intl-browser-recovery-smoke",

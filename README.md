@@ -43,7 +43,7 @@ Normal application code should not pin the lower-level packages directly.
 - pnpm **11**, enabled through Corepack.
 - A TypeScript project with `tsconfig.json` or `tsconfig.intl.json`.
 - Next.js or Vite for the corresponding source adapter.
-- React for the React/i18next adapter.
+- React 19 (`^19.2.7`) and i18next 26 (`^26.3.6`) for the React/i18next adapter.
 
 The package manager is pinned in `package.json`. Verify the runtime before
 installing:
@@ -60,7 +60,7 @@ Install the public packages from the npm registry under the `@openmirai`
 organization. No registry configuration or token is required:
 
 ```sh
-pnpm add @openmirai/intl @openmirai/intl-i18next
+pnpm add @openmirai/intl @openmirai/intl-i18next i18next
 ```
 
 The application must already provide a compatible React version. If the
@@ -83,10 +83,10 @@ registry, or keep the following explicit mapping:
 @openmirai:registry=https://registry.npmjs.org
 ```
 
-`@openmirai/intl-i18next` brings the compatible i18next and
-react-i18next dependencies. React remains a peer dependency supplied by Next,
-Vite, or the application. Install `i18next-icu` only when ICU formatting is
-enabled:
+`@openmirai/intl-i18next` brings react-i18next. React (`^19.2.7`) and i18next
+(`^26.3.6`) are peer dependencies supplied by the application, so the adapter
+and the application share one copy of each. Install `i18next-icu` (`^2.4.4`)
+only when ICU formatting is enabled:
 
 ```sh
 pnpm add i18next-icu

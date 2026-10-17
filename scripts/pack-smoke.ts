@@ -22,6 +22,11 @@ import {
 } from "../packages/compiler/src/internal";
 
 import { catalogFixtureSource } from "../test/fixtures/catalog";
+import {
+  assertSingleCopy,
+  readSmokePeerVersions,
+  resolvePackageRoot,
+} from "./smoke-peers";
 
 const root = resolve(import.meta.dirname, "..");
 const evidenceRoot = join(root, ".tmp", "pack-smoke");
@@ -294,11 +299,13 @@ const packedPackages = Object.fromEntries(
 );
 
 await mkdir(installRoot, { recursive: true });
+const smokePeerVersions = await readSmokePeerVersions(root);
 const directDependencies = {
   [catalogPackageName]: packedPackages[catalogPackageName],
   [intlI18nextPackage.name]: packedPackages[intlI18nextPackage.name],
   [intlPackage.name]: packedPackages[intlPackage.name],
-  react: process.env.MIRAI_INTL_SMOKE_REACT_VERSION ?? "19.2.8",
+  i18next: smokePeerVersions.i18next,
+  react: smokePeerVersions.react,
 } as const;
 if (Object.values(directDependencies).some((value) => value === undefined)) {
   throw new Error("Packed consumer dependencies are incomplete");
@@ -360,11 +367,17 @@ await writeFile(
     'import type { UseTranslations } from "@openmirai/intl/runtime";',
     'import { miraiIntlVite } from "@openmirai/intl/vite";',
     'import { createMiraiI18next, createProviderBoundUseTranslations } from "@openmirai/intl-i18next";',
+    'import type { MiraiI18nextController } from "@openmirai/intl-i18next";',
+    'import type { i18n as ConsumerI18n } from "i18next";',
     `import { catalogManifest, isCatalogLocale, loadCatalogResource } from "${catalogPackageName}";`,
     `import type { CatalogContract } from "${catalogPackageName}";`,
     'RUNTIME_ABI satisfies "1.0.0";',
     "COMPILER_VERSION satisfies string;",
     "void createMiraiI18next;",
+    "// The adapter's instance is the consumer's own i18next type: one i18next copy.",
+    'declare const controller: MiraiI18nextController<"en">;',
+    "const consumerInstance: ConsumerI18n = controller.instance;",
+    "void consumerInstance;",
     "const otelSink = createOtelDiagnosticSink();",
     'otelSink({ code: "INTL_MISSING_RESOURCE", message: "Missing resource" });',
     "const useProviderTranslations = createProviderBoundUseTranslations<CatalogContract>();",
@@ -521,6 +534,47 @@ if (Object.hasOwn(directDependencies, "@opentelemetry/api-logs")) {
 }
 const packedOtelEntry = await realpath(
   createRequire(packedRuntimeOtelEntry).resolve("@opentelemetry/api-logs")
+);
+// i18next and React are peers: the adapter, its react-i18next and the runtime
+// must resolve the consumer's single copy, never a second one of their own.
+const consumerManifest = join(installRoot, "package.json");
+const packedI18nextManifest = join(
+  await resolvePackageRoot(consumerManifest, intlI18nextPackage.name),
+  "package.json"
+);
+const packedReactI18nextManifest = join(
+  await resolvePackageRoot(packedI18nextManifest, "react-i18next"),
+  "package.json"
+);
+const packedRuntimeManifest = join(
+  await resolvePackageRoot(packedI18nextManifest, "@openmirai/intl-runtime"),
+  "package.json"
+);
+const singlePeerCopies = {
+  i18next: await assertSingleCopy("i18next", {
+    consumer: consumerManifest,
+    [intlI18nextPackage.name]: packedI18nextManifest,
+    "@openmirai/intl-runtime": packedRuntimeManifest,
+    "react-i18next": packedReactI18nextManifest,
+  }),
+  react: await assertSingleCopy("react", {
+    consumer: consumerManifest,
+    [intlI18nextPackage.name]: packedI18nextManifest,
+    "@openmirai/intl-runtime": packedRuntimeManifest,
+    "react-i18next": packedReactI18nextManifest,
+  }),
+};
+const resolvedPeerVersions = Object.fromEntries(
+  await Promise.all(
+    Object.entries(singlePeerCopies).map(
+      async ([name, packageRoot]) =>
+        [
+          name,
+          (await readPackageManifest(join(packageRoot, "package.json")))
+            .version,
+        ] as const
+    )
+  )
 );
 for (const resolvedPath of [
   packedIntlManifest,
@@ -979,6 +1033,7 @@ await writeFile(
       privateDescriptorLowering: true,
       nodeNextTypecheck: true,
       renderedTranslation: runtimeEvidence.renderedTranslation,
+      singlePeerCopies: resolvedPeerVersions,
       skipLibCheck: false,
       tarballs,
     },
@@ -1014,5 +1069,6 @@ process.stdout.write(
     isolatedInstall: true,
     otelDependencyResolvedTransitively: true,
     renderedTranslation: runtimeEvidence.renderedTranslation,
+    singlePeerCopies: resolvedPeerVersions,
   })}\n`
 );
