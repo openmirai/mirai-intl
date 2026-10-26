@@ -4,6 +4,13 @@ import type { MessageDescriptor } from "@openmirai/intl-abi";
 type TranslationMockInput = string | MessageDescriptor;
 
 export interface TranslationMockOptions {
+  /**
+   * Appends the values each call was given to its text, as
+   * `key(name=value, …)` in the order they were passed, so a test can assert
+   * which message was chosen and with which values. A call without values
+   * renders as it would without this option.
+   */
+  readonly echoValues?: boolean;
   readonly messages?: Readonly<Record<string, string>>;
   readonly namespace?: string;
 }
@@ -46,18 +53,18 @@ export function resolveTranslationMockPath(
 /**
  * Creates a descriptor-aware text translator for component tests. Fixture
  * messages stay local to the test while descriptor handling and simple value
- * interpolation remain consistent across consumers.
+ * interpolation remain consistent across consumers. With `echoValues`, each
+ * call also writes the values it was given after its text.
  */
 export function createTranslationMock(
   options: TranslationMockOptions = {}
 ): (input: unknown, values?: TranslationMockValues) => string {
-  const { messages = {}, namespace } = options;
+  const { echoValues = false, messages = {}, namespace } = options;
 
   return (input, values) => {
     const key = resolveTranslationMockPath(input, namespace);
     const message = messages[key] ?? key;
-
-    return message.replace(
+    const text = message.replace(
       /\{(?<name>[A-Za-z0-9_]+)\}/gu,
       (placeholder, name) => {
         const value = values?.[name];
@@ -65,5 +72,15 @@ export function createTranslationMock(
         return value === undefined ? placeholder : String(value);
       }
     );
+
+    if (!echoValues || values === undefined) {
+      return text;
+    }
+
+    const echoed = Object.entries(values)
+      .map(([name, value]) => `${name}=${String(value)}`)
+      .join(", ");
+
+    return `${text}(${echoed})`;
   };
 }

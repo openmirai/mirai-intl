@@ -59,6 +59,42 @@ describe("resolveTranslationMockPath", () => {
     );
   });
 
+  it("echoes the values a call was given after its key, in the order passed", () => {
+    const t = createTranslationMock({
+      echoValues: true,
+      namespace: "components.example",
+    });
+
+    expect(t(descriptor)).toBe("title");
+    expect(t("job.giveAccess", { count: 2, type: "bundle" })).toBe(
+      "job.giveAccess(count=2, type=bundle)"
+    );
+    expect(t("job.giveAccess", { type: "bundle", count: 0 })).toBe(
+      "job.giveAccess(type=bundle, count=0)"
+    );
+    expect(t("job.undo", {})).toBe("job.undo()");
+    expect(t("who.course", { course: "Photography 101" })).toBe(
+      "who.course(course=Photography 101)"
+    );
+  });
+
+  it("echoes values after the rendered fixture message", () => {
+    const t = createTranslationMock({
+      echoValues: true,
+      messages: { openLabel: "View promotion {code}" },
+    });
+
+    expect(t("openLabel", { code: "SAVE20" })).toBe(
+      "View promotion SAVE20(code=SAVE20)"
+    );
+  });
+
+  it("leaves values out of the text unless echoValues is set", () => {
+    const t = createTranslationMock();
+
+    expect(t("job.giveAccess", { count: 2 })).toBe("job.giveAccess");
+  });
+
   it("rejects descriptor-shaped values that were not compiler lowered", () => {
     expect(() =>
       resolveTranslationMockPath({
