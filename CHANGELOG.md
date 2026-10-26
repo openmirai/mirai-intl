@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.6](https://github.com/openmirai/mirai-intl/compare/v0.4.5...v0.4.6) (2026-10-26)
+
+
+### Features
+
+* **runtime:** let createTranslationMock echo the values a call was given ([dde4054](https://github.com/openmirai/mirai-intl/commit/dde4054e2f7f4633a0ac08c014ef6df821fb221e))
+
 ## [0.4.5](https://github.com/openmirai/mirai-intl/compare/v0.4.4...v0.4.5) (2026-10-17)
 
 
