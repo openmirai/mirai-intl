@@ -4,13 +4,41 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { discoverWorkspaceCatalogs } from "../src/workspace-catalogs";
+import { findWorkspaceRoot } from "../src/ownership";
+import {
+  discoverWorkspaceCatalogs,
+  nearestWorkspaceRoot,
+} from "../src/workspace-catalogs";
 
 async function writeFiles(root: string, files: ReadonlyArray<string>) {
   for (const file of files) {
     await mkdir(join(root, file, ".."), { recursive: true });
     await writeFile(join(root, file), "{}\n", "utf8");
   }
+}
+
+const declaredRoot = `${JSON.stringify({ root: true })}\n`;
+
+// One pnpm workspace holding fe's apps plus landing and dashboard, which
+// keep their own intl workspaces (mirai-web after the join, V2D-2747).
+async function joinedMonorepo(): Promise<string> {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "mirai-intl-workspace-boundary-"))
+  );
+  await writeFiles(root, [
+    "pnpm-workspace.yaml",
+    "mirai-intl.workspace.json",
+    "apps/staff/mirai-intl.config.json",
+    "apps/staff/package.json",
+    "packages/i18n/mirai-intl.config.json",
+    "packages/i18n/package.json",
+    "apps/landing/mirai-intl.config.json",
+    "apps/landing/package.json",
+    "apps/landing/src/app/package.json",
+    "apps/dashboard/mirai-intl.config.json",
+    "apps/dashboard/package.json",
+  ]);
+  return root;
 }
 
 describe("workspace catalog discovery", () => {
@@ -37,6 +65,75 @@ describe("workspace catalog discovery", () => {
         join(root, "apps/staff"),
         join(root, "packages/i18n"),
       ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps today's discovery and roots when no folder declares itself a root", async () => {
+    const root = await joinedMonorepo();
+    try {
+      await expect(discoverWorkspaceCatalogs(root)).resolves.toEqual([
+        join(root, "apps/dashboard"),
+        join(root, "apps/landing"),
+        join(root, "apps/staff"),
+        join(root, "packages/i18n"),
+      ]);
+      await expect(
+        nearestWorkspaceRoot(join(root, "apps/landing"))
+      ).resolves.toBe(root);
+      await expect(findWorkspaceRoot(join(root, "apps/landing"))).resolves.toBe(
+        root
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("leaves folders that declare themselves intl workspace roots to their own checks", async () => {
+    const root = await joinedMonorepo();
+    try {
+      for (const app of ["apps/landing", "apps/dashboard"]) {
+        await writeFile(
+          join(root, app, "mirai-intl.workspace.json"),
+          declaredRoot
+        );
+      }
+      await expect(discoverWorkspaceCatalogs(root)).resolves.toEqual([
+        join(root, "apps/staff"),
+        join(root, "packages/i18n"),
+      ]);
+      const landing = join(root, "apps/landing");
+      await expect(nearestWorkspaceRoot(landing)).resolves.toBe(landing);
+      await expect(
+        nearestWorkspaceRoot(join(landing, "src/app"))
+      ).resolves.toBe(landing);
+      await expect(findWorkspaceRoot(landing)).resolves.toBe(landing);
+      // fe's packages still resolve the shared pnpm root.
+      await expect(
+        nearestWorkspaceRoot(join(root, "apps/staff"))
+      ).resolves.toBe(root);
+      await expect(findWorkspaceRoot(join(root, "apps/staff"))).resolves.toBe(
+        root
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a root field that is not true", async () => {
+    const root = await joinedMonorepo();
+    try {
+      await writeFile(
+        join(root, "apps/landing/mirai-intl.workspace.json"),
+        `${JSON.stringify({ root: false })}\n`
+      );
+      await expect(discoverWorkspaceCatalogs(root)).rejects.toThrow(
+        /root must be true when present/u
+      );
+      await expect(
+        nearestWorkspaceRoot(join(root, "apps/landing"))
+      ).rejects.toThrow(/root must be true when present/u);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

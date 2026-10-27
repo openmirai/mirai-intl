@@ -1,4 +1,4 @@
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 const workspaceSkipDirectories = new Set([
@@ -11,13 +11,57 @@ const workspaceSkipDirectories = new Set([
   "node_modules",
 ]);
 
+/**
+ * True when `mirai-intl.workspace.json` in `directory` declares `"root": true`:
+ * the folder is its own Mirai Intl workspace even inside a larger pnpm
+ * workspace, exactly as if it had its own pnpm-workspace.yaml. Without the
+ * field the preset only shares locale defaults, as before.
+ */
+export async function declaresIntlWorkspaceRoot(
+  directory: string
+): Promise<boolean> {
+  const path = join(directory, "mirai-intl.workspace.json");
+  const entry = await lstat(path).catch(() => undefined);
+  if (!entry) {
+    return false;
+  }
+  if (entry.isSymbolicLink() || !entry.isFile()) {
+    throw new Error("mirai-intl.workspace.json must be a regular file");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(path, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error("mirai-intl.workspace.json must contain valid JSON", {
+      cause: error,
+    });
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("mirai-intl.workspace.json must be a JSON object");
+  }
+  return workspaceRootField((value as Record<string, unknown>).root);
+}
+
+/** @internal Validate `mirai-intl.workspace.json.root`: absent or `true`. */
+export function workspaceRootField(root: unknown): boolean {
+  if (root !== undefined && root !== true) {
+    throw new TypeError(
+      "mirai-intl.workspace.json.root must be true when present"
+    );
+  }
+  return root === true;
+}
+
 export async function nearestWorkspaceRoot(start: string): Promise<string> {
   let directory = resolve(start);
   while (true) {
     const marker = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
       () => undefined
     );
-    if (marker?.isFile() && !marker.isSymbolicLink()) {
+    if (
+      (marker?.isFile() && !marker.isSymbolicLink()) ||
+      (await declaresIntlWorkspaceRoot(directory))
+    ) {
       return directory;
     }
     const parent = dirname(directory);
@@ -58,9 +102,13 @@ export async function discoverWorkspaceCatalogs(
   const catalogs: Array<string> = [];
   const visit = async (directory: string): Promise<void> => {
     if (directory !== root) {
-      // A folder with its own pnpm-workspace.yaml is another workspace,
-      // checked from its own root, never as part of this one.
-      if (await isRegularFile(join(directory, "pnpm-workspace.yaml"))) {
+      // A folder with its own pnpm-workspace.yaml, or one that declares
+      // itself an intl workspace root, is another workspace, checked from
+      // its own root, never as part of this one.
+      if (
+        (await isRegularFile(join(directory, "pnpm-workspace.yaml"))) ||
+        (await declaresIntlWorkspaceRoot(directory))
+      ) {
         return;
       }
       if (await hasConventionCatalog(directory)) {

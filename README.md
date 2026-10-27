@@ -151,6 +151,24 @@ workspace, put the same two fields in `mirai-intl.workspace.json` beside
 configuration may widen the workspace locale set, but it cannot remove a
 workspace-required locale.
 
+Several projects can share one pnpm workspace and still keep their own intl
+workspaces. Add `"root": true` to a `mirai-intl.workspace.json` in the
+project's folder:
+
+```json
+{
+  "root": true
+}
+```
+
+That folder then counts as its own Mirai Intl workspace, as if it had its own
+`pnpm-workspace.yaml`: a `--workspace` check, verification or authority
+transfer at the outer root leaves its catalogs out, and the folder's own
+commands (`check`, `prove`, `--workspace`) resolve it as their root and take
+their locale defaults from its preset, not the outer one. Without the field a
+`mirai-intl.workspace.json` below the pnpm root is still an error. The pnpm
+lockfile is still read from the real pnpm workspace.
+
 Use the `miraiIntl` key in `package.json` instead of a separate file when that
 fits the application better:
 
