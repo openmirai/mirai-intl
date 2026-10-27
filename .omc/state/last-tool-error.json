@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"S=/private/tmp/claude-501/-Users-apiphoom-Documents-GitHub-openmirai/97d30b43-a35d-49ff-96e9-8345c1a99e16/scratchpad/checks2; for s in SYNCPACK LINT_KUMO KUMO_LINT_TESTS GITHUB_SCRIPTS; do...",
-  "error": "Exit code 1\n=== SYNCPACK\n      ✘ 2.14.0 → 2.15.0 in apps/dashboard/package.json at .dependencies (DiffersToHighestOrLowestSemver)\n      ✘ 1.63.1 → 1.64.0 in apps/auth/package.json at .devDependencies (DiffersToHighestOrLowestSemver)\n      ✘ 1.63.1 → 1.64.0 in apps/learner/package.json at .devDependencies (DiffersToHighestOrLowestSemver)\n      ✘ 1.63.1 → 1.64.0 in apps/staff/package.json at .devDependencies (DiffersToHighestOrLowestSemver)\n      ✘ 5.3.0 → ^5.3.0 in apps/dashboard/package.json at ...",
-  "timestamp": "2026-10-27T00:03:38.370Z",
-  "retry_count": 1
-}

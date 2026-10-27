@@ -15,3 +15,6 @@ bun-debug.log*
 .env*
 !.env.example
 .DS_Store
+
+# Local agent tool state
+.omc/
