@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.7](https://github.com/openmirai/mirai-intl/compare/v0.4.6...v0.4.7) (2026-10-27)
+
+
+### Bug Fixes
+
+* **compiler:** keep workspace discovery inside its own pnpm workspace ([f8fb34f](https://github.com/openmirai/mirai-intl/commit/f8fb34f51a531b27fcfa9e51c35fd5073a5df9c2))
+
 ## [0.4.6](https://github.com/openmirai/mirai-intl/compare/v0.4.5...v0.4.6) (2026-10-26)
 
 
