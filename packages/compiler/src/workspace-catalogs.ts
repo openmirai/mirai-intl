@@ -28,12 +28,20 @@ export async function nearestWorkspaceRoot(start: string): Promise<string> {
   }
 }
 
+async function isRegularFile(path: string): Promise<boolean> {
+  const stat = await lstat(path).catch(() => undefined);
+  return stat?.isFile() === true && !stat.isSymbolicLink();
+}
+
 async function hasConventionCatalog(directory: string): Promise<boolean> {
-  const config = await lstat(join(directory, "mirai-intl.config.json")).catch(
-    () => undefined
-  );
-  if (config?.isFile() && !config.isSymbolicLink()) {
+  if (await isRegularFile(join(directory, "mirai-intl.config.json"))) {
     return true;
+  }
+  // A locales folder names a catalog only in a package root: a catalog's
+  // identity is its package.json, so message files deeper inside a package
+  // (an e-mail renderer's locales) are not a catalog of their own.
+  if (!(await isRegularFile(join(directory, "package.json")))) {
+    return false;
   }
   for (const name of ["src/locales", "locales"]) {
     const locales = await lstat(join(directory, name)).catch(() => undefined);
@@ -49,9 +57,16 @@ export async function discoverWorkspaceCatalogs(
 ): Promise<Array<string>> {
   const catalogs: Array<string> = [];
   const visit = async (directory: string): Promise<void> => {
-    if (directory !== root && (await hasConventionCatalog(directory))) {
-      catalogs.push(directory);
-      return;
+    if (directory !== root) {
+      // A folder with its own pnpm-workspace.yaml is another workspace,
+      // checked from its own root, never as part of this one.
+      if (await isRegularFile(join(directory, "pnpm-workspace.yaml"))) {
+        return;
+      }
+      if (await hasConventionCatalog(directory)) {
+        catalogs.push(directory);
+        return;
+      }
     }
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (
