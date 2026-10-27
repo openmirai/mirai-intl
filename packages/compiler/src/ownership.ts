@@ -10,6 +10,7 @@ import type {
 import ts from "typescript";
 
 import { compareCanonicalStrings, sha256 } from "./canonical";
+import { declaresIntlWorkspaceRoot } from "./workspace-catalogs";
 
 export type OwnedSourceFile = Readonly<{
   absolute: string;
@@ -66,6 +67,9 @@ export async function findWorkspaceRoot(root: string): Promise<string> {
       if (entry.isSymbolicLink() || !entry.isFile()) {
         throw new Error("pnpm-workspace.yaml must be a regular file");
       }
+      return directory;
+    }
+    if (await declaresIntlWorkspaceRoot(directory)) {
       return directory;
     }
     const parent = dirname(directory);

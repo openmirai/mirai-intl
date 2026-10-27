@@ -484,6 +484,63 @@ describe("convention-first catalog discovery", () => {
     }
   });
 
+  it("takes the locale preset from a folder that declares itself an intl workspace root", async () => {
+    const outer = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
+    const root = join(outer, "apps/landing");
+    try {
+      await mkdir(root, { recursive: true });
+      await writeJson(join(root, "package.json"), {
+        dependencies: { vite: "8.1.4" },
+        name: "@example/landing",
+        version: "1.2.3",
+      });
+      await writeJson(join(root, "tsconfig.json"), {
+        include: ["src/**/*.ts"],
+      });
+      await writeJson(join(root, "src/locales/global/en.json"), {
+        greeting: "Hello",
+      });
+      await writeFile(
+        join(outer, "pnpm-workspace.yaml"),
+        "packages: ['apps/*']\n"
+      );
+      await writeJson(join(outer, "mirai-intl.workspace.json"), {
+        requiredLocales: ["en", "th"],
+      });
+      // Without the field a preset below the pnpm root stays an error.
+      await writeJson(join(root, "mirai-intl.workspace.json"), {
+        sourceLocale: "en",
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /is nested below the authoritative workspace root/u
+      );
+
+      await writeJson(join(root, "mirai-intl.workspace.json"), {
+        root: false,
+      });
+      await expect(loadConventionCatalog(root)).rejects.toThrow(
+        /root must be true when present/u
+      );
+
+      // Declared, the folder is its own workspace: the outer preset's th
+      // requirement no longer applies.
+      await writeJson(join(root, "mirai-intl.workspace.json"), {
+        root: true,
+        sourceLocale: "en",
+      });
+      const own = await loadConventionCatalog(root);
+      expect(own.source.locales).toEqual(["en"]);
+      expect(own.watch.files).toContain(
+        await realpath(join(root, "mirai-intl.workspace.json"))
+      );
+      expect(own.watch.files).not.toContain(
+        await realpath(join(outer, "mirai-intl.workspace.json"))
+      );
+    } finally {
+      await rm(outer, { force: true, recursive: true });
+    }
+  });
+
   it("infers exact value contracts from whole-locale value files", async () => {
     const root = await mkdtemp(join(tmpdir(), "mirai-intl-value-files-"));
     try {

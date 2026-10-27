@@ -59,7 +59,10 @@ import {
   computeImmutableIntegrityIdentity,
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
-import { discoverWorkspaceCatalogs } from "./workspace-catalogs";
+import {
+  declaresIntlWorkspaceRoot,
+  discoverWorkspaceCatalogs,
+} from "./workspace-catalogs";
 import { collectConventionSourceFiles } from "./source-discovery";
 import { verifyProviderResolutionFrontier } from "./provider-resolution-identity";
 import { reconstructProjectRootFiles } from "./source-universe-identity";
@@ -137,6 +140,9 @@ async function workspaceRoot(packageRoot: string): Promise<string> {
       if (entry?.isFile() && !entry.isSymbolicLink()) {
         return directory;
       }
+    }
+    if (await declaresIntlWorkspaceRoot(directory)) {
+      return directory;
     }
     const parent = dirname(directory);
     if (parent === directory) {

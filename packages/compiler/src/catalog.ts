@@ -53,6 +53,10 @@ import {
 } from "./integrity-identity";
 import { inferMessageContract, inspectMessageSyntax } from "./parser";
 import type { CatalogSource, MessageSource } from "./source";
+import {
+  declaresIntlWorkspaceRoot,
+  workspaceRootField,
+} from "./workspace-catalogs";
 import { verifyArtifactSet, writeArtifactSet } from "./writer";
 import type { StableFacadeOptions, WriteResult } from "./writer";
 
@@ -2344,10 +2348,16 @@ async function loadConventionWorkspacePreset(
   repositoryRoot: string
 ): Promise<ConventionWorkspace> {
   let workspaceRoot: string | undefined;
+  let declaredRoot = false;
   let directory = repositoryRoot;
   while (true) {
     const workspaceManifestPath = join(directory, "pnpm-workspace.yaml");
     if (await regularFileExists(workspaceManifestPath, "pnpm-workspace.yaml")) {
+      workspaceRoot = directory;
+      break;
+    }
+    if (await declaresIntlWorkspaceRoot(directory)) {
+      declaredRoot = true;
       workspaceRoot = directory;
       break;
     }
@@ -2378,6 +2388,7 @@ async function loadConventionWorkspacePreset(
   }
   const presetCandidates =
     workspaceRoot === repositoryRoot &&
+    !declaredRoot &&
     !(await regularFileExists(
       join(workspaceRoot, "pnpm-workspace.yaml"),
       "pnpm-workspace.yaml"
@@ -2410,9 +2421,10 @@ async function loadConventionWorkspacePreset(
   const root = assertObject(value, "mirai-intl.workspace.json");
   assertExactKeys(
     root,
-    ["requiredLocales", "sourceLocale"],
+    ["requiredLocales", "root", "sourceLocale"],
     "mirai-intl.workspace.json"
   );
+  workspaceRootField(root.root);
   const requiredLocales = parseRequiredLocales(
     root.requiredLocales,
     "mirai-intl.workspace.json"
