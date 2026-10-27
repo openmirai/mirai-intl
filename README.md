@@ -187,6 +187,14 @@ and `values` for structured value schemas. Keep `checkExceptions` limited to
 reviewed, exact source exceptions; globs and inline suppressions are not
 supported. The complete supported shape is validated by `mirai-intl check`.
 
+A mounted dependency source (`{ "from": "<package>", "path": "...", "mount":
+"..." }`) follows the application's locales: the compiler reads only the
+application's configured locale files from it and skips the others, so a
+two-locale application can mount a package that ships more. Every configured
+locale must still be present in the dependency; a missing one fails and names
+the locale file. The application's own locale files stay strict: a locale file
+the application does not configure fails as an unconfigured locale.
+
 ### 4. Add lifecycle scripts
 
 ```json

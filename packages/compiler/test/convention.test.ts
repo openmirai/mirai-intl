@@ -1105,6 +1105,100 @@ describe("convention-first catalog discovery", () => {
     }
   });
 
+  it("reads only the consumer's locales from a dependency source with more locales", async () => {
+    const root = await createConventionApp();
+    try {
+      const dependencyLocales = [
+        "ar",
+        "de",
+        "en",
+        "es",
+        "fr",
+        "id",
+        "ja",
+        "ko",
+        "ru",
+        "th",
+        "vi",
+        "zh-CN",
+      ];
+      const ui = await createTranslationDependency(
+        root,
+        "@example/ui-i18n",
+        { button: { label: "Button" } },
+        { locales: dependencyLocales }
+      );
+      await writeJson(join(ui.dependencyRoot, "src/global/th.json"), {
+        button: { label: "ปุ่ม" },
+      });
+      // A skipped locale is never read, so even a malformed file is ignored.
+      await writeFile(
+        join(ui.dependencyRoot, "src/global/fr.json"),
+        "{ not json",
+        "utf8"
+      );
+      await configureMountedSources(
+        root,
+        { "@example/ui-i18n": ui.specifier },
+        [{ from: "@example/ui-i18n", mount: "components.ui", path: "src" }]
+      );
+
+      const loaded = await loadConventionCatalog(root);
+      expect(loaded.source.locales).toEqual(["en", "th"]);
+      const mounted = loaded.source.messages.find(
+        (message) => message.path === "components.ui.button.label"
+      );
+      expect(mounted?.translations).toEqual({ en: "Button", th: "ปุ่ม" });
+      for (const message of loaded.source.messages) {
+        expect(Object.keys(message.translations).toSorted()).toEqual([
+          "en",
+          "th",
+        ]);
+      }
+      const dependencyFiles = loaded.inputs.sourceFiles
+        .map((file) => file.path)
+        .filter((path) => path.startsWith("node_modules/"));
+      expect(dependencyFiles.toSorted()).toEqual([
+        "node_modules/@example/ui-i18n/src/global/en.json",
+        "node_modules/@example/ui-i18n/src/global/th.json",
+      ]);
+      expect(compileCatalog(loaded.source).catalog.manifest.locales).toEqual([
+        "en",
+        "th",
+      ]);
+
+      await rm(join(ui.dependencyRoot, "src/global/th.json"));
+      await expect(loadConventionCatalog(root)).rejects.toMatchObject({
+        file: "node_modules/@example/ui-i18n/src/global/th.json",
+        locale: "th",
+        message: expect.stringMatching(/missing configured locale th/u),
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the project's own sources strict about unconfigured locales", async () => {
+    const root = await createConventionApp();
+    try {
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        requiredLocales: ["en", "th"],
+      });
+      await writeJson(join(root, "src/locales/global/fr.json"), {
+        greeting: "Bonjour {name}",
+      });
+      await writeJson(
+        join(root, "src/locales/pages/{-$locale}/short-links/fr.json"),
+        { title: "{count, plural, other {# liens}}" }
+      );
+      await expect(loadConventionCatalog(root)).rejects.toThrowError(
+        /contains unconfigured locale fr/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("roots discovery and generated output at each deployable app package", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "mirai-intl-workspace-"));
     const apps = [join(workspace, "apps/one"), join(workspace, "apps/two")];

@@ -735,10 +735,14 @@ async function discoverSource(
           );
         }
       }
+      // A dependency source (`from`) is shared by apps with different locale
+      // sets, so the consumer's configured locales select which of its files
+      // are read; the others are skipped. The project's own sources stay
+      // strict: an extra locale there is an unconfigured translation.
       const extra = [...byLocale.keys()].filter(
         (locale) => !locales.includes(locale)
       );
-      if (extra.length > 0) {
+      if (extra.length > 0 && source.dependency === undefined) {
         throw new Error(
           `${logicalParts.join("/") || source.root} contains unconfigured locale ${extra.toSorted()[0]}`
         );
