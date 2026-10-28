@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.8](https://github.com/openmirai/mirai-intl/compare/v0.4.7...v0.4.8) (2026-10-28)
+
+
+### Features
+
+* **compiler:** let a folder declare itself an intl workspace root ([5378e18](https://github.com/openmirai/mirai-intl/commit/5378e18a88154d11a264791e219379c95649e29b))
+* **compiler:** read only the consumer's locales from a dependency source ([9487ef4](https://github.com/openmirai/mirai-intl/commit/9487ef4c320de0e51cca2bf1e7e8c2099817d104))
+
 ## [0.4.7](https://github.com/openmirai/mirai-intl/compare/v0.4.6...v0.4.7) (2026-10-27)
 
 
