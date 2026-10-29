@@ -55,6 +55,7 @@ import { inferMessageContract, inspectMessageSyntax } from "./parser";
 import type { CatalogSource, MessageSource } from "./source";
 import {
   declaresIntlWorkspaceRoot,
+  installWorkspaceRoot,
   workspaceRootField,
 } from "./workspace-catalogs";
 import { verifyArtifactSet, writeArtifactSet } from "./writer";
@@ -2334,7 +2335,6 @@ type ConventionWorkspacePreset = Readonly<{
 type ConventionWorkspace = Readonly<{
   preset?: ConventionWorkspacePreset;
   presetCandidates: ReadonlyArray<string>;
-  root: string;
 }>;
 
 function emptyConventionExceptions(): ConventionExceptions {
@@ -2404,7 +2404,7 @@ async function loadConventionWorkspacePreset(
     presetPath === undefined ||
     !(await regularFileExists(presetPath, "mirai-intl.workspace.json"))
   ) {
-    return { presetCandidates, root: workspaceRoot };
+    return { presetCandidates };
   }
   const canonicalRoot = await realpath(workspaceRoot);
   const canonicalPath = await realpath(presetPath);
@@ -2463,7 +2463,6 @@ async function loadConventionWorkspacePreset(
         : { sourceLocale: sourceLocaleValue }),
     },
     presetCandidates,
-    root: canonicalRoot,
   };
 }
 
@@ -3184,6 +3183,7 @@ async function loadConventionCatalogSnapshot(
     exceptions.checkProjects.length > 0
       ? exceptions.checkProjects
       : await inferredCheckProjects(repositoryRoot);
+  const installRoot = await installWorkspaceRoot(repositoryRoot);
   const checkProjectInputs = await Promise.all(
     resolvedCheckProjects.map(async (project) => {
       const projectPath = resolve(repositoryRoot, project.path);
@@ -3198,7 +3198,7 @@ async function loadConventionCatalogSnapshot(
       return {
         manifest: await checkProjectConfigManifest(
           repositoryRoot,
-          workspace.root,
+          installRoot,
           project
         ),
         project,

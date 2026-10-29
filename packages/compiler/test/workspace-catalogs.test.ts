@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { findWorkspaceRoot } from "../src/ownership";
 import {
   discoverWorkspaceCatalogs,
+  installWorkspaceRoot,
   nearestWorkspaceRoot,
 } from "../src/workspace-catalogs";
 
@@ -82,9 +82,9 @@ describe("workspace catalog discovery", () => {
       await expect(
         nearestWorkspaceRoot(join(root, "apps/landing"))
       ).resolves.toBe(root);
-      await expect(findWorkspaceRoot(join(root, "apps/landing"))).resolves.toBe(
-        root
-      );
+      await expect(
+        installWorkspaceRoot(join(root, "apps/landing"))
+      ).resolves.toBe(root);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -108,14 +108,18 @@ describe("workspace catalog discovery", () => {
       await expect(
         nearestWorkspaceRoot(join(landing, "src/app"))
       ).resolves.toBe(landing);
-      await expect(findWorkspaceRoot(landing)).resolves.toBe(landing);
+      // One root install: the declared root is confined at the pnpm root.
+      await expect(installWorkspaceRoot(landing)).resolves.toBe(root);
+      await expect(
+        installWorkspaceRoot(join(landing, "src/app"))
+      ).resolves.toBe(root);
       // fe's packages still resolve the shared pnpm root.
       await expect(
         nearestWorkspaceRoot(join(root, "apps/staff"))
       ).resolves.toBe(root);
-      await expect(findWorkspaceRoot(join(root, "apps/staff"))).resolves.toBe(
-        root
-      );
+      await expect(
+        installWorkspaceRoot(join(root, "apps/staff"))
+      ).resolves.toBe(root);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -134,6 +138,56 @@ describe("workspace catalog discovery", () => {
       await expect(
         nearestWorkspaceRoot(join(root, "apps/landing"))
       ).rejects.toThrow(/root must be true when present/u);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("install workspace root", () => {
+  it("confines at a declared intl root when no pnpm workspace is above it", async () => {
+    const outer = await realpath(
+      await mkdtemp(join(tmpdir(), "mirai-intl-install-root-"))
+    );
+    try {
+      const landing = join(outer, "apps/landing");
+      await writeFiles(outer, ["apps/landing/package.json"]);
+      await writeFile(join(landing, "mirai-intl.workspace.json"), declaredRoot);
+      await mkdir(join(landing, "src"), { recursive: true });
+      await expect(installWorkspaceRoot(join(landing, "src"))).resolves.toBe(
+        landing
+      );
+      await expect(nearestWorkspaceRoot(join(landing, "src"))).resolves.toBe(
+        landing
+      );
+    } finally {
+      await rm(outer, { force: true, recursive: true });
+    }
+  });
+
+  it("falls back to the start folder with neither a pnpm workspace nor a declared root", async () => {
+    const outer = await realpath(
+      await mkdtemp(join(tmpdir(), "mirai-intl-install-root-"))
+    );
+    try {
+      const app = join(outer, "app");
+      await writeFiles(outer, ["app/package.json"]);
+      await expect(installWorkspaceRoot(app)).resolves.toBe(app);
+    } finally {
+      await rm(outer, { force: true, recursive: true });
+    }
+  });
+
+  it("refuses a pnpm-workspace.yaml that is not a regular file", async () => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "mirai-intl-install-root-"))
+    );
+    try {
+      await mkdir(join(root, "pnpm-workspace.yaml"));
+      await writeFiles(root, ["app/package.json"]);
+      await expect(installWorkspaceRoot(join(root, "app"))).rejects.toThrow(
+        /pnpm-workspace\.yaml must be a regular file/u
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

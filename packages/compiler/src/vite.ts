@@ -13,7 +13,7 @@ import {
   invalidateMiraiIntlCatalogCache,
   transformMiraiIntlSource,
 } from "./transform";
-import { findWorkspaceRoot } from "./ownership";
+import { installWorkspaceRoot } from "./workspace-catalogs";
 import type {
   MiraiIntlSourceMap,
   MiraiIntlTransformOptions,
@@ -147,7 +147,7 @@ export function miraiIntlVite(
   const currentPointerPath = (): string =>
     resolve(generatedRootPath(), "current.json");
   const workspaceRoot = (): Promise<string> => {
-    workspaceRootPromise ??= findWorkspaceRoot(packageRoot());
+    workspaceRootPromise ??= installWorkspaceRoot(packageRoot());
     return workspaceRootPromise;
   };
   const applyDiscovery = (loaded: LoadedConventionCatalog): void => {

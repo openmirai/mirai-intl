@@ -1,4 +1,4 @@
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 const workspaceSkipDirectories = new Set([
@@ -13,9 +13,10 @@ const workspaceSkipDirectories = new Set([
 
 /**
  * True when `mirai-intl.workspace.json` in `directory` declares `"root": true`:
- * the folder is its own Mirai Intl workspace even inside a larger pnpm
- * workspace, exactly as if it had its own pnpm-workspace.yaml. Without the
- * field the preset only shares locale defaults, as before.
+ * the folder is its own Mirai Intl workspace (catalog discovery and locale
+ * preset) even inside a larger pnpm workspace, whose install root still
+ * confines its realpaths (`installWorkspaceRoot`). Without the field the
+ * preset only shares locale defaults, as before.
  */
 export async function declaresIntlWorkspaceRoot(
   directory: string
@@ -50,6 +51,45 @@ export function workspaceRootField(root: unknown): boolean {
     );
   }
   return root === true;
+}
+
+/**
+ * The install root: the canonical base every confined realpath and every
+ * receipt path is relative to. It is the nearest folder at or above `start`
+ * holding a pnpm-workspace.yaml, because pnpm installs every dependency of
+ * the workspace there (one root install puts them all in its
+ * node_modules/.pnpm); without one, the nearest folder whose
+ * mirai-intl.workspace.json declares `"root": true`; else `start` itself.
+ * A declared intl root inside a pnpm workspace keeps its own catalog
+ * discovery and locale preset (`nearestWorkspaceRoot`) but shares the pnpm
+ * root's install, so its realpaths are confined there.
+ */
+export async function installWorkspaceRoot(start: string): Promise<string> {
+  const canonicalStart = await realpath(start);
+  let declaredRoot: string | undefined;
+  let directory = canonicalStart;
+  while (true) {
+    const manifest = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
+      () => undefined
+    );
+    if (manifest) {
+      if (manifest.isSymbolicLink() || !manifest.isFile()) {
+        throw new Error("pnpm-workspace.yaml must be a regular file");
+      }
+      return directory;
+    }
+    if (
+      declaredRoot === undefined &&
+      (await declaresIntlWorkspaceRoot(directory))
+    ) {
+      declaredRoot = directory;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      return declaredRoot ?? canonicalStart;
+    }
+    directory = parent;
+  }
 }
 
 export async function nearestWorkspaceRoot(start: string): Promise<string> {

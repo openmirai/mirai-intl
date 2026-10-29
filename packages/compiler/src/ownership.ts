@@ -10,7 +10,7 @@ import type {
 import ts from "typescript";
 
 import { compareCanonicalStrings, sha256 } from "./canonical";
-import { declaresIntlWorkspaceRoot } from "./workspace-catalogs";
+import { installWorkspaceRoot } from "./workspace-catalogs";
 
 export type OwnedSourceFile = Readonly<{
   absolute: string;
@@ -55,29 +55,6 @@ function isWithin(root: string, path: string): boolean {
     candidate === "" ||
     (!candidate.startsWith(`..${sep}`) && !isAbsolute(candidate))
   );
-}
-
-export async function findWorkspaceRoot(root: string): Promise<string> {
-  const canonicalRoot = await realpath(root);
-  let directory = canonicalRoot;
-  while (true) {
-    const marker = join(directory, "pnpm-workspace.yaml");
-    const entry = await lstat(marker).catch(() => undefined);
-    if (entry) {
-      if (entry.isSymbolicLink() || !entry.isFile()) {
-        throw new Error("pnpm-workspace.yaml must be a regular file");
-      }
-      return directory;
-    }
-    if (await declaresIntlWorkspaceRoot(directory)) {
-      return directory;
-    }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      return canonicalRoot;
-    }
-    directory = parent;
-  }
 }
 
 async function projectFiles(
@@ -312,7 +289,7 @@ export async function resolveConventionSourceUniverse(
     throw new Error("Authorizing checks require at least one owner project");
   }
   const canonicalRoot = await realpath(root);
-  const workspaceRoot = await findWorkspaceRoot(canonicalRoot);
+  const workspaceRoot = await installWorkspaceRoot(canonicalRoot);
   const generatedRoot = resolve(canonicalRoot, generatedRelative);
   const projectsWithFiles = await Promise.all(
     projects.map(async (project) => ({

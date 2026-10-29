@@ -536,6 +536,35 @@ describe("convention-first catalog discovery", () => {
       expect(own.watch.files).not.toContain(
         await realpath(join(outer, "mirai-intl.workspace.json"))
       );
+
+      // One root install: configs are confined to the pnpm root, not the
+      // declared root, so a shared base config there is accepted...
+      await writeJson(join(outer, "tsconfig.base.json"), {
+        compilerOptions: { strict: true },
+      });
+      await writeJson(join(root, "tsconfig.json"), {
+        extends: "../../tsconfig.base.json",
+        include: ["src/**/*.ts"],
+      });
+      const shared = await loadConventionCatalog(root);
+      expect(shared.watch.files).toContain(
+        await realpath(join(outer, "tsconfig.base.json"))
+      );
+
+      // ...and a config outside the pnpm root still escapes.
+      const external = join(outer, "..", `${basename(outer)}-external.json`);
+      try {
+        await writeJson(external, { compilerOptions: { strict: true } });
+        await writeJson(join(root, "tsconfig.json"), {
+          extends: `../../../${basename(external)}`,
+          include: ["src/**/*.ts"],
+        });
+        await expect(loadConventionCatalog(root)).rejects.toThrow(
+          /escapes its workspace root/u
+        );
+      } finally {
+        await rm(external, { force: true });
+      }
     } finally {
       await rm(outer, { force: true, recursive: true });
     }

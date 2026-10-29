@@ -60,8 +60,8 @@ import {
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
 import {
-  declaresIntlWorkspaceRoot,
   discoverWorkspaceCatalogs,
+  installWorkspaceRoot,
 } from "./workspace-catalogs";
 import { collectConventionSourceFiles } from "./source-discovery";
 import { verifyProviderResolutionFrontier } from "./provider-resolution-identity";
@@ -123,33 +123,6 @@ function readWorkspaceSourceBytes(
     );
   }
   return readFileSync(path);
-}
-
-async function workspaceRoot(packageRoot: string): Promise<string> {
-  let directory = await realpath(packageRoot);
-  for (;;) {
-    for (const marker of [
-      "pnpm-workspace.yaml",
-      "pnpm-lock.yaml",
-      "package-lock.json",
-      "yarn.lock",
-      "bun.lock",
-      "bun.lockb",
-    ]) {
-      const entry = await lstat(join(directory, marker)).catch(() => undefined);
-      if (entry?.isFile() && !entry.isSymbolicLink()) {
-        return directory;
-      }
-    }
-    if (await declaresIntlWorkspaceRoot(directory)) {
-      return directory;
-    }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      return await realpath(packageRoot);
-    }
-    directory = parent;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -727,7 +700,7 @@ export async function readConventionCheckReceipt(
   authorityRoot?: string
 ): Promise<SelectedIntlCheckReceipt> {
   const root = await realpath(resolve(packageRoot));
-  const workspace = await workspaceRoot(root);
+  const workspace = await installWorkspaceRoot(root);
   const directory = join(authorityRoot ?? root, INTL_CHECK_RECEIPT_DIRECTORY);
   const selectorPath = join(directory, INTL_CHECK_RECEIPT_SELECTOR_NAME);
   const selectorEntry = await lstatOptional(
@@ -1420,7 +1393,7 @@ export async function verifyTransferredConventionBuildReceipt(
   generatedRoot = join(transferredPackageRoot, "src/i18n/generated")
 ): Promise<IntlBuildReceiptVerification> {
   const root = await realpath(resolve(packageRoot));
-  const workspace = await workspaceRoot(root);
+  const workspace = await installWorkspaceRoot(root);
   const { receipt, selection } = await readConventionCheckReceipt(
     root,
     undefined,
@@ -1452,7 +1425,7 @@ export async function verifySelectedConventionAuthoritySetV3(
   }>
 > {
   const root = await realpath(resolve(packageRoot));
-  const workspace = await workspaceRoot(root);
+  const workspace = await installWorkspaceRoot(root);
   const { authoritySetHash, receipt, selection } =
     await readConventionCheckReceipt(root);
   if (
@@ -1569,7 +1542,7 @@ async function verifyConventionBuildReceiptWithIdentity(
   session?: ReceiptVerificationSession
 ): Promise<IntlBuildReceiptVerification> {
   const root = await realpath(resolve(packageRoot));
-  const workspace = await workspaceRoot(root);
+  const workspace = await installWorkspaceRoot(root);
   const { receipt } = await readConventionCheckReceipt(root);
   if (receipt.schemaVersion === 3) {
     return verifyConventionBuildReceiptV3(root, workspace, receipt, {
