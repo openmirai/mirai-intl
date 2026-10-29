@@ -1,9 +1,10 @@
-import { access, realpath } from "node:fs/promises";
+import { access, readFile, realpath } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 import { loadConventionCatalog } from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
 import { verifyConventionBuildReceipt } from "./check-receipt";
+import { parseCanonicalCatalogCurrentPointer } from "./generation-snapshot";
 import { ensureMiraiIntlCatalogOnce } from "./lifecycle";
 import { isPathStrictlyWithin, isPathWithin } from "./path-within";
 import {
@@ -104,12 +105,31 @@ function isGeneratedBuildArtifact(root: string, id: string): boolean {
   return isPathStrictlyWithin(resolve(root, ".tanstack"), file);
 }
 
-async function hasPublishedCatalogPointer(
+/**
+ * True when current.json and the build it selects are both on disk. A fresh
+ * checkout tracks the pointer but not the ignored `builds/`, so a pointer
+ * alone is not a published catalog (V2D-2975). A pointer that does not
+ * parse counts as published: the transform reports it.
+ */
+async function hasPublishedCatalog(
   root: string,
   generatedDirectory: string
 ): Promise<boolean> {
+  const generatedRoot = join(root, generatedDirectory);
+  let pointerSource: string;
   try {
-    await access(join(root, generatedDirectory, "current.json"));
+    pointerSource = await readFile(join(generatedRoot, "current.json"), "utf8");
+  } catch {
+    return false;
+  }
+  let directory: string;
+  try {
+    ({ directory } = parseCanonicalCatalogCurrentPointer(pointerSource));
+  } catch {
+    return true;
+  }
+  try {
+    await access(resolve(generatedRoot, directory));
     return true;
   } catch {
     return false;
@@ -269,13 +289,12 @@ export function miraiIntlVite(
       }
       const generatedDirectory =
         opts.generatedDirectory ?? defaultGeneratedDirectory;
-      const published = await hasPublishedCatalogPointer(
-        root,
-        generatedDirectory
-      );
+      const published = await hasPublishedCatalog(root, generatedDirectory);
 
       if (!published) {
-        // Fresh fixtures / first boot without `intl:ensure`.
+        // Fresh fixtures, first boot without `intl:ensure`, or a fresh
+        // checkout whose tracked pointer selects an ignored, missing build:
+        // run the `intl:ensure` step once per process and continue.
         const loaded = (await ensureMiraiIntlCatalogOnce(opts)).loaded;
         applyDiscovery(loaded);
         registerBuildWatches(this);
