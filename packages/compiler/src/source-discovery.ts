@@ -1,7 +1,8 @@
 import { readdir } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 
 import { compareCanonicalStrings } from "./canonical";
+import { isPathStrictlyWithin, isPathWithin } from "./path-within";
 
 const SKIP_DIRECTORY_NAMES = new Set([
   ".git",
@@ -20,7 +21,14 @@ export async function collectConventionSourceFiles(
   root: string,
   generatedRelative: string
 ): Promise<Array<string>> {
-  const generatedPrefix = generatedRelative.split(/[\\/]/u).join(sep);
+  // A generated folder outside the package (or the package itself) hides
+  // nothing from discovery.
+  const generatedCandidate = join(root, ...generatedRelative.split(/[\\/]/u));
+  const generatedRoot = isPathStrictlyWithin(root, generatedCandidate)
+    ? generatedCandidate
+    : undefined;
+  const isGenerated = (path: string): boolean =>
+    generatedRoot !== undefined && isPathWithin(generatedRoot, path);
   const files: Array<string> = [];
 
   const visit = async (directory: string): Promise<void> => {
@@ -32,13 +40,8 @@ export async function collectConventionSourceFiles(
         }
       }
       const absolute = join(directory, entry.name);
-      const relativePath = relative(root, absolute);
       if (entry.isDirectory()) {
-        if (
-          SKIP_DIRECTORY_NAMES.has(entry.name) ||
-          relativePath === generatedPrefix ||
-          relativePath.startsWith(`${generatedPrefix}${sep}`)
-        ) {
+        if (SKIP_DIRECTORY_NAMES.has(entry.name) || isGenerated(absolute)) {
           continue;
         }
         await visit(absolute);
@@ -47,10 +50,7 @@ export async function collectConventionSourceFiles(
       if (!entry.isFile() || !SOURCE_EXTENSION.test(entry.name)) {
         continue;
       }
-      if (
-        relativePath === generatedPrefix ||
-        relativePath.startsWith(`${generatedPrefix}${sep}`)
-      ) {
+      if (isGenerated(absolute)) {
         continue;
       }
       files.push(absolute);

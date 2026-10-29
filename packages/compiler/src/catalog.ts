@@ -2,15 +2,7 @@ import { execFile } from "node:child_process";
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -52,9 +44,11 @@ import {
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
 import { inferMessageContract, inspectMessageSyntax } from "./parser";
+import { ancestorDirectories, isPathWithin } from "./path-within";
 import type { CatalogSource, MessageSource } from "./source";
 import {
-  declaresIntlWorkspaceRoot,
+  WORKSPACE_LOCK_NAMES,
+  walkWorkspaceRoots,
   workspaceRootField,
 } from "./workspace-catalogs";
 import { verifyArtifactSet, writeArtifactSet } from "./writer";
@@ -337,11 +331,6 @@ function requiredStringArray(
   return strings;
 }
 
-function within(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === "" || (!path.startsWith(`..${sep}`) && path !== "..");
-}
-
 function fileSystemErrorCode(error: unknown): unknown {
   return error && typeof error === "object"
     ? Reflect.get(error, "code")
@@ -359,7 +348,7 @@ async function confinedProspectivePath(
     try {
       const canonicalBase = await realpath(existingPath);
       const canonicalPath = resolve(canonicalBase, ...missingSegments);
-      if (!within(repositoryRoot, canonicalPath)) {
+      if (!isPathWithin(repositoryRoot, canonicalPath)) {
         throw new Error(`${context} symlink escapes the config directory`);
       }
       return canonicalPath;
@@ -674,7 +663,7 @@ async function discoverSource(
       cause: error,
     });
   });
-  if (!within(source.withinRoot, root)) {
+  if (!isPathWithin(source.withinRoot, root)) {
     throw new Error(
       source.dependency
         ? `Source root ${source.root} escapes dependency package root ${source.dependency}`
@@ -813,7 +802,7 @@ async function discoverSource(
       const absolutePath = join(physicalDirectory, entry.name);
       if (entry.isSymbolicLink()) {
         const target = await realpath(absolutePath);
-        if (!within(root, target)) {
+        if (!isPathWithin(root, target)) {
           throw new Error(
             `Source symlink escapes configured source root: ${[...logicalParts, entry.name].join("/")}`
           );
@@ -1310,8 +1299,7 @@ type GitRepository = Readonly<{
 }>;
 
 async function gitRepository(start: string): Promise<GitRepository> {
-  let current = await realpath(start);
-  for (;;) {
+  for (const current of ancestorDirectories(await realpath(start))) {
     const marker = join(current, ".git");
     const entry = await lstat(marker).catch(() => undefined);
     if (entry) {
@@ -1341,12 +1329,8 @@ async function gitRepository(start: string): Promise<GitRepository> {
         : gitDirectory;
       return { commonDirectory, gitDirectory, root: current };
     }
-    const parent = dirname(current);
-    if (parent === current) {
-      throw new Error("Git repository is unavailable");
-    }
-    current = parent;
   }
+  throw new Error("Git repository is unavailable");
 }
 
 async function gitHead(repository: GitRepository): Promise<string | null> {
@@ -1448,8 +1432,9 @@ async function resolvedPackageVersion(
   packageName: string
 ): Promise<string | null> {
   try {
-    let current = dirname(requireFromCompiler.resolve(packageName));
-    for (;;) {
+    for (const current of ancestorDirectories(
+      dirname(requireFromCompiler.resolve(packageName))
+    )) {
       const packageJsonPath = join(current, "package.json");
       try {
         const value = assertObject(
@@ -1468,12 +1453,8 @@ async function resolvedPackageVersion(
           throw error;
         }
       }
-      const parent = dirname(current);
-      if (parent === current) {
-        return null;
-      }
-      current = parent;
     }
+    return null;
   } catch {
     return null;
   }
@@ -1770,8 +1751,7 @@ async function workspaceIncludesPackage(
 async function pnpmLockfileEvidence(
   packageRoot: string
 ): Promise<Readonly<{ content: string }>> {
-  let directory = packageRoot;
-  while (true) {
+  for (const directory of ancestorDirectories(packageRoot)) {
     const lockfilePath = join(directory, "pnpm-lock.yaml");
     const hasLockfile = await regularFileExists(lockfilePath, "pnpm-lock.yaml");
     if (directory === packageRoot && hasLockfile) {
@@ -1801,15 +1781,10 @@ async function pnpmLockfileEvidence(
         return { content };
       }
     }
-
-    const parent = dirname(directory);
-    if (parent === directory) {
-      throw new Error(
-        "Unable to collect environment evidence: no pnpm-lock.yaml exists at the package root and no parent pnpm workspace lockfile includes the target package importer"
-      );
-    }
-    directory = parent;
   }
+  throw new Error(
+    "Unable to collect environment evidence: no pnpm-lock.yaml exists at the package root and no parent pnpm workspace lockfile includes the target package importer"
+  );
 }
 
 async function collectEnvironment(
@@ -2284,7 +2259,7 @@ async function resolveMountedSource(
     );
   }
   const physicalRoot = resolve(dependencyRoot, declaration.path);
-  if (!within(dependencyRoot, physicalRoot)) {
+  if (!isPathWithin(dependencyRoot, physicalRoot)) {
     throw new Error(
       `Mounted translation source ${declaration.from} path must stay inside its dependency package`
     );
@@ -2297,7 +2272,7 @@ async function resolveMountedSource(
       );
     }
   );
-  if (!within(dependencyRoot, canonicalSourceRoot)) {
+  if (!isPathWithin(dependencyRoot, canonicalSourceRoot)) {
     throw new Error(
       `Mounted translation source ${declaration.from}/${declaration.path} escapes dependency package root`
     );
@@ -2332,9 +2307,10 @@ type ConventionWorkspacePreset = Readonly<{
 }>;
 
 type ConventionWorkspace = Readonly<{
+  /** The install root (`WorkspaceRoots.install`) confining config realpaths. */
+  installRoot: string;
   preset?: ConventionWorkspacePreset;
   presetCandidates: ReadonlyArray<string>;
-  root: string;
 }>;
 
 function emptyConventionExceptions(): ConventionExceptions {
@@ -2351,30 +2327,13 @@ function emptyConventionExceptions(): ConventionExceptions {
 async function loadConventionWorkspacePreset(
   repositoryRoot: string
 ): Promise<ConventionWorkspace> {
-  let workspaceRoot: string | undefined;
-  let declaredRoot = false;
-  let directory = repositoryRoot;
-  while (true) {
-    const workspaceManifestPath = join(directory, "pnpm-workspace.yaml");
-    if (await regularFileExists(workspaceManifestPath, "pnpm-workspace.yaml")) {
-      workspaceRoot = directory;
+  const roots = await walkWorkspaceRoots(repositoryRoot);
+  const workspaceRoot = roots.intl?.root ?? repositoryRoot;
+  for (const directory of ancestorDirectories(repositoryRoot)) {
+    if (directory === workspaceRoot) {
       break;
     }
-    if (await declaresIntlWorkspaceRoot(directory)) {
-      declaredRoot = true;
-      workspaceRoot = directory;
-      break;
-    }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      break;
-    }
-    directory = parent;
-  }
-  workspaceRoot ??= repositoryRoot;
-  let nestedDirectory = repositoryRoot;
-  while (nestedDirectory !== workspaceRoot) {
-    const nestedPreset = join(nestedDirectory, "mirai-intl.workspace.json");
+    const nestedPreset = join(directory, "mirai-intl.workspace.json");
     if (
       await regularFileExists(nestedPreset, "nested mirai-intl.workspace.json")
     ) {
@@ -2382,21 +2341,9 @@ async function loadConventionWorkspacePreset(
         `Convention workspace preset ${nestedPreset} is nested below the authoritative workspace root ${workspaceRoot}`
       );
     }
-    const parent = dirname(nestedDirectory);
-    if (parent === nestedDirectory || !within(workspaceRoot, parent)) {
-      throw new Error(
-        "Unable to resolve the package path within its authoritative pnpm workspace root"
-      );
-    }
-    nestedDirectory = parent;
   }
   const presetCandidates =
-    workspaceRoot === repositoryRoot &&
-    !declaredRoot &&
-    !(await regularFileExists(
-      join(workspaceRoot, "pnpm-workspace.yaml"),
-      "pnpm-workspace.yaml"
-    ))
+    roots.intl === undefined
       ? []
       : [join(workspaceRoot, "mirai-intl.workspace.json")];
   const presetPath = presetCandidates[0];
@@ -2404,11 +2351,11 @@ async function loadConventionWorkspacePreset(
     presetPath === undefined ||
     !(await regularFileExists(presetPath, "mirai-intl.workspace.json"))
   ) {
-    return { presetCandidates, root: workspaceRoot };
+    return { installRoot: roots.install, presetCandidates };
   }
   const canonicalRoot = await realpath(workspaceRoot);
   const canonicalPath = await realpath(presetPath);
-  if (!within(canonicalRoot, canonicalPath)) {
+  if (!isPathWithin(canonicalRoot, canonicalPath)) {
     throw new Error(
       "mirai-intl.workspace.json must stay inside its pnpm workspace root"
     );
@@ -2462,8 +2409,8 @@ async function loadConventionWorkspacePreset(
         ? {}
         : { sourceLocale: sourceLocaleValue }),
     },
+    installRoot: roots.install,
     presetCandidates,
-    root: canonicalRoot,
   };
 }
 
@@ -2596,7 +2543,7 @@ async function checkProjectConfigManifest(
       }
       const canonical = await realpath(candidate);
       if (
-        !within(workspaceRoot, canonical) ||
+        !isPathWithin(workspaceRoot, canonical) ||
         canonical !== resolve(candidate)
       ) {
         throw new Error(
@@ -2625,7 +2572,10 @@ async function checkProjectConfigManifest(
       );
     }
     const canonical = await realpath(path);
-    if (!within(workspaceRoot, canonical) || canonical !== resolve(path)) {
+    if (
+      !isPathWithin(workspaceRoot, canonical) ||
+      canonical !== resolve(path)
+    ) {
       throw new Error(
         `Check project ${project.path} transitive config escapes its workspace root or traverses a symbolic link`
       );
@@ -3030,7 +2980,7 @@ async function loadConventionCatalogSnapshot(
   for (const project of exceptions.checkProjects) {
     const projectPath = resolve(repositoryRoot, project.path);
     if (
-      !within(repositoryRoot, projectPath) ||
+      !isPathWithin(repositoryRoot, projectPath) ||
       !(await regularFileExists(projectPath, `check project ${project.path}`))
     ) {
       throw new Error(
@@ -3041,7 +2991,7 @@ async function loadConventionCatalogSnapshot(
   for (const exception of exceptions.checkExceptions) {
     const exceptionPath = resolve(repositoryRoot, exception.file);
     if (
-      !within(repositoryRoot, exceptionPath) ||
+      !isPathWithin(repositoryRoot, exceptionPath) ||
       !(await regularFileExists(
         exceptionPath,
         `check exception ${exception.file}`
@@ -3188,7 +3138,7 @@ async function loadConventionCatalogSnapshot(
     resolvedCheckProjects.map(async (project) => {
       const projectPath = resolve(repositoryRoot, project.path);
       if (
-        !within(repositoryRoot, projectPath) ||
+        !isPathWithin(repositoryRoot, projectPath) ||
         !(await regularFileExists(projectPath, `check project ${project.path}`))
       ) {
         throw new Error(
@@ -3198,7 +3148,7 @@ async function loadConventionCatalogSnapshot(
       return {
         manifest: await checkProjectConfigManifest(
           repositoryRoot,
-          workspace.root,
+          workspace.installRoot,
           project
         ),
         project,
@@ -3345,13 +3295,6 @@ export async function loadConventionCatalog(
 }
 
 const catalogArtifactAbi = CATALOG_ARTIFACT_ABI;
-const applicationLockNames = [
-  "pnpm-lock.yaml",
-  "package-lock.json",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb",
-] as const;
 const generationInputCache = new Map<
   string,
   Readonly<{
@@ -3481,9 +3424,8 @@ function generationLockWatchEntries(
   root: string
 ): Array<readonly [string, string]> {
   const entries: Array<readonly [string, string]> = [];
-  let directory = root;
-  for (;;) {
-    const candidates = applicationLockNames.map((name) =>
+  for (const directory of ancestorDirectories(root)) {
+    const candidates = WORKSPACE_LOCK_NAMES.map((name) =>
       generationWatchEntries(root, join(directory, name))
     );
     entries.push(...candidates.flat());
@@ -3494,22 +3436,8 @@ function generationLockWatchEntries(
     ) {
       return entries;
     }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      return entries;
-    }
-    directory = parent;
   }
-}
-
-function withinWatchRoot(root: string, path: string): boolean {
-  const relation = relative(root, path);
-  return (
-    relation === "" ||
-    (relation !== ".." &&
-      !relation.startsWith(`..${sep}`) &&
-      !isAbsolute(relation))
-  );
+  return entries;
 }
 
 function generationInputFingerprint(
@@ -3525,7 +3453,7 @@ function generationInputFingerprint(
         values.indexOf(root) === index &&
         !values.some(
           (candidate, candidateIndex) =>
-            candidateIndex !== index && withinWatchRoot(candidate, root)
+            candidateIndex !== index && isPathWithin(candidate, root)
         )
     )
     .toSorted(compareCanonicalStrings);
@@ -3533,7 +3461,7 @@ function generationInputFingerprint(
     .map((path) => generationWatchEntries(loaded.repositoryRoot, path))
     .flat();
   const files = [...new Set(loaded.watch.files)]
-    .filter((path) => !watchRoots.some((root) => withinWatchRoot(root, path)))
+    .filter((path) => !watchRoots.some((root) => isPathWithin(root, path)))
     .toSorted(compareCanonicalStrings)
     .map((path) => generationWatchEntries(loaded.repositoryRoot, path))
     .flat();

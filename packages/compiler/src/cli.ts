@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { readFile, readdir, realpath } from "node:fs/promises";
 import { availableParallelism, totalmem } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 
 import { compileCatalog } from "./compile";
 import type { IntlBuildReceiptVerification } from "./check-receipt";
@@ -19,6 +19,7 @@ import {
 } from "./catalog";
 import { parseCanonicalCatalogCurrentPointer } from "./generation-snapshot";
 import { ensureMiraiIntlCatalog } from "./lifecycle";
+import { relativePathWithin } from "./path-within";
 import {
   colorEnabled,
   emitReport,
@@ -844,16 +845,9 @@ function sourceDiagnostics(
   return diagnostics
     .map((diagnostic) => {
       const location = /^(\d+)(?::(\d+))?:\s*(.*)$/u.exec(diagnostic.message);
-      const relativeFile = relative(root, resolve(root, diagnostic.file))
-        .split("\\")
-        .join("/");
       const file =
-        relativeFile === "" ||
-        relativeFile === ".." ||
-        relativeFile.startsWith("../") ||
-        isAbsolute(relativeFile)
-          ? basename(diagnostic.file)
-          : relativeFile;
+        relativePathWithin(root, resolve(root, diagnostic.file)) ??
+        basename(diagnostic.file);
       return {
         code: "INTL_SOURCE_INVALID",
         ...(location?.[2] ? { column: Number(location[2]) } : {}),

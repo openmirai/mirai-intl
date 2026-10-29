@@ -166,8 +166,11 @@ That folder then counts as its own Mirai Intl workspace, as if it had its own
 transfer at the outer root leaves its catalogs out, and the folder's own
 commands (`check`, `prove`, `--workspace`) resolve it as their root and take
 their locale defaults from its preset, not the outer one. Without the field a
-`mirai-intl.workspace.json` below the pnpm root is still an error. The pnpm
-lockfile is still read from the real pnpm workspace.
+`mirai-intl.workspace.json` below the pnpm root is still an error. The install
+stays shared: the pnpm lockfile is read from the real pnpm workspace, and
+resolved files (dependencies, providers, extended TypeScript configs) and
+receipt paths are confined to and recorded relative to that pnpm workspace
+root, where one root install puts every package.
 
 Use the `miraiIntl` key in `package.json` instead of a separate file when that
 fits the application better:

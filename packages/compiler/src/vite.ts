@@ -1,10 +1,11 @@
 import { access, realpath } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import { loadConventionCatalog } from "./catalog";
 import type { LoadedConventionCatalog } from "./catalog";
 import { verifyConventionBuildReceipt } from "./check-receipt";
 import { ensureMiraiIntlCatalogOnce } from "./lifecycle";
+import { isPathStrictlyWithin, isPathWithin } from "./path-within";
 import {
   authorizePrivateMessageSliceRequest,
   loadPrivateMessageSlice,
@@ -13,7 +14,7 @@ import {
   invalidateMiraiIntlCatalogCache,
   transformMiraiIntlSource,
 } from "./transform";
-import { findWorkspaceRoot } from "./ownership";
+import { installWorkspaceRoot } from "./workspace-catalogs";
 import type {
   MiraiIntlSourceMap,
   MiraiIntlTransformOptions,
@@ -91,16 +92,6 @@ async function canonicalPath(path: string): Promise<string> {
   }
 }
 
-function isPathInside(parent: string, file: string): boolean {
-  const relativePath = relative(parent, file);
-  return (
-    relativePath !== "" &&
-    !relativePath.startsWith(`..${sep}`) &&
-    relativePath !== ".." &&
-    !relativePath.startsWith(sep)
-  );
-}
-
 const restartMessage =
   "Translation configuration or sources changed. Restart Vite so mirai-intl can publish one reader-safe catalog before compilation.";
 const catalogRestartMessage =
@@ -110,7 +101,7 @@ const defaultGeneratedDirectory = "src/i18n/generated";
 
 function isGeneratedBuildArtifact(root: string, id: string): boolean {
   const file = resolve(id.replace(/[?#].*$/u, ""));
-  return isPathInside(resolve(root, ".tanstack"), file);
+  return isPathStrictlyWithin(resolve(root, ".tanstack"), file);
 }
 
 async function hasPublishedCatalogPointer(
@@ -147,7 +138,7 @@ export function miraiIntlVite(
   const currentPointerPath = (): string =>
     resolve(generatedRootPath(), "current.json");
   const workspaceRoot = (): Promise<string> => {
-    workspaceRootPromise ??= findWorkspaceRoot(packageRoot());
+    workspaceRootPromise ??= installWorkspaceRoot(packageRoot());
     return workspaceRootPromise;
   };
   const applyDiscovery = (loaded: LoadedConventionCatalog): void => {
@@ -163,10 +154,7 @@ export function miraiIntlVite(
         loaded.watch.files
           .map(normalizedPath)
           .filter(
-            (file) =>
-              !localeRoots.some(
-                (root) => file === root || isPathInside(root, file)
-              )
+            (file) => !localeRoots.some((root) => isPathWithin(root, file))
           )
       ),
     ].toSorted();
@@ -196,15 +184,13 @@ export function miraiIntlVite(
         .map((root) => canonicalPath(root))
     );
     if (roots.length > 0) {
-      return roots.some(
-        (root) => normalized === root || isPathInside(root, normalized)
-      );
+      return roots.some((root) => isPathWithin(root, normalized));
     }
     // Discovery may still be deferred on app boot; treat package locale JSON
     // as translation sources so HMR still requests a restart.
     const root = await canonicalPath(packageRoot());
     return (
-      isPathInside(root, normalized) &&
+      isPathStrictlyWithin(root, normalized) &&
       (normalized.includes("/locales/") || normalized.includes("/src/locales/"))
     );
   };
@@ -215,10 +201,7 @@ export function miraiIntlVite(
       canonicalPath(generatedRootPath()),
       canonicalPath(file),
     ]);
-    return (
-      generatedFile === generatedRoot ||
-      isPathInside(generatedRoot, generatedFile)
-    );
+    return isPathWithin(generatedRoot, generatedFile);
   };
   const restartForCatalogRotation = (
     server: MiraiIntlViteServer

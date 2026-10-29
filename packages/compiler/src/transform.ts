@@ -23,6 +23,12 @@ import {
   decodeUtf8Fatal,
   sha256,
 } from "./canonical";
+import {
+  ancestorDirectories,
+  confinedRelativePath,
+  isPathWithin,
+  isSamePath,
+} from "./path-within";
 import { mergeSemanticProviders } from "./semantic-providers";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import { privateMessageSliceSpecifier } from "./private-module";
@@ -497,20 +503,6 @@ function assertGeneratedFacadeSelector(
   }
 }
 
-function isWithin(root: string, candidate: string): boolean {
-  const pathFromRoot = relative(root, candidate);
-  return (
-    pathFromRoot === "" ||
-    (pathFromRoot !== ".." &&
-      !pathFromRoot.startsWith(`..${sep}`) &&
-      !isAbsolute(pathFromRoot))
-  );
-}
-
-function isSamePath(left: string, right: string): boolean {
-  return relative(left, right) === "" && relative(right, left) === "";
-}
-
 async function canonicalCatalogRoot(generatedRoot: string): Promise<string> {
   const stats = await lstat(generatedRoot);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
@@ -533,7 +525,7 @@ async function assertConfinedDirectory(
     throw new Error(`${label} must be a directory`);
   }
   const canonical = await realpath(directory);
-  if (!isWithin(root, canonical)) {
+  if (!isPathWithin(root, canonical)) {
     throw new Error(`${label} escapes ${rootLabel}`);
   }
   return canonical;
@@ -550,7 +542,7 @@ async function assertConfinedRegularFile(
     throw new Error(`${label} must be a non-symlink regular file`);
   }
   const canonical = await realpath(file);
-  if (!isWithin(root, canonical)) {
+  if (!isPathWithin(root, canonical)) {
     throw new Error(`${label} escapes ${rootLabel}`);
   }
 }
@@ -573,12 +565,7 @@ function confinedSelectedDirectory(
     throw new Error("Generated current pointer directory must be relative");
   }
   const selected = resolve(generatedRoot, directory);
-  const fromRoot = relative(generatedRoot, selected);
-  if (
-    fromRoot === ".." ||
-    fromRoot.startsWith(`..${sep}`) ||
-    isAbsolute(fromRoot)
-  ) {
+  if (!isPathWithin(generatedRoot, selected)) {
     throw new Error("Generated current pointer escapes its catalog root");
   }
   return selected;
@@ -1773,7 +1760,7 @@ function resolveModuleWithFrontier(
   ): string | undefined => {
     const absolute = resolve(path);
     const canonical = canonicalizeWithExistingAncestor(absolute);
-    if (isWithin(canonicalWorkspaceRoot, canonical)) {
+    if (isPathWithin(canonicalWorkspaceRoot, canonical)) {
       return resolve(
         resolvedWorkspaceRoot,
         relative(canonicalWorkspaceRoot, canonical)
@@ -1803,7 +1790,7 @@ function resolveModuleWithFrontier(
     // when a symlink redirects its nearest existing ancestor outside.
     const confined = confinedPath(
       lexicalPath,
-      isWithin(resolvedWorkspaceRoot, lexicalPath) ||
+      isPathWithin(resolvedWorkspaceRoot, lexicalPath) ||
         (present && kind === "file"),
       "probe"
     );
@@ -2324,7 +2311,7 @@ function resolveTypeReferenceWithFrontier(
   ): string | undefined => {
     const absolute = resolve(path);
     const canonical = canonicalizeWithExistingAncestor(absolute);
-    if (isWithin(canonicalWorkspaceRoot, canonical)) {
+    if (isPathWithin(canonicalWorkspaceRoot, canonical)) {
       return resolve(
         resolvedWorkspaceRoot,
         relative(canonicalWorkspaceRoot, canonical)
@@ -2345,7 +2332,7 @@ function resolveTypeReferenceWithFrontier(
     const lexicalPath = resolve(path);
     const confined = confinedPath(
       lexicalPath,
-      isWithin(resolvedWorkspaceRoot, lexicalPath) ||
+      isPathWithin(resolvedWorkspaceRoot, lexicalPath) ||
         (present && kind === "file"),
       "probe"
     );
@@ -2589,7 +2576,7 @@ function createProgram(
     canonical: string,
     resolution: ts.ResolvedModuleFull
   ): boolean => {
-    if (isWithin(canonicalRoot, canonical)) {
+    if (isPathWithin(canonicalRoot, canonical)) {
       if (!canonical.includes(`${sep}node_modules${sep}`)) {
         return true;
       }
@@ -2851,7 +2838,7 @@ function createProgram(
         };
       }
       if (containingFile === generatedFacadeId) {
-        return isWithin(catalog.selectedCanonicalDirectory, canonical)
+        return isPathWithin(catalog.selectedCanonicalDirectory, canonical)
           ? resolution
           : undefined;
       }
@@ -3423,14 +3410,8 @@ function captureSealedHostRealpaths(
   const identities = new Map<string, string>();
   const virtualDirectories = new Set<string>();
   for (const file of virtualFiles) {
-    let directory = dirname(resolve(file));
-    for (;;) {
+    for (const directory of ancestorDirectories(dirname(resolve(file)))) {
       virtualDirectories.add(directory);
-      const parent = dirname(directory);
-      if (parent === directory) {
-        break;
-      }
-      directory = parent;
     }
   }
   const record = (path: string, kind: "directory" | "file"): void => {
@@ -3482,14 +3463,8 @@ function captureSealedHostRealpaths(
   for (const path of filePaths) {
     const absolute = resolve(path);
     record(absolute, "file");
-    let directory = dirname(absolute);
-    for (;;) {
+    for (const directory of ancestorDirectories(dirname(absolute))) {
       record(directory, "directory");
-      const parent = dirname(directory);
-      if (parent === directory) {
-        break;
-      }
-      directory = parent;
     }
   }
   return [...identities].map(([path, target]) => ({ path, target }));
@@ -3829,7 +3804,7 @@ function prepareSealedSemanticClosure(
     resolution: ts.ResolvedModuleFull
   ): boolean => {
     if (
-      isWithin(canonicalRoot, canonical) &&
+      isPathWithin(canonicalRoot, canonical) &&
       !canonical.includes(`${sep}node_modules${sep}`)
     ) {
       return true;
@@ -4058,7 +4033,7 @@ function prepareSealedSemanticClosure(
     }
     if (
       containingFile === generatedFacadeId &&
-      !isWithin(catalog.selectedCanonicalDirectory, canonical)
+      !isPathWithin(catalog.selectedCanonicalDirectory, canonical)
     ) {
       resolutions.set(key, {
         containingFile,
@@ -4067,7 +4042,7 @@ function prepareSealedSemanticClosure(
       });
       return undefined;
     }
-    if (isWithin(catalog.selectedCanonicalDirectory, canonical)) {
+    if (isPathWithin(catalog.selectedCanonicalDirectory, canonical)) {
       vfsResolutions.set(
         `${normalizedSemanticPath(traced.frontier.from, cache)}\u0000${traced.frontier.specifier}`,
         traced.frontier
@@ -4361,8 +4336,7 @@ function prepareSealedSemanticClosure(
     }
   }
   for (const path of semanticFilePaths) {
-    let directory = dirname(path);
-    for (;;) {
+    for (const directory of ancestorDirectories(dirname(path))) {
       const packagePath = resolve(directory, "package.json");
       if (!hostFileProbes.has(packagePath)) {
         let packageSource = cache.packageFiles.get(packagePath);
@@ -4377,11 +4351,6 @@ function prepareSealedSemanticClosure(
           break;
         }
       }
-      const parent = dirname(directory);
-      if (parent === directory) {
-        break;
-      }
-      directory = parent;
     }
   }
   const packageEntryExtensions = [
@@ -4661,8 +4630,7 @@ function cloneFacadeOnlySemanticClosure(
   const hostFileProbes = new Map(
     template.hostFileProbes.map(({ path, present }) => [path, present])
   );
-  let directory = dirname(cleanId);
-  for (;;) {
+  for (const directory of ancestorDirectories(dirname(cleanId))) {
     const packagePath = resolve(directory, "package.json");
     if (!hostFileProbes.has(packagePath)) {
       let packageSource = cache.packageFiles.get(packagePath);
@@ -4677,11 +4645,6 @@ function cloneFacadeOnlySemanticClosure(
     } else if (hostFileProbes.get(packagePath)) {
       break;
     }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      break;
-    }
-    directory = parent;
   }
   const hostRealpaths = new Map(
     template.hostRealpaths.map(({ path, target }) => [path, target])
@@ -5378,7 +5341,7 @@ function createSealedSemanticGroup(
         /\.d\.[cm]?ts$/u.test(file.path) &&
         (closure.tripleSlashControls > 0 ||
           isSemanticInterferenceDeclaration(file, cache) ||
-          isWithin(catalog.selectedCanonicalDirectory, file.path))
+          isPathWithin(catalog.selectedCanonicalDirectory, file.path))
       ) {
         rootNameSet.add(file.path);
       }
@@ -5506,16 +5469,16 @@ function createSealedSemanticGroup(
 }
 
 function evidencePath(workspaceRoot: string, file: string): string {
-  const path = relative(workspaceRoot, file).split(sep).join("/");
   if (
     /[/\\]typescript[/\\]lib[/\\]lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u.test(file)
   ) {
     return `@typescript/lib/${file.split(/[\\/]/u).at(-1)}`;
   }
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error(`Semantic evidence path escapes its workspace root`);
-  }
-  return path;
+  return confinedRelativePath(
+    workspaceRoot,
+    file,
+    "Semantic evidence path escapes its workspace root"
+  );
 }
 
 function semanticEvidence(
@@ -7917,7 +7880,7 @@ async function transformMiraiIntlSourceWithCatalog(
   }
   if (
     !options.authorizationEvidence &&
-    !isWithin(
+    !isPathWithin(
       normalizedSemanticPath(workspaceRoot),
       normalizedSemanticPath(cleanId)
     )
@@ -7930,10 +7893,7 @@ async function transformMiraiIntlSourceWithCatalog(
   ) {
     return null;
   }
-  if (
-    cleanId === catalog.selectedDirectory ||
-    cleanId.startsWith(`${catalog.selectedDirectory}${sep}`)
-  ) {
+  if (isPathWithin(catalog.selectedDirectory, cleanId)) {
     return null;
   }
   const generatedImports =

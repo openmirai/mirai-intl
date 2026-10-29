@@ -23,6 +23,7 @@ import {
   parseCanonicalCatalogGenerationReceipt,
   parseCanonicalCatalogPublicationJournal,
 } from "./generation-snapshot";
+import { isPathStrictlyWithin } from "./path-within";
 import type { MiraiIntlTransformOptions } from "./transform";
 import {
   isControlReplacementTemporary,
@@ -103,16 +104,6 @@ function readRegularText(path: string, label: string): string {
   return readRegularFile(path, label).source;
 }
 
-function isWithin(root: string, candidate: string): boolean {
-  const relation = relative(root, candidate);
-  return (
-    relation !== "" &&
-    relation !== ".." &&
-    !relation.startsWith(`..${sep}`) &&
-    !isAbsolute(relation)
-  );
-}
-
 function generatedStateFingerprint(
   root: string,
   directory = root
@@ -159,7 +150,7 @@ async function assertGeneratedRootConfinement(
     realpath(root),
     realpath(generatedRoot),
   ]);
-  if (!isWithin(canonicalRoot, canonicalGeneratedRoot)) {
+  if (!isPathStrictlyWithin(canonicalRoot, canonicalGeneratedRoot)) {
     throw new Error(
       "Generated catalog root must be a real child of the catalog root"
     );
