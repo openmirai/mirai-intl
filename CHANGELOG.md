@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.10](https://github.com/openmirai/mirai-intl/compare/v0.4.9...v0.4.10) (2026-10-29)
+
+
+### Bug Fixes
+
+* **compiler:** one prospective-path helper, REVIEW-2 m1-m3, V2D-2975 ([03a917b](https://github.com/openmirai/mirai-intl/commit/03a917bb7c714a26c5379ad6a69bdcf5c2a014d2))
+
+
+### Performance Improvements
+
+* **compiler:** stat each ancestor before its realpath in the prospective-path helper ([997a008](https://github.com/openmirai/mirai-intl/commit/997a00899e9e8911bf259e703710efbe3097f58f))
+
 ## [0.4.9](https://github.com/openmirai/mirai-intl/compare/v0.4.8...v0.4.9) (2026-10-29)
 
 
