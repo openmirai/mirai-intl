@@ -89,10 +89,10 @@ async function hasPnpmWorkspaceManifest(directory: string): Promise<boolean> {
 export type WorkspaceRoots = Readonly<{
   /**
    * The nearest intl workspace root: the nearest folder holding a
-   * pnpm-workspace.yaml or declaring `"root": true` (`declared`). It owns
-   * catalog discovery and the locale preset. Absent when neither exists.
+   * pnpm-workspace.yaml or declaring `"root": true`. It owns catalog
+   * discovery and the locale preset. Absent when neither exists.
    */
-  intl?: Readonly<{ declared: boolean; root: string }>;
+  intl?: string;
   /**
    * The install root: the canonical base every confined realpath and every
    * receipt path is relative to. It is the nearest folder holding a
@@ -120,16 +120,16 @@ export async function walkWorkspaceRoots(
     if (await hasPnpmWorkspaceManifest(directory)) {
       return {
         install: directory,
-        intl: intl ?? { declared: false, root: directory },
+        intl: intl ?? directory,
       };
     }
     if (intl === undefined && (await declaresIntlWorkspaceRoot(directory))) {
-      intl = { declared: true, root: directory };
+      intl = directory;
     }
   }
   return intl === undefined
     ? { install: canonicalStart }
-    : { install: intl.root, intl };
+    : { install: intl, intl };
 }
 
 /** The install root of `start` (`WorkspaceRoots.install`). */
@@ -143,7 +143,7 @@ export async function nearestWorkspaceRoot(start: string): Promise<string> {
   if (intl === undefined) {
     throw new Error("--workspace requires a parent pnpm-workspace.yaml");
   }
-  return intl.root;
+  return intl;
 }
 
 async function isRegularFile(path: string): Promise<boolean> {
