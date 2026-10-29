@@ -255,7 +255,19 @@ async function buildProofReceipts(
       .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
       .map(async ([dependency, dependencyRoot]) => ({
         dependency,
-        receipt: (await verifyConventionBuildReceipt(dependencyRoot)).receipt,
+        receipt: (
+          await verifyConventionBuildReceipt(dependencyRoot).catch(
+            (error: unknown) => {
+              // Name the dependency: its receipt is not the one the caller just proved.
+              throw new Error(
+                `Mirai Intl dependency ${dependency}: ${
+                  error instanceof Error ? error.message : String(error)
+                }; prove ${dependency} before finalizing this package`,
+                { cause: error }
+              );
+            }
+          )
+        ).receipt,
       }))
   );
   return {

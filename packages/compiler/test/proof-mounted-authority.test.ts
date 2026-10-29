@@ -90,4 +90,46 @@ describe("mounted catalog proof authority", () => {
       await rm(root, { force: true, recursive: true });
     }
   }, 60_000);
+
+  it("names the mounted dependency whose receipt is missing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mirai-intl-mounted-missing-"));
+    const dependencyRoot = join(root, "node_modules/@mirai/i18n");
+    try {
+      await writePackage(dependencyRoot, "@mirai/i18n");
+      await writePackage(root, "@example/app", {
+        "@mirai/i18n": "1.0.0",
+      });
+      await writeJson(join(root, "mirai-intl.config.json"), {
+        checkProjects: [{ path: "tsconfig.intl.json", role: "owner" }],
+        sources: [
+          {
+            from: "@mirai/i18n",
+            mount: "components.ui",
+            path: "src/locales",
+          },
+        ],
+      });
+      await proveConventionCatalog(dependencyRoot);
+      await proveConventionCatalog(root);
+      await rm(join(dependencyRoot, ".mirai-intl"), {
+        force: true,
+        recursive: true,
+      });
+
+      const artifactRoot = join(root, "dist");
+      await mkdir(artifactRoot, { recursive: true });
+      await writeFile(join(artifactRoot, "entry.js"), "export {};\n");
+      await writeFile(
+        join(artifactRoot, "entry.js.map"),
+        '{"sources":["entry.ts"],"sourcesContent":["export {};"],"version":3}\n'
+      );
+      await expect(
+        finalizeBuildProofTargets(root, [{ artifactRoot, target: "client" }])
+      ).rejects.toThrow(
+        /^Mirai Intl dependency @mirai\/i18n: Mirai Intl production build requires an intl:prove V2 receipt; prove @mirai\/i18n before finalizing this package$/u
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  }, 60_000);
 });
