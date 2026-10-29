@@ -126,58 +126,59 @@ function isMissingPathError(error: unknown): boolean {
  * lexically first, a segment that cannot name a file (a bundler virtual id
  * such as `\0vite/preload-helper.js`) counts as missing, and an entry that
  * exists but does not resolve (a dangling or looping symlink) or a filesystem
- * error other than "not there" fails closed. Missing-path failures throw `message` with the realpath error as
- * the cause. Callers confine the result with `isPathWithin` against their
- * own realpath root.
+ * error other than "not there" fails closed. Each ancestor is checked with
+ * one `lstat` before its `realpath`, so the common missing module-resolution
+ * probe costs no thrown error per missing folder (the TypeScript host hooks
+ * call the sync form for every probe). A dangling entry throws `message` with
+ * the realpath error as the cause. Callers confine the result with
+ * `isPathWithin` against their own realpath root.
  */
 export async function prospectiveRealpath(
   path: string,
   message: string
 ): Promise<string> {
   const absolute = nodePath.resolve(path);
-  let lastError: unknown;
   for (const ancestor of ancestorDirectories(absolute)) {
-    if (cannotExist(ancestor)) {
+    if (cannotExist(ancestor) || !(await entryExists(ancestor))) {
       continue;
     }
-    try {
-      const canonical = await realpath(ancestor);
-      return nodePath.resolve(canonical, nodePath.relative(ancestor, absolute));
-    } catch (error) {
-      if (!isMissingPathError(error)) {
-        throw error;
-      }
-      lastError = error;
-    }
-    if (await entryExists(ancestor)) {
-      throw new Error(message, { cause: lastError });
-    }
+    return nodePath.resolve(
+      await realpath(ancestor).catch((error: unknown) => {
+        throw resolveFailure(error, message);
+      }),
+      nodePath.relative(ancestor, absolute)
+    );
   }
-  throw new Error(message, { cause: lastError });
+  throw new Error(message);
 }
 
 /** `prospectiveRealpath` for synchronous callers (TypeScript host hooks). */
 export function prospectiveRealpathSync(path: string, message: string): string {
   const absolute = nodePath.resolve(path);
-  let lastError: unknown;
   for (const ancestor of ancestorDirectories(absolute)) {
-    if (cannotExist(ancestor)) {
+    if (cannotExist(ancestor) || !entryExistsSync(ancestor)) {
       continue;
     }
+    let canonical: string;
     try {
-      const canonical = realpathSync.native(ancestor);
-      return nodePath.resolve(canonical, nodePath.relative(ancestor, absolute));
+      canonical = realpathSync.native(ancestor);
     } catch (error) {
-      if (!isMissingPathError(error)) {
-        throw error;
-      }
-      lastError = error;
+      throw resolveFailure(error, message);
     }
-    if (entryExistsSync(ancestor)) {
-      throw new Error(message, { cause: lastError });
-    }
+    return nodePath.resolve(canonical, nodePath.relative(ancestor, absolute));
   }
-  throw new Error(message, { cause: lastError });
+  throw new Error(message);
+}
+
+/**
+ * The error for an entry that exists but whose realpath fails: `message` with
+ * the cause when the target is not there (a dangling symlink), else the
+ * filesystem error itself.
+ */
+function resolveFailure(error: unknown, message: string): unknown {
+  return isMissingPathError(error)
+    ? new Error(message, { cause: error })
+    : error;
 }
 
 /** A NUL byte can never be part of a file name. */
@@ -199,8 +200,8 @@ async function entryExists(path: string): Promise<boolean> {
 
 function entryExistsSync(path: string): boolean {
   try {
-    lstatSync(path);
-    return true;
+    // ENOENT returns undefined without a thrown error; ENOTDIR still throws.
+    return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
   } catch (error) {
     if (!isMissingPathError(error)) {
       throw error;
