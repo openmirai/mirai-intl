@@ -1,6 +1,14 @@
-import { posix, win32 } from "node:path";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, posix, win32 } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import {
   ancestorDirectories,
@@ -8,6 +16,8 @@ import {
   isPathStrictlyWithin,
   isPathWithin,
   isSamePath,
+  prospectiveRealpath,
+  prospectiveRealpathSync,
   relationWithin,
   relativePathWithin,
 } from "../src/path-within";
@@ -89,5 +99,74 @@ describe("path containment", () => {
       "C:\\a",
       "C:\\",
     ]);
+  });
+});
+
+describe("prospective realpath", () => {
+  // root/real/sub exists; root/link -> root/real; root/out -> outside;
+  // root/dangling -> a missing target.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "prospective-")));
+  const root = join(base, "root");
+  const outside = join(base, "outside");
+  mkdirSync(join(root, "real", "sub"), { recursive: true });
+  mkdirSync(outside);
+  symlinkSync(join(root, "real"), join(root, "link"));
+  symlinkSync(outside, join(root, "out"));
+  symlinkSync(join(base, "missing"), join(root, "dangling"));
+  afterAll(() => rmSync(base, { force: true, recursive: true }));
+
+  const both = async (path: string): Promise<string> => {
+    const sync = prospectiveRealpathSync(path, "unresolved");
+    expect(await prospectiveRealpath(path, "unresolved")).toBe(sync);
+    return sync;
+  };
+
+  it("returns the realpath of an existing folder", async () => {
+    expect(await both(join(root, "real", "sub"))).toBe(
+      join(root, "real", "sub")
+    );
+  });
+
+  it("appends missing tail segments to the nearest existing ancestor", async () => {
+    expect(await both(join(root, "real", "a", "b"))).toBe(
+      join(root, "real", "a", "b")
+    );
+  });
+
+  it("resolves a symlinked ancestor to its target", async () => {
+    expect(await both(join(root, "link", "sub", "new"))).toBe(
+      join(root, "real", "sub", "new")
+    );
+  });
+
+  it("lets the caller refuse an escape through a symlink outside the root", async () => {
+    const canonical = await both(join(root, "out", "generated"));
+    expect(canonical).toBe(join(outside, "generated"));
+    expect(isPathWithin(root, canonical)).toBe(false);
+  });
+
+  it("resolves '..' segments before walking", async () => {
+    expect(await both(join(root, "real", "x", "..", "..", "link", "y"))).toBe(
+      join(root, "real", "y")
+    );
+    expect(
+      isPathWithin(root, await both(join(root, "real", "..", "..", "z")))
+    ).toBe(false);
+  });
+
+  it("treats a bundler virtual id (a NUL byte) as missing", async () => {
+    expect(await both(join(root, "link", "\0vite", "preload-helper.js"))).toBe(
+      join(root, "real", "\0vite", "preload-helper.js")
+    );
+  });
+
+  it("fails closed with the caller's message on a dangling symlink", async () => {
+    const path = join(root, "dangling", "x");
+    expect(() => prospectiveRealpathSync(path, "unresolved")).toThrow(
+      /^unresolved$/u
+    );
+    await expect(prospectiveRealpath(path, "unresolved")).rejects.toThrow(
+      /^unresolved$/u
+    );
   });
 });

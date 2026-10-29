@@ -7,7 +7,7 @@ import ts from "typescript";
 import { GeneratedFacadeProjectionProofKindV3 } from "@openmirai/intl-abi";
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
-import { isPathWithin } from "./path-within";
+import { ancestorDirectories, isPathWithin } from "./path-within";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import {
   classifyMiraiIntlModuleBoundariesShadow,
@@ -1351,8 +1351,10 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
     return bound;
   };
   let facadePackageManifest: string | undefined;
-  let packageRoot = lexicalRoot;
-  while (isPathWithin(resolve(input.workspaceRoot), packageRoot)) {
+  for (const packageRoot of ancestorDirectories(lexicalRoot)) {
+    if (!isPathWithin(resolve(input.workspaceRoot), packageRoot)) {
+      break;
+    }
     const manifestPath = resolve(packageRoot, "package.json");
     const topology = await bindPackageTopology(
       packageRoot,
@@ -1405,11 +1407,6 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
         }
       }
     }
-    const parent = dirname(packageRoot);
-    if (parent === packageRoot) {
-      break;
-    }
-    packageRoot = parent;
   }
   markPhase("facade-package-topology");
   const canonicalSources = input.sources.toSorted((left, right) =>
@@ -1527,12 +1524,14 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
   const packageImportCandidate = async (
     boundary: MiraiIntlClassifierShadowBoundary
   ): Promise<MiraiIntlCandidateProof> => {
-    let directory = dirname(boundary.source);
-    let scope = sourcePackageScopes.get(directory);
+    const sourceDirectory = dirname(boundary.source);
+    let scope = sourcePackageScopes.get(sourceDirectory);
     if (scope === undefined) {
-      const sourceDirectory = directory;
       scope = null;
-      while (isPathWithin(resolve(input.workspaceRoot), directory)) {
+      for (const directory of ancestorDirectories(sourceDirectory)) {
+        if (!isPathWithin(resolve(input.workspaceRoot), directory)) {
+          break;
+        }
         const manifestPath = resolve(directory, "package.json");
         const topology = await bindPackageTopology(
           directory,
@@ -1562,11 +1561,6 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
             });
           }
         }
-        const parent = dirname(directory);
-        if (parent === directory) {
-          break;
-        }
-        directory = parent;
       }
       sourcePackageScopes.set(sourceDirectory, scope);
     }
