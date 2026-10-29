@@ -1103,6 +1103,49 @@ type ReceiptV3VerificationOptions = Readonly<{
   sourceDiscovery?: boolean;
 }>;
 
+/**
+ * Throw when the owner source universe rebuilt from the projects is not the
+ * receipt's. The verifier's twin of the producer's filter (ownership.ts):
+ * the same `isPathWithin` rule on the same absolute paths drops the
+ * generated folder.
+ */
+function assertAuthorizedSourceUniverse(
+  workspace: string,
+  generatedRoot: string,
+  projects: ReadonlyArray<
+    Readonly<{
+      project: Readonly<{ path: string; role: string }>;
+      rootFiles: ReadonlyArray<string>;
+    }>
+  >,
+  sources: ReadonlyArray<Readonly<{ file: string; owner: string }>>
+): void {
+  const ownerKey = (entry: Readonly<{ file: string; owner: string }>) =>
+    `${entry.file}\u0000${entry.owner}`;
+  const byOwnerKey = (
+    left: Readonly<{ file: string; owner: string }>,
+    right: Readonly<{ file: string; owner: string }>
+  ) => compareCanonicalStrings(ownerKey(left), ownerKey(right));
+  const reconstructedOwners = projects
+    .filter(({ project }) => project.role === "owner")
+    .flatMap(({ project, rootFiles }) =>
+      rootFiles
+        .filter(
+          (file) =>
+            SOURCE_EXTENSION.test(file) &&
+            !isPathWithin(generatedRoot, resolve(workspace, file))
+        )
+        .map((file) => ({ file, owner: project.path }))
+    )
+    .toSorted(byOwnerKey);
+  const receiptOwners = sources
+    .map(({ file, owner }) => ({ file, owner }))
+    .toSorted(byOwnerKey);
+  if (canonicalJson(reconstructedOwners) !== canonicalJson(receiptOwners)) {
+    throw new Error("Mirai Intl authorized source universe is stale");
+  }
+}
+
 async function verifyConventionBuildReceiptV3(
   root: string,
   workspace: string,
@@ -1234,41 +1277,12 @@ async function verifyConventionBuildReceiptV3(
         );
       }
     }
-    const generatedPrefix = relative(
+    assertAuthorizedSourceUniverse(
       workspace,
-      resolve(root, loaded.discovery.output)
-    )
-      .split(sep)
-      .join("/");
-    const reconstructedOwners = reconstructedProjects
-      .filter(({ project }) => project.role === "owner")
-      .flatMap(({ project, rootFiles }) =>
-        rootFiles
-          .filter(
-            (file) =>
-              SOURCE_EXTENSION.test(file) &&
-              file !== generatedPrefix &&
-              !file.startsWith(`${generatedPrefix}/`)
-          )
-          .map((file) => ({ file, owner: project.path }))
-      )
-      .toSorted((left, right) =>
-        compareCanonicalStrings(
-          `${left.file}\u0000${left.owner}`,
-          `${right.file}\u0000${right.owner}`
-        )
-      );
-    const receiptOwners = receipt.sources
-      .map(({ file, owner }) => ({ file, owner }))
-      .toSorted((left, right) =>
-        compareCanonicalStrings(
-          `${left.file}\u0000${left.owner}`,
-          `${right.file}\u0000${right.owner}`
-        )
-      );
-    if (canonicalJson(reconstructedOwners) !== canonicalJson(receiptOwners)) {
-      throw new Error("Mirai Intl authorized source universe is stale");
-    }
+      resolve(root, loaded.discovery.output),
+      reconstructedProjects,
+      receipt.sources
+    );
     if (sourceDiscovery) {
       const authorized = new Set(receipt.sources.map(({ file }) => file));
       for (const file of await collectConventionSourceFiles(
@@ -1629,41 +1643,12 @@ async function verifyConventionBuildReceiptWithIdentity(
       }
     }
   }
-  const generatedPrefix = relative(
+  assertAuthorizedSourceUniverse(
     workspace,
-    resolve(root, loaded.discovery.output)
-  )
-    .split(sep)
-    .join("/");
-  const reconstructedOwners = reconstructedProjects
-    .filter(({ project }) => project.role === "owner")
-    .flatMap(({ project, rootFiles }) =>
-      rootFiles
-        .filter(
-          (file) =>
-            SOURCE_EXTENSION.test(file) &&
-            file !== generatedPrefix &&
-            !file.startsWith(`${generatedPrefix}/`)
-        )
-        .map((file) => ({ file, owner: project.path }))
-    )
-    .toSorted((left, right) =>
-      compareCanonicalStrings(
-        `${left.file}\u0000${left.owner}`,
-        `${right.file}\u0000${right.owner}`
-      )
-    );
-  const receiptOwners = receipt.sources
-    .map(({ file, owner }) => ({ file, owner }))
-    .toSorted((left, right) =>
-      compareCanonicalStrings(
-        `${left.file}\u0000${left.owner}`,
-        `${right.file}\u0000${right.owner}`
-      )
-    );
-  if (canonicalJson(reconstructedOwners) !== canonicalJson(receiptOwners)) {
-    throw new Error("Mirai Intl authorized source universe is stale");
-  }
+    resolve(root, loaded.discovery.output),
+    reconstructedProjects,
+    receipt.sources
+  );
   const immutable = await getImmutableIntegrityIdentity();
   if (
     canonicalJson(receipt.compilerManifest) !==

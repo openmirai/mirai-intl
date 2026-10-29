@@ -44,7 +44,11 @@ import {
   getImmutableIntegrityIdentity,
 } from "./integrity-identity";
 import { inferMessageContract, inspectMessageSyntax } from "./parser";
-import { ancestorDirectories, isPathWithin } from "./path-within";
+import {
+  ancestorDirectories,
+  isPathWithin,
+  prospectiveRealpath,
+} from "./path-within";
 import type { CatalogSource, MessageSource } from "./source";
 import {
   WORKSPACE_LOCK_NAMES,
@@ -342,42 +346,14 @@ async function confinedProspectivePath(
   path: string,
   context: string
 ): Promise<string> {
-  let existingPath = path;
-  const missingSegments: Array<string> = [];
-  for (;;) {
-    try {
-      const canonicalBase = await realpath(existingPath);
-      const canonicalPath = resolve(canonicalBase, ...missingSegments);
-      if (!isPathWithin(repositoryRoot, canonicalPath)) {
-        throw new Error(`${context} symlink escapes the config directory`);
-      }
-      return canonicalPath;
-    } catch (error) {
-      const code = fileSystemErrorCode(error);
-      if (code !== "ENOENT" && code !== "ENOTDIR") {
-        throw error;
-      }
-      let existingEntry = false;
-      try {
-        await lstat(existingPath);
-        existingEntry = true;
-      } catch (entryError) {
-        const entryCode = fileSystemErrorCode(entryError);
-        if (entryCode !== "ENOENT" && entryCode !== "ENOTDIR") {
-          throw entryError;
-        }
-      }
-      if (existingEntry) {
-        throw new Error(`Unable to resolve ${context}`, { cause: error });
-      }
-      const parent = dirname(existingPath);
-      if (parent === existingPath) {
-        throw new Error(`Unable to resolve ${context}`, { cause: error });
-      }
-      missingSegments.unshift(basename(existingPath));
-      existingPath = parent;
-    }
+  const canonicalPath = await prospectiveRealpath(
+    path,
+    `Unable to resolve ${context}`
+  );
+  if (!isPathWithin(repositoryRoot, canonicalPath)) {
+    throw new Error(`${context} symlink escapes the config directory`);
   }
+  return canonicalPath;
 }
 
 function parseValueSchema(value: unknown, context: string): ValueSchema {
@@ -2328,7 +2304,7 @@ async function loadConventionWorkspacePreset(
   repositoryRoot: string
 ): Promise<ConventionWorkspace> {
   const roots = await walkWorkspaceRoots(repositoryRoot);
-  const workspaceRoot = roots.intl?.root ?? repositoryRoot;
+  const workspaceRoot = roots.intl ?? repositoryRoot;
   for (const directory of ancestorDirectories(repositoryRoot)) {
     if (directory === workspaceRoot) {
       break;

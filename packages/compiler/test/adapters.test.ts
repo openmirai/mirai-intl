@@ -464,6 +464,33 @@ describe("Vite adapter", () => {
     }
   });
 
+  it("rebuilds the selected build a fresh checkout lacks during Vite buildStart", async () => {
+    // V2D-2975: current.json is tracked, builds/ is ignored.
+    const root = await createConventionViteFixture();
+    try {
+      const { ensureMiraiIntlCatalog } = await import("../src/lifecycle");
+      await ensureMiraiIntlCatalog({ root });
+      const generatedRoot = join(root, "src/i18n/generated");
+      const currentPath = join(generatedRoot, "current.json");
+      const before = await readFile(currentPath, "utf8");
+      const { directory } = JSON.parse(before) as { directory: string };
+      await rm(join(generatedRoot, "builds"), {
+        force: true,
+        recursive: true,
+      });
+
+      const plugin = miraiIntlVite({ root });
+      await plugin.buildStart.call({ addWatchFile: vi.fn() });
+
+      expect(await readFile(currentPath, "utf8")).toBe(before);
+      expect((await stat(join(generatedRoot, directory))).isDirectory()).toBe(
+        true
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("keeps the selected build stable and requires restart for live locale edits", async () => {
     const root = await createConventionViteBundleFixture();
     const plugin = miraiIntlVite({ root });

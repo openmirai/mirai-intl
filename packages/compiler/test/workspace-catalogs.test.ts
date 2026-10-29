@@ -210,11 +210,11 @@ describe("install workspace root", () => {
         walkWorkspaceRoots(join(landing, "src/app"))
       ).resolves.toEqual({
         install: root,
-        intl: { declared: true, root: landing },
+        intl: landing,
       });
       await expect(
         walkWorkspaceRoots(join(root, "apps/staff"))
-      ).resolves.toEqual({ install: root, intl: { declared: false, root } });
+      ).resolves.toEqual({ install: root, intl: root });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

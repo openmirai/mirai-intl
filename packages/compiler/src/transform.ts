@@ -4,6 +4,7 @@ import {
   basename,
   dirname,
   isAbsolute,
+  posix,
   relative,
   resolve,
   sep,
@@ -26,8 +27,10 @@ import {
 import {
   ancestorDirectories,
   confinedRelativePath,
+  isPathStrictlyWithin,
   isPathWithin,
   isSamePath,
+  prospectiveRealpathSync,
 } from "./path-within";
 import { mergeSemanticProviders } from "./semantic-providers";
 import type { SemanticProviderResolution } from "./semantic-providers";
@@ -1734,24 +1737,9 @@ function resolveModuleWithFrontier(
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
   const hostPath = (path: string): string =>
     resolve(resolvedWorkspaceRoot, path);
-  const canonicalizeWithExistingAncestor = (path: string): string => {
-    const absolute = resolve(path);
-    let ancestor = absolute;
-    while (
-      !ts.sys.fileExists(ancestor) &&
-      !(ts.sys.directoryExists?.(ancestor) ?? false)
-    ) {
-      const parent = dirname(ancestor);
-      if (parent === ancestor) {
-        break;
-      }
-      ancestor = parent;
-    }
-    const canonicalAncestor = ts.sys.realpath?.(ancestor) ?? ancestor;
-    return resolve(canonicalAncestor, relative(ancestor, absolute));
-  };
-  const canonicalWorkspaceRoot = canonicalizeWithExistingAncestor(
-    resolvedWorkspaceRoot
+  const canonicalWorkspaceRoot = prospectiveRealpathSync(
+    resolvedWorkspaceRoot,
+    `Unable to resolve the workspace root for ${moduleName}`
   );
   const confinedPath = (
     path: string,
@@ -1759,7 +1747,20 @@ function resolveModuleWithFrontier(
     kind: "control" | "probe" | "realpath"
   ): string | undefined => {
     const absolute = resolve(path);
-    const canonical = canonicalizeWithExistingAncestor(absolute);
+    let canonical: string;
+    try {
+      canonical = prospectiveRealpathSync(
+        absolute,
+        `Unable to resolve provider resolution ${kind} for ${moduleName}: ${absolute}`
+      );
+    } catch (error) {
+      // An unresolvable path that is not provider evidence is skipped, as
+      // TypeScript's own host skips it; a relevant one fails closed.
+      if (relevant) {
+        throw error;
+      }
+      return undefined;
+    }
     if (isPathWithin(canonicalWorkspaceRoot, canonical)) {
       return resolve(
         resolvedWorkspaceRoot,
@@ -2285,24 +2286,9 @@ function resolveTypeReferenceWithFrontier(
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
   const hostPath = (path: string): string =>
     resolve(resolvedWorkspaceRoot, path);
-  const canonicalizeWithExistingAncestor = (path: string): string => {
-    const absolute = resolve(path);
-    let ancestor = absolute;
-    while (
-      !ts.sys.fileExists(ancestor) &&
-      !(ts.sys.directoryExists?.(ancestor) ?? false)
-    ) {
-      const parent = dirname(ancestor);
-      if (parent === ancestor) {
-        break;
-      }
-      ancestor = parent;
-    }
-    const canonicalAncestor = ts.sys.realpath?.(ancestor) ?? ancestor;
-    return resolve(canonicalAncestor, relative(ancestor, absolute));
-  };
-  const canonicalWorkspaceRoot = canonicalizeWithExistingAncestor(
-    resolvedWorkspaceRoot
+  const canonicalWorkspaceRoot = prospectiveRealpathSync(
+    resolvedWorkspaceRoot,
+    `Unable to resolve the workspace root for ${directiveName}`
   );
   const confinedPath = (
     path: string,
@@ -2310,7 +2296,20 @@ function resolveTypeReferenceWithFrontier(
     kind: "control" | "probe" | "realpath"
   ): string | undefined => {
     const absolute = resolve(path);
-    const canonical = canonicalizeWithExistingAncestor(absolute);
+    let canonical: string;
+    try {
+      canonical = prospectiveRealpathSync(
+        absolute,
+        `Unable to resolve type-reference resolution ${kind} for ${directiveName}: ${absolute}`
+      );
+    } catch (error) {
+      // An unresolvable path that is not provider evidence is skipped, as
+      // TypeScript's own host skips it; a relevant one fails closed.
+      if (relevant) {
+        throw error;
+      }
+      return undefined;
+    }
     if (isPathWithin(canonicalWorkspaceRoot, canonical)) {
       return resolve(
         resolvedWorkspaceRoot,
@@ -3267,25 +3266,10 @@ function normalizedSemanticPath(
   if (cached) {
     return cached;
   }
-  let normalized: string;
-  if (
-    ts.sys.fileExists(absolute) ||
-    (ts.sys.directoryExists?.(absolute) ?? false)
-  ) {
-    normalized = ts.sys.realpath?.(absolute) ?? absolute;
-    cache?.normalizedPaths.set(absolute, normalized);
-    return normalized;
-  }
-  let ancestor = dirname(absolute);
-  while (
-    ancestor !== dirname(ancestor) &&
-    !ts.sys.fileExists(ancestor) &&
-    !(ts.sys.directoryExists?.(ancestor) ?? false)
-  ) {
-    ancestor = dirname(ancestor);
-  }
-  const canonicalAncestor = ts.sys.realpath?.(ancestor) ?? ancestor;
-  normalized = resolve(canonicalAncestor, relative(ancestor, absolute));
+  const normalized = prospectiveRealpathSync(
+    absolute,
+    `Unable to resolve semantic path: ${absolute}`
+  );
   cache?.normalizedPaths.set(absolute, normalized);
   return normalized;
 }
@@ -5615,7 +5599,13 @@ function semanticEvidence(
         ? declarations.filter(
             (declaration) =>
               declaration.path === providerPath ||
-              declaration.path.startsWith(`${providerDirectory}/`)
+              // A provider at the workspace root keeps only its own file.
+              (providerDirectory !== "." &&
+                isPathStrictlyWithin(
+                  providerDirectory,
+                  declaration.path,
+                  posix
+                ))
           )
         : [];
       let kind: "ambient" | "external" | "generated" | "workspace" =

@@ -39,7 +39,7 @@ import type {
 } from "./generation-snapshot";
 import { generatedSourceHeader } from "./generated-source";
 import { createIntegrityManifest } from "./integrity-identity";
-import { isPathWithin, isSamePath } from "./path-within";
+import { isPathWithin, isSamePath, prospectiveRealpath } from "./path-within";
 
 export type WriteResult = Readonly<{
   changed: boolean;
@@ -139,42 +139,8 @@ function errorCode(error: unknown): unknown {
     : undefined;
 }
 
-async function prospectiveCanonicalRoot(root: string): Promise<string> {
-  let existingPath = resolve(root);
-  const missingSegments: Array<string> = [];
-  for (;;) {
-    try {
-      return resolve(await realpath(existingPath), ...missingSegments);
-    } catch (error) {
-      const code = errorCode(error);
-      if (code !== "ENOENT" && code !== "ENOTDIR") {
-        throw error;
-      }
-      let existingEntry = false;
-      try {
-        await lstat(existingPath);
-        existingEntry = true;
-      } catch (entryError) {
-        const entryCode = errorCode(entryError);
-        if (entryCode !== "ENOENT" && entryCode !== "ENOTDIR") {
-          throw entryError;
-        }
-      }
-      if (existingEntry) {
-        throw new Error("Unable to resolve generated output root", {
-          cause: error,
-        });
-      }
-      const parent = dirname(existingPath);
-      if (parent === existingPath) {
-        throw new Error("Unable to resolve generated output root", {
-          cause: error,
-        });
-      }
-      missingSegments.unshift(basename(existingPath));
-      existingPath = parent;
-    }
-  }
+function prospectiveCanonicalRoot(root: string): Promise<string> {
+  return prospectiveRealpath(root, "Unable to resolve generated output root");
 }
 
 async function expectedOutputRoot(
