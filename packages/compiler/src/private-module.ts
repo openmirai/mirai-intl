@@ -1,10 +1,11 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, resolve, sep } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
 import ts from "typescript";
 
 import { callSitePreludeName } from "./emit";
+import { isPathWithin } from "./path-within";
 
 const privateCarrierModuleName = "catalog.manifest.gen.mjs";
 const privateMessagesModuleName = "catalog.messages.gen.mjs";
@@ -65,16 +66,6 @@ function ownString(
     throw new TypeError(`${label}.${key} must be a string`);
   }
   return value[key];
-}
-
-function isWithin(root: string, candidate: string): boolean {
-  const pathFromRoot = relative(root, candidate);
-  return (
-    pathFromRoot === "" ||
-    (pathFromRoot !== ".." &&
-      !pathFromRoot.startsWith(`..${sep}`) &&
-      !isAbsolute(pathFromRoot))
-  );
 }
 
 function parseJson(source: string, label: string): unknown {
@@ -247,14 +238,14 @@ export async function authorizePrivateMessageSliceRequest(
   const selectedDirectory = resolve(generatedRoot, directory);
   await nonSymlinkDirectory(selectedDirectory, "Generated selected directory");
   const canonicalSelectedDirectory = await realpath(selectedDirectory);
-  if (!isWithin(canonicalGeneratedRoot, canonicalSelectedDirectory)) {
+  if (!isPathWithin(canonicalGeneratedRoot, canonicalSelectedDirectory)) {
     throw new Error("Generated selected directory escapes its catalog root");
   }
 
   const facadeFile = resolve(generatedRoot, "index.ts");
   await nonSymlinkFile(facadeFile, "Generated stable facade");
   const canonicalFacadeFile = await realpath(facadeFile);
-  if (!isWithin(canonicalGeneratedRoot, canonicalFacadeFile)) {
+  if (!isPathWithin(canonicalGeneratedRoot, canonicalFacadeFile)) {
     throw new Error("Generated stable facade escapes its catalog root");
   }
   assertGeneratedFacadeSelector(
@@ -266,7 +257,7 @@ export async function authorizePrivateMessageSliceRequest(
   const expectedCarrier = resolve(selectedDirectory, privateCarrierModuleName);
   await nonSymlinkFile(expectedCarrier, "Generated selected private carrier");
   const canonicalExpectedCarrier = await realpath(expectedCarrier);
-  if (!isWithin(canonicalSelectedDirectory, canonicalExpectedCarrier)) {
+  if (!isPathWithin(canonicalSelectedDirectory, canonicalExpectedCarrier)) {
     throw new Error("Generated selected private carrier escapes its build");
   }
   const requestedFile = resolve(request.file);
@@ -284,7 +275,7 @@ export async function authorizePrivateMessageSliceRequest(
   const messageFile = resolve(selectedDirectory, privateMessagesModuleName);
   await nonSymlinkFile(messageFile, "Generated selected private message file");
   const canonicalMessageFile = await realpath(messageFile);
-  if (!isWithin(canonicalSelectedDirectory, canonicalMessageFile)) {
+  if (!isPathWithin(canonicalSelectedDirectory, canonicalMessageFile)) {
     throw new Error(
       "Generated selected private message file escapes its build"
     );

@@ -1,7 +1,9 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 import type { IntlCheckProjectV2 } from "@openmirai/intl-abi";
+
+import { confinedRelativePath, isPathStrictlyWithin } from "./path-within";
 
 const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/u;
 const DEFAULT_EXCLUDES = ["bower_components", "jspm_packages", "node_modules"];
@@ -17,11 +19,11 @@ type EffectiveConfig = Readonly<{
 }>;
 
 function workspacePath(root: string, file: string): string {
-  const path = relative(root, file).split(sep).join("/");
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error("Check-project root file escapes its workspace root");
-  }
-  return path;
+  return confinedRelativePath(
+    root,
+    file,
+    "Check-project root file escapes its workspace root"
+  );
 }
 
 function jsonc(source: string, context: string): Record<string, unknown> {
@@ -389,7 +391,7 @@ export async function reconstructProjectRootFiles(
     .filter((file) => {
       if (
         !extensions.test(file) ||
-        (outDir && file.startsWith(`${outDir}${sep}`))
+        (outDir && isPathStrictlyWithin(outDir, file))
       ) {
         return false;
       }

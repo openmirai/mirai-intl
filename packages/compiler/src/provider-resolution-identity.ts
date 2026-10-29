@@ -1,5 +1,5 @@
 import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 import type {
   IntlCheckFileIdentityV2,
@@ -8,6 +8,7 @@ import type {
 } from "@openmirai/intl-abi";
 
 import { compareCanonicalStrings, decodeUtf8Fatal, sha256 } from "./canonical";
+import { confinedRelativePath } from "./path-within";
 
 export type ProviderResolutionFrontierInput = Readonly<{
   controlFiles: ReadonlyArray<IntlCheckFileIdentityV2>;
@@ -31,13 +32,11 @@ export type ProviderResolutionFrontierInput = Readonly<{
 }>;
 
 function confinedPath(root: string, file: string): string {
-  const path = relative(root, file).split(sep).join("/");
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error(
-      `Provider resolution frontier escapes its workspace root: ${file}`
-    );
-  }
-  return path.normalize("NFC");
+  return confinedRelativePath(
+    root,
+    file,
+    `Provider resolution frontier escapes its workspace root: ${file}`
+  ).normalize("NFC");
 }
 
 async function present(

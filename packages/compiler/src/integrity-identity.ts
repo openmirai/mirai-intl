@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Sha256 } from "@openmirai/intl-abi";
@@ -11,6 +11,8 @@ import {
   canonicalJson,
   compareCanonicalStrings,
 } from "./canonical";
+import { ancestorDirectories, confinedRelativePath } from "./path-within";
+import { WORKSPACE_LOCK_NAMES } from "./workspace-catalogs";
 
 export interface IntegrityManifestEntry {
   readonly hash: Sha256;
@@ -64,13 +66,6 @@ const EXECUTABLE_MODULE_PATTERN =
   /(?:^|\/)(?![^/]+\.(?:test|spec)\.)[^/]+\.(?:[cm]?[jt]sx?)$/u;
 const NON_EXECUTABLE_MODULE_PATTERN = /\.(?:d\.[cm]?ts|map)$/u;
 const TYPESCRIPT_LIB_PATTERN = /^lib(?:\.[a-z0-9._-]+)?\.d\.ts$/u;
-const LOCK_NAMES = [
-  "pnpm-lock.yaml",
-  "package-lock.json",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb",
-] as const;
 const EXCLUDED_PACKAGE_DIRECTORIES = new Set([".cache", "node_modules"]);
 
 let immutableIdentity: Promise<ImmutableIntegrityIdentity> | undefined;
@@ -126,17 +121,14 @@ export function createIntegrityManifest(
   };
 }
 
-function confinedRelativePath(root: string, path: string): string {
-  const relativePath = relative(root, path);
-  if (
-    relativePath.length === 0 ||
-    isAbsolute(relativePath) ||
-    relativePath === ".." ||
-    relativePath.startsWith(`..${sep}`)
-  ) {
-    throw new Error(`Integrity path is outside its expected root`);
-  }
-  return normalizeManifestPath(relativePath);
+function confinedManifestPath(root: string, path: string): string {
+  return normalizeManifestPath(
+    confinedRelativePath(
+      root,
+      path,
+      "Integrity path is outside its expected root"
+    )
+  );
 }
 
 async function readRegularFile(path: string): Promise<Buffer> {
@@ -163,7 +155,7 @@ async function assertPathHasNoSymlink(
   root: string,
   path: string
 ): Promise<void> {
-  const relativePath = confinedRelativePath(root, path);
+  const relativePath = confinedManifestPath(root, path);
   const rootStat = await lstat(root);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
     throw new Error(`Integrity root is not a regular directory`);
@@ -187,7 +179,7 @@ async function manifestEntry(
   const bytes = await readRegularFile(path);
   return {
     hash: hashBytes(bytes),
-    path: confinedRelativePath(root, path),
+    path: confinedManifestPath(root, path),
     size: bytes.byteLength,
   };
 }
@@ -215,7 +207,7 @@ async function enumerateCompilerModules(
     if (!stat.isFile()) {
       throw new Error(`Compiler module tree contains a non-regular entry`);
     }
-    const relativePath = confinedRelativePath(root, path);
+    const relativePath = confinedManifestPath(root, path);
     if (
       NON_EXECUTABLE_MODULE_PATTERN.test(relativePath) ||
       relativePath.endsWith(".test.ts") ||
@@ -294,8 +286,7 @@ async function findPackageRoot(
   packageJsonPath: string;
   root: string;
 }> {
-  let directory = dirname(resolvedEntry);
-  for (;;) {
+  for (const directory of ancestorDirectories(dirname(resolvedEntry))) {
     const packageJsonPath = join(directory, "package.json");
     try {
       const bytes = await readRegularFile(packageJsonPath);
@@ -312,12 +303,8 @@ async function findPackageRoot(
         throw error;
       }
     }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      throw new Error(`Cannot locate package.json for ${expectedName}`);
-    }
-    directory = parent;
   }
+  throw new Error(`Cannot locate package.json for ${expectedName}`);
 }
 
 export async function computeResolvedPackageIdentity(
@@ -388,7 +375,7 @@ export async function computeTypeScriptLibIdentity(
   const entries = await Promise.all(
     paths.map(async (path) => {
       const absolutePath = resolve(path);
-      const relativePath = confinedRelativePath(libRoot, absolutePath);
+      const relativePath = confinedManifestPath(libRoot, absolutePath);
       if (
         relativePath.includes("/") ||
         !TYPESCRIPT_LIB_PATTERN.test(relativePath)
@@ -407,10 +394,9 @@ export async function computeTypeScriptLibIdentity(
 async function findWorkspaceLock(
   applicationRoot: string
 ): Promise<{ name: string; path: string } | undefined> {
-  let directory = applicationRoot;
-  for (;;) {
+  for (const directory of ancestorDirectories(applicationRoot)) {
     const matches: Array<{ name: string; path: string }> = [];
-    for (const name of LOCK_NAMES) {
+    for (const name of WORKSPACE_LOCK_NAMES) {
       const path = join(directory, name);
       try {
         const stat = await lstat(path);
@@ -434,12 +420,8 @@ async function findWorkspaceLock(
     if (matches[0] !== undefined) {
       return matches[0];
     }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      return undefined;
-    }
-    directory = parent;
   }
+  return undefined;
 }
 
 export async function computeApplicationPackageIdentity(

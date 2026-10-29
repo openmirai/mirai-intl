@@ -7,6 +7,7 @@ import ts from "typescript";
 import { GeneratedFacadeProjectionProofKindV3 } from "@openmirai/intl-abi";
 
 import { canonicalJson, compareCanonicalStrings, sha256 } from "./canonical";
+import { isPathWithin } from "./path-within";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import {
   classifyMiraiIntlModuleBoundariesShadow,
@@ -22,6 +23,7 @@ import type {
   MiraiIntlClassifierShadowResult,
   MiraiIntlClassifierShadowUnknownBoundary,
 } from "./transform";
+import { WORKSPACE_LOCK_NAMES } from "./workspace-catalogs";
 
 export type MiraiIntlCandidateFallbackReason =
   | "custom-conditions-ambiguous"
@@ -167,11 +169,6 @@ export type MiraiIntlCandidateCheckpointShadow = Readonly<{
   resolverFrontier: MiraiIntlClassifierShadowRequest["frontier"];
 }>;
 
-function within(parent: string, child: string): boolean {
-  const value = relative(parent, child);
-  return value === "" || (!value.startsWith(`..${sep}`) && value !== "..");
-}
-
 function normalizedOptions(
   options: ts.CompilerOptions,
   workspaceRoot: string
@@ -186,7 +183,7 @@ function normalizedOptions(
     }
     if (typeof value === "string") {
       const absolute = isAbsolute(value) ? resolve(value) : undefined;
-      if (absolute && within(resolve(workspaceRoot), absolute)) {
+      if (absolute && isPathWithin(resolve(workspaceRoot), absolute)) {
         return relative(resolve(workspaceRoot), absolute).split(sep).join("/");
       }
       return value.replaceAll("\\", "/").normalize("NFC");
@@ -437,7 +434,7 @@ function projectedPaths(
     const direct = resolve(dirname(boundary.source), boundary.specifier);
     const roots = options.rootDirs ?? [];
     const containingRoot = roots.find((root) =>
-      within(resolve(root), dirname(boundary.source))
+      isPathWithin(resolve(root), dirname(boundary.source))
     );
     if (!containingRoot) {
       return {
@@ -528,7 +525,7 @@ function candidateBySpecifier(
     return true;
   }
   return projected.some(
-    (path) => within(facadeRoot, path) || within(path, facadeRoot)
+    (path) => isPathWithin(facadeRoot, path) || isPathWithin(path, facadeRoot)
   );
 }
 
@@ -1355,7 +1352,7 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
   };
   let facadePackageManifest: string | undefined;
   let packageRoot = lexicalRoot;
-  while (within(resolve(input.workspaceRoot), packageRoot)) {
+  while (isPathWithin(resolve(input.workspaceRoot), packageRoot)) {
     const manifestPath = resolve(packageRoot, "package.json");
     const topology = await bindPackageTopology(
       packageRoot,
@@ -1535,7 +1532,7 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
     if (scope === undefined) {
       const sourceDirectory = directory;
       scope = null;
-      while (within(resolve(input.workspaceRoot), directory)) {
+      while (isPathWithin(resolve(input.workspaceRoot), directory)) {
         const manifestPath = resolve(directory, "package.json");
         const topology = await bindPackageTopology(
           directory,
@@ -1597,7 +1594,8 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
         target.replace("*", matched.wildcard)
       );
       return targetForms(projected).some(
-        (path) => within(lexicalRoot, path) || within(path, lexicalRoot)
+        (path) =>
+          isPathWithin(lexicalRoot, path) || isPathWithin(path, lexicalRoot)
       );
     });
     return {
@@ -1655,7 +1653,7 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
     flattened.some(
       (boundary) =>
         !input.options.rootDirs?.some((root) =>
-          within(resolve(root), dirname(boundary.source))
+          isPathWithin(resolve(root), dirname(boundary.source))
         )
     )
   ) {
@@ -2035,13 +2033,7 @@ export async function buildMiraiIntlCandidateCheckpointShadow(
     input.options.configFilePath,
     ...expectedProjectControls.keys(),
     facadePackageManifest,
-    ...[
-      "pnpm-lock.yaml",
-      "package-lock.json",
-      "yarn.lock",
-      "bun.lock",
-      "bun.lockb",
-    ].map((name) => resolve(input.workspaceRoot, name)),
+    ...WORKSPACE_LOCK_NAMES.map((name) => resolve(input.workspaceRoot, name)),
   ].filter((value): value is string => typeof value === "string");
   const proofPaths = [
     lexicalFacade,

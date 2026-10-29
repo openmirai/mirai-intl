@@ -7,7 +7,7 @@ import {
   realpath,
   stat,
 } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   IntlCheckFileIdentityV2,
@@ -40,6 +40,11 @@ import {
   decodeUtf8Fatal,
   sha256,
 } from "./canonical";
+import {
+  confinedRelativePath,
+  isPathWithin,
+  relativePathWithin,
+} from "./path-within";
 import {
   loadFreshConventionCatalogGenerationInput,
   loadConventionCatalog,
@@ -105,11 +110,11 @@ export type SelectedIntlCheckReceipt = Readonly<{
 }>;
 
 function relativePath(root: string, file: string): string {
-  const path = relative(root, file).split(sep).join("/");
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error("Mirai Intl receipt path escapes its workspace root");
-  }
-  return path;
+  return confinedRelativePath(
+    root,
+    file,
+    "Mirai Intl receipt path escapes its workspace root"
+  );
 }
 
 function readWorkspaceSourceBytes(
@@ -990,12 +995,10 @@ async function verifyClassifierFilesystemV3(
 ): Promise<void> {
   const classifierPath = (path: string): string => {
     const absolute = resolve(workspace, path);
-    const canonical = relative(workspace, absolute).split(sep).join("/") || ".";
-    if (
-      canonical !== path ||
-      canonical.startsWith("../") ||
-      isAbsolute(canonical)
-    ) {
+    const canonical = isPathWithin(workspace, absolute)
+      ? (relativePathWithin(workspace, absolute) ?? ".")
+      : undefined;
+    if (canonical !== path) {
       throw new Error(`Mirai Intl classifier path is not canonical: ${path}`);
     }
     return absolute;

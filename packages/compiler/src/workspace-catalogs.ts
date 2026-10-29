@@ -1,5 +1,7 @@
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
+
+import { ancestorDirectories } from "./path-within";
 
 const workspaceSkipDirectories = new Set([
   ".git",
@@ -54,62 +56,94 @@ export function workspaceRootField(root: unknown): boolean {
 }
 
 /**
- * The install root: the canonical base every confined realpath and every
- * receipt path is relative to. It is the nearest folder at or above `start`
- * holding a pnpm-workspace.yaml, because pnpm installs every dependency of
- * the workspace there (one root install puts them all in its
- * node_modules/.pnpm); without one, the nearest folder whose
- * mirai-intl.workspace.json declares `"root": true`; else `start` itself.
- * A declared intl root inside a pnpm workspace keeps its own catalog
- * discovery and locale preset (`nearestWorkspaceRoot`) but shares the pnpm
- * root's install, so its realpaths are confined there.
+ * The lockfile names a workspace may carry, in the order every lockfile
+ * lookup and watch list reads them.
  */
-export async function installWorkspaceRoot(start: string): Promise<string> {
-  const canonicalStart = await realpath(start);
-  let declaredRoot: string | undefined;
-  let directory = canonicalStart;
-  while (true) {
-    const manifest = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
-      () => undefined
-    );
-    if (manifest) {
-      if (manifest.isSymbolicLink() || !manifest.isFile()) {
-        throw new Error("pnpm-workspace.yaml must be a regular file");
-      }
-      return directory;
-    }
-    if (
-      declaredRoot === undefined &&
-      (await declaresIntlWorkspaceRoot(directory))
-    ) {
-      declaredRoot = directory;
-    }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      return declaredRoot ?? canonicalStart;
-    }
-    directory = parent;
+export const WORKSPACE_LOCK_NAMES = [
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+] as const;
+
+/**
+ * True when `directory` holds a pnpm-workspace.yaml. A symlinked or
+ * non-file manifest throws wherever a walk or a discovery meets it, so every
+ * lookup draws the same workspace boundary.
+ */
+async function hasPnpmWorkspaceManifest(directory: string): Promise<boolean> {
+  const manifest = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
+    () => undefined
+  );
+  if (!manifest) {
+    return false;
   }
+  if (manifest.isSymbolicLink() || !manifest.isFile()) {
+    throw new Error("pnpm-workspace.yaml must be a regular file");
+  }
+  return true;
 }
 
-export async function nearestWorkspaceRoot(start: string): Promise<string> {
-  let directory = resolve(start);
-  while (true) {
-    const marker = await lstat(join(directory, "pnpm-workspace.yaml")).catch(
-      () => undefined
-    );
-    if (
-      (marker?.isFile() && !marker.isSymbolicLink()) ||
-      (await declaresIntlWorkspaceRoot(directory))
-    ) {
-      return directory;
+/** The two roots above a package (`walkWorkspaceRoots`). */
+export type WorkspaceRoots = Readonly<{
+  /**
+   * The nearest intl workspace root: the nearest folder holding a
+   * pnpm-workspace.yaml or declaring `"root": true` (`declared`). It owns
+   * catalog discovery and the locale preset. Absent when neither exists.
+   */
+  intl?: Readonly<{ declared: boolean; root: string }>;
+  /**
+   * The install root: the canonical base every confined realpath and every
+   * receipt path is relative to. It is the nearest folder holding a
+   * pnpm-workspace.yaml, because pnpm installs every dependency of the
+   * workspace there (one root install puts them all in its
+   * node_modules/.pnpm); without one, the intl root; else the start itself.
+   * A declared intl root inside a pnpm workspace keeps its own discovery and
+   * preset but shares the pnpm root's install, so its realpaths are
+   * confined there.
+   */
+  install: string;
+}>;
+
+/**
+ * The one workspace-root walk: from the realpath of `start` up to the
+ * nearest pnpm-workspace.yaml (or the filesystem root), reading each folder
+ * once. Markers above the first declared root are never parsed.
+ */
+export async function walkWorkspaceRoots(
+  start: string
+): Promise<WorkspaceRoots> {
+  const canonicalStart = await realpath(start);
+  let intl: WorkspaceRoots["intl"];
+  for (const directory of ancestorDirectories(canonicalStart)) {
+    if (await hasPnpmWorkspaceManifest(directory)) {
+      return {
+        install: directory,
+        intl: intl ?? { declared: false, root: directory },
+      };
     }
-    const parent = dirname(directory);
-    if (parent === directory) {
-      throw new Error("--workspace requires a parent pnpm-workspace.yaml");
+    if (intl === undefined && (await declaresIntlWorkspaceRoot(directory))) {
+      intl = { declared: true, root: directory };
     }
-    directory = parent;
   }
+  return intl === undefined
+    ? { install: canonicalStart }
+    : { install: intl.root, intl };
+}
+
+/** The install root of `start` (`WorkspaceRoots.install`). */
+export async function installWorkspaceRoot(start: string): Promise<string> {
+  return (await walkWorkspaceRoots(start)).install;
+}
+
+/** The intl root of `start` for `--workspace` (`WorkspaceRoots.intl`). */
+export async function nearestWorkspaceRoot(start: string): Promise<string> {
+  const { intl } = await walkWorkspaceRoots(start);
+  if (intl === undefined) {
+    throw new Error("--workspace requires a parent pnpm-workspace.yaml");
+  }
+  return intl.root;
 }
 
 async function isRegularFile(path: string): Promise<boolean> {
@@ -146,7 +180,7 @@ export async function discoverWorkspaceCatalogs(
       // itself an intl workspace root, is another workspace, checked from
       // its own root, never as part of this one.
       if (
-        (await isRegularFile(join(directory, "pnpm-workspace.yaml"))) ||
+        (await hasPnpmWorkspaceManifest(directory)) ||
         (await declaresIntlWorkspaceRoot(directory))
       ) {
         return;

@@ -10,15 +10,7 @@ import {
   rename,
   rm,
 } from "node:fs/promises";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { RUNTIME_ABI } from "@openmirai/intl-abi";
@@ -47,6 +39,7 @@ import type {
 } from "./generation-snapshot";
 import { generatedSourceHeader } from "./generated-source";
 import { createIntegrityManifest } from "./integrity-identity";
+import { isPathWithin, isSamePath } from "./path-within";
 
 export type WriteResult = Readonly<{
   changed: boolean;
@@ -146,20 +139,6 @@ function errorCode(error: unknown): unknown {
     : undefined;
 }
 
-function isWithin(root: string, candidate: string): boolean {
-  const pathFromRoot = relative(root, candidate);
-  return (
-    pathFromRoot === "" ||
-    (pathFromRoot !== ".." &&
-      !pathFromRoot.startsWith(`..${sep}`) &&
-      !isAbsolute(pathFromRoot))
-  );
-}
-
-function isSamePath(left: string, right: string): boolean {
-  return relative(left, right) === "" && relative(right, left) === "";
-}
-
 async function prospectiveCanonicalRoot(root: string): Promise<string> {
   let existingPath = resolve(root);
   const missingSegments: Array<string> = [];
@@ -246,7 +225,7 @@ async function assertConfinedDirectory(
       throw new Error(`${label} must be a directory`);
     }
     const canonicalDirectory = await realpath(directory);
-    if (!isWithin(outputRoot, canonicalDirectory)) {
+    if (!isPathWithin(outputRoot, canonicalDirectory)) {
       throw new Error(`${label} escapes the generated output root`);
     }
     return true;
@@ -272,7 +251,7 @@ async function readManagedTextFile(
       throw new Error(`${label} must be a regular file`);
     }
     const canonicalFile = await realpath(file);
-    if (!isWithin(outputRoot, canonicalFile)) {
+    if (!isPathWithin(outputRoot, canonicalFile)) {
       throw new Error(`${label} escapes the generated output root`);
     }
     return await readFile(file, "utf8");
@@ -638,7 +617,7 @@ async function publicationLockSnapshot(
     }
     throw error;
   }
-  if (!isWithin(outputRoot, canonicalLock)) {
+  if (!isPathWithin(outputRoot, canonicalLock)) {
     throw new Error(`${label} escapes the generated output root`);
   }
   return {
@@ -987,8 +966,8 @@ async function withPublicationLock<Value>(
 ): Promise<Value> {
   const previous = publicationTurns.get(outputRoot) ?? Promise.resolve();
   let finishTurn = (): void => undefined;
-  const turn = new Promise<void>((resolve) => {
-    finishTurn = resolve;
+  const turn = new Promise<void>((release) => {
+    finishTurn = release;
   });
   const queue = previous.then(() => turn);
   publicationTurns.set(outputRoot, queue);
@@ -1019,7 +998,10 @@ async function withPublicationFileLock<Value>(
   await assertConfinedDirectory(outputRoot, root, "Generated output root");
   const lockPath = join(outputRoot, publicationLockName);
   const recoveryPath = join(outputRoot, publicationRecoveryClaimName);
-  if (!isWithin(outputRoot, lockPath) || !isWithin(outputRoot, recoveryPath)) {
+  if (
+    !isPathWithin(outputRoot, lockPath) ||
+    !isPathWithin(outputRoot, recoveryPath)
+  ) {
     throw new Error(
       "Generated catalog publication lock escapes the generated output root"
     );
@@ -1876,7 +1858,7 @@ async function createStage(
   const payloadRoot = join(stageRoot, "payload");
   const controlsRoot = join(stageRoot, "controls");
   const previousControlsRoot = join(stageRoot, "previous-controls");
-  if (!isWithin(outputRoot, stageRoot)) {
+  if (!isPathWithin(outputRoot, stageRoot)) {
     throw new Error("Generated publication stage escapes the output root");
   }
   await rm(stageRoot, { force: true, recursive: true });
@@ -2312,7 +2294,7 @@ async function removePreviousPayload(
   const previous = resolve(outputRoot, previousDirectory);
   const selected = resolve(outputRoot, selectedDirectory);
   if (
-    !isWithin(outputRoot, previous) ||
+    !isPathWithin(outputRoot, previous) ||
     !isSamePath(previous, join(outputRoot, previousDirectory))
   ) {
     throw new Error("Previous generated payload escapes the output root");

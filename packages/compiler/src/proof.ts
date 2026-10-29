@@ -42,6 +42,11 @@ import {
   decodeUtf8Fatal,
   sha256,
 } from "./canonical";
+import {
+  confinedRelativePath,
+  isPathWithin,
+  relativePathWithin,
+} from "./path-within";
 import type * as AnalyzeSourcesModule from "./analyze-sources";
 import {
   loadFreshConventionCatalogGenerationInput,
@@ -289,14 +294,11 @@ function proofPath(
 }
 
 function relativeArtifactPath(root: string, file: string): string {
-  const candidate = resolve(root, file);
-  const path = relative(root, candidate).split(sep).join("/");
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error(
-      "Build-proof artifact path must remain inside its artifact root"
-    );
-  }
-  return path;
+  return confinedRelativePath(
+    root,
+    resolve(root, file),
+    "Build-proof artifact path must remain inside its artifact root"
+  );
 }
 
 async function regularArtifact(root: string, file: string): Promise<string> {
@@ -445,17 +447,12 @@ function packageArtifactDirectorySegments(
 ): Readonly<{ root: string; segments: ReadonlyArray<string> }> {
   const root = resolve(packageRoot);
   const target = resolve(directory);
-  const withinRoot = relative(root, target);
-  if (
-    isAbsolute(withinRoot) ||
-    withinRoot === ".." ||
-    withinRoot.startsWith(`..${sep}`)
-  ) {
+  if (!isPathWithin(root, target)) {
     throw new Error("Mirai Intl artifact directory escapes the package root");
   }
   return {
     root,
-    segments: withinRoot === "" ? [] : withinRoot.split(sep),
+    segments: relativePathWithin(root, target)?.split("/") ?? [],
   };
 }
 
@@ -1120,13 +1117,11 @@ type TransactionPathLedger = Readonly<{
 }>;
 
 function transactionWorkspacePath(workspaceRoot: string, file: string): string {
-  const path = relative(workspaceRoot, resolve(file)).split(sep).join("/");
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error(
-      `Provider resolution frontier escapes its workspace root: ${file}`
-    );
-  }
-  return path.normalize("NFC");
+  return confinedRelativePath(
+    workspaceRoot,
+    resolve(file),
+    `Provider resolution frontier escapes its workspace root: ${file}`
+  ).normalize("NFC");
 }
 
 async function captureTransactionPathLedger(

@@ -10,6 +10,7 @@ import type {
 import ts from "typescript";
 
 import { compareCanonicalStrings, sha256 } from "./canonical";
+import { confinedRelativePath, isPathWithin } from "./path-within";
 import { installWorkspaceRoot } from "./workspace-catalogs";
 
 export type OwnedSourceFile = Readonly<{
@@ -31,11 +32,11 @@ export type ConventionSourceUniverse = Readonly<{
 const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/u;
 
 function packageRelativePath(root: string, file: string): string {
-  const path = relative(root, file).split(sep).join("/");
-  if (!path || path.startsWith("../") || isAbsolute(path)) {
-    throw new Error("Check-project file must remain within its package root");
-  }
-  return path;
+  return confinedRelativePath(
+    root,
+    file,
+    "Check-project file must remain within its package root"
+  );
 }
 
 function receiptRelativePath(root: string, file: string): string {
@@ -47,14 +48,6 @@ function receiptRelativePath(root: string, file: string): string {
   // valid relative boundary explicit instead of serializing it as an empty
   // path, which is not a canonical receipt value.
   return path || ".";
-}
-
-function isWithin(root: string, path: string): boolean {
-  const candidate = relative(root, path);
-  return (
-    candidate === "" ||
-    (!candidate.startsWith(`..${sep}`) && !isAbsolute(candidate))
-  );
 }
 
 async function projectFiles(
@@ -82,7 +75,7 @@ async function projectFiles(
     );
   }
   const canonicalConfigPath = await realpath(configPath);
-  if (!isWithin(workspaceRoot, canonicalConfigPath)) {
+  if (!isPathWithin(workspaceRoot, canonicalConfigPath)) {
     throw new Error(`Check project ${project.path} escapes its workspace root`);
   }
   const configReads = new Set<string>();
@@ -113,7 +106,7 @@ async function projectFiles(
         );
       }
       const canonical = await realpath(file);
-      if (!isWithin(workspaceRoot, canonical)) {
+      if (!isPathWithin(workspaceRoot, canonical)) {
         throw new Error(
           `Check project ${project.path} source ${file} escapes its workspace root`
         );
@@ -143,7 +136,7 @@ async function projectFiles(
       !transitiveEntry ||
       transitiveEntry.isSymbolicLink() ||
       !transitiveEntry.isFile() ||
-      !isWithin(workspaceRoot, await realpath(path))
+      !isPathWithin(workspaceRoot, await realpath(path))
     ) {
       throw new Error(
         `Check project ${project.path} transitive config must be a confined regular file`
@@ -235,7 +228,7 @@ async function projectFiles(
     }
     if (typeof value === "string") {
       const absolute = isAbsolute(value) ? resolve(value) : undefined;
-      return absolute && isWithin(workspaceRoot, absolute)
+      return absolute && isPathWithin(workspaceRoot, absolute)
         ? receiptRelativePath(workspaceRoot, absolute)
         : value.replaceAll("\\", "/").normalize("NFC");
     }
@@ -309,7 +302,7 @@ export async function resolveConventionSourceUniverse(
         );
       }
       const canonical = await realpath(file);
-      if (!isWithin(workspaceRoot, canonical)) {
+      if (!isPathWithin(workspaceRoot, canonical)) {
         throw new Error(`Discovered source ${file} escapes its workspace root`);
       }
       return canonical;
@@ -321,9 +314,7 @@ export async function resolveConventionSourceUniverse(
       ...discoveredCanonical,
     ].filter(
       (file) =>
-        SOURCE_EXTENSION.test(file) &&
-        file !== generatedRoot &&
-        !file.startsWith(`${generatedRoot}${sep}`)
+        SOURCE_EXTENSION.test(file) && !isPathWithin(generatedRoot, file)
     )
   );
   const files = [...sourceFiles]
