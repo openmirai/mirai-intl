@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.9](https://github.com/openmirai/mirai-intl/compare/v0.4.8...v0.4.9) (2026-10-29)
+
+
+### Bug Fixes
+
+* **compiler:** confine realpaths at the pnpm install root, not the intl marker root ([d7ec0b5](https://github.com/openmirai/mirai-intl/commit/d7ec0b54687d214c79ca8c5e68f6e2c284477145))
+* **compiler:** one containment rule, one workspace-root walk, one lockfile list ([389e80a](https://github.com/openmirai/mirai-intl/commit/389e80a2228acd2d58842faa8710fab150305283))
+
 ## [0.4.8](https://github.com/openmirai/mirai-intl/compare/v0.4.7...v0.4.8) (2026-10-28)
 
 
