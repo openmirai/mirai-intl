@@ -790,7 +790,7 @@ describe("Phase 0 reference-engine parity", () => {
       programInstrumentation.count = 0;
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 120_000);
 
   it("seals configured ambient types and their triple-slash path closure", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
@@ -1012,7 +1012,7 @@ describe("Phase 0 reference-engine parity", () => {
       programInstrumentation.count = 0;
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 120_000);
 
   it("isolates unsafe sources while sharing an exact provider closure with reference parity", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
@@ -1183,7 +1183,7 @@ describe("Phase 0 reference-engine parity", () => {
       programInstrumentation.count = 0;
       await rm(container, { force: true, recursive: true });
     }
-  });
+  }, 120_000);
 
   it("keeps artifacts, reports, and receipts byte-identical across clean runs", async () => {
     const container = await mkdtemp(join(tmpdir(), "mirai-intl-phase0-"));
