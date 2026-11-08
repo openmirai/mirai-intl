@@ -3438,6 +3438,97 @@ describe("private named-key lowering", () => {
     60_000
   );
 
+  it.each(["owner batch", "single source"] as const)(
+    "keeps the generated facade and every claim within the 64-provider evidence limit (%s)",
+    async (analysis) => {
+      const fixture = await createGeneratedCatalog();
+      const id = join(fixture.root, "src/provider-limit.ts");
+      // The key resolves in the first provider; the rest of the chain is an
+      // unrelated import graph that alone would claim 64 providers.
+      const chainLength = 70;
+      for (let index = 0; index < chainLength; index += 1) {
+        const next =
+          index === chainLength - 1 ? "" : `import "./chain-${index + 1}";\n`;
+        await writeFile(
+          join(fixture.root, `src/chain-${index}.ts`),
+          index === 0
+            ? `${next}export declare const key: "title";\n`
+            : `${next}export {};\n`,
+          "utf8"
+        );
+      }
+      const source = [
+        'import { useTranslations } from "x";',
+        'import type { TranslationKey } from "./i18n/generated";',
+        'import { key } from "./chain-0";',
+        'const { t } = useTranslations("pages.home");',
+        "export const translated = t(key);",
+        'export const label: TranslationKey<"pages.home"> = "title";',
+        "",
+      ].join("\n");
+
+      try {
+        let evidence: MiraiIntlSemanticEvidence | undefined;
+        const authorizationEvidence = {
+          record(value: MiraiIntlSemanticEvidence) {
+            evidence = value;
+          },
+          workspaceRoot: "/",
+        };
+        const options = {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        };
+        const error =
+          analysis === "owner batch"
+            ? (
+                await transformMiraiIntlOwnerBatch(
+                  [{ authorizationEvidence, id, source }],
+                  options
+                )
+              )[0]?.error
+            : await transformMiraiIntlSource(source, id, {
+                ...options,
+                authorizationEvidence,
+              }).then(
+                () => undefined,
+                (caught: unknown) => caught
+              );
+
+        expect(error).toBeUndefined();
+        expect(evidence?.providerBudgetExceeded).toBe(true);
+        expect(evidence?.providerRootLimit).toBe(64);
+        expect(evidence?.providers).toHaveLength(64);
+        expect(
+          evidence?.providers.some((provider) => provider.kind === "generated")
+        ).toBe(true);
+        expect(
+          evidence?.providers.some((provider) =>
+            provider.root.endsWith("/src/chain-0.ts")
+          )
+        ).toBe(true);
+        // The check receipt binds a closure's declarations as the exact union
+        // of its providers' declarations.
+        expect(
+          [
+            ...new Set(
+              evidence?.providers.flatMap((provider) =>
+                provider.declarations.map((declaration) => declaration.path)
+              )
+            ),
+          ].toSorted()
+        ).toEqual(
+          evidence?.declarations
+            .map((declaration) => declaration.path)
+            .toSorted()
+        );
+      } finally {
+        await rm(fixture.root, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
   it("lowers namespace-bound server dynamic calls through the same private runtime lookup", async () => {
     const fixture = await createGeneratedCatalog();
     const id = join(fixture.root, "src/server-dynamic.ts");

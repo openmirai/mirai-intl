@@ -1795,9 +1795,17 @@ async function createConventionCheckReceipt(
         );
       }
       const optionsHash = canonicalHash(project.normalizedOptions);
-      const providers = entry.providerBudgetExceeded
-        ? entry.providers.slice(0, entry.providerRootLimit)
-        : entry.providers;
+      // The analyzers keep each closure's evidence within providerRootLimit
+      // (an over-budget closure gives up claims, never recorded evidence).
+      // Cutting the evidence here would drop bound inputs and leave the
+      // declarations out of step with the providers, which every receipt
+      // reader refuses, so a closure that still does not fit fails by name.
+      if (entry.providers.length > entry.providerRootLimit) {
+        throw new Error(
+          `Mirai Intl provider closure of ${entry.source} has ${entry.providers.length} providers, over its limit of ${entry.providerRootLimit}`
+        );
+      }
+      const { providers } = entry;
       return {
         ambientTypeFileLimit: entry.ambientTypeFileLimit,
         declarations: entry.declarations.map((declaration) =>
