@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -141,6 +148,37 @@ describe("provider closure limit", () => {
       buildReceiptVerifications: 1,
       buildSemanticAnalysisRuns: 0,
     });
+  }, 120_000);
+
+  it("writes identical receipt bytes when an over-limit closure is proved twice", async () => {
+    const root = await fixture(80);
+    const receiptBytes = async (): Promise<Array<[string, string]>> => {
+      const directory = join(root, ".mirai-intl/authority/receipts/v3");
+      const names = (await readdir(directory)).toSorted();
+      return Promise.all(
+        names.map(
+          async (name) =>
+            [name, await readFile(join(directory, name), "utf8")] as [
+              string,
+              string,
+            ]
+        )
+      );
+    };
+    const first = await proveConventionCatalog(root);
+    const firstBytes = await receiptBytes();
+    // A fresh proof: no authority to reuse, so the closure is analyzed again,
+    // including the analysis that gives up claims for the limit.
+    await rm(join(root, ".mirai-intl"), { force: true, recursive: true });
+    const second = await proveConventionCatalog(root);
+
+    expect(firstBytes).toHaveLength(1);
+    expect(await receiptBytes()).toEqual(firstBytes);
+    expect(second).toEqual(first);
+    expect(
+      second.providerClosures.find((entry) => entry.source === "src/page.ts")
+        ?.providers
+    ).toHaveLength(64);
   }, 120_000);
 
   it("refuses a closure over the limit by name instead of writing a corrupt receipt", async () => {

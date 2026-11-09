@@ -6927,7 +6927,7 @@ function analyzeSource(
       if (providerBudgetExceeded) {
         return diagnostic(
           expression,
-          `Finite translation key analysis exceeded the ${maximumSemanticProviders}-file provider budget while resolving ${providerBudgetExceeded}`
+          `Finite translation key analysis exceeded the ${maximumSemanticProviders}-provider evidence limit while resolving ${providerBudgetExceeded}`
         );
       }
       return diagnostic(
