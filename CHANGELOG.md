@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.11](https://github.com/openmirai/mirai-intl/compare/v0.4.10...v0.4.11) (2026-11-09)
+
+
+### Bug Fixes
+
+* **compiler:** keep each provider closure within the receipt's 64-provider limit ([23c749b](https://github.com/openmirai/mirai-intl/commit/23c749b10f07a79bfdd9a9fb0b2dcb8bdee2faed))
+
 ## [0.4.10](https://github.com/openmirai/mirai-intl/compare/v0.4.9...v0.4.10) (2026-10-29)
 
 
