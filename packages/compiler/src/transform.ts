@@ -319,7 +319,7 @@ export type MiraiIntlSemanticEvidence = Readonly<{
   >;
   libs: ReadonlyArray<Readonly<{ hash: `sha256:${string}`; path: string }>>;
   providerBudgetExceeded: boolean;
-  providerRootLimit: 64;
+  providerRootLimit: typeof maximumSemanticProviders;
   providers: ReadonlyArray<
     Readonly<{
       declarations: ReadonlyArray<
@@ -2478,6 +2478,46 @@ function semanticProviderBoundary(canonical: string): string {
   return nodeModulesProviderBoundary(canonical) ?? canonical;
 }
 
+/**
+ * The most providers one source's semantic evidence may carry. The check
+ * receipt records it as `providerRootLimit` and its readers refuse a closure
+ * with more providers, so the analyzers spend their provider budget on the
+ * same count (see semanticEvidenceProviderCount).
+ */
+const maximumSemanticProviders = 64 as const;
+
+/**
+ * How many providers a closure's semantic evidence carries: every provider
+ * root the analysis recorded (claimed, unresolved, ambient and generated
+ * catalog files) plus the generated facade when any import resolves to it.
+ */
+function semanticEvidenceProviderCount(
+  providerRoots: ReadonlyArray<Readonly<{ root: string }>>,
+  generatedFacadeRoot: string | undefined
+): number {
+  return new Set([
+    ...providerRoots.map(({ root }) => root),
+    ...(generatedFacadeRoot === undefined ? [] : [generatedFacadeRoot]),
+  ]).size;
+}
+
+/**
+ * The provider claim limit for another analysis of a closure whose evidence
+ * exceeded maximumSemanticProviders: the unclaimed roots stay, so the claims
+ * shrink by the overflow. Undefined when the evidence fits or no claim is
+ * left to give up (the receipt writer then refuses the closure by name).
+ */
+function reducedProviderClaimLimit(
+  evidenceProviders: number,
+  claimedProviders: number
+): number | undefined {
+  const overflow = evidenceProviders - maximumSemanticProviders;
+  if (overflow <= 0 || claimedProviders === 0) {
+    return undefined;
+  }
+  return Math.max(0, claimedProviders - overflow);
+}
+
 function createProgram(
   source: string,
   id: string,
@@ -2486,7 +2526,9 @@ function createProgram(
   generatedFacadeModules: ReadonlySet<string>,
   includeCatalogContract: boolean,
   ownerCompilerOptions?: ts.CompilerOptions,
-  workspaceRoot: string = root
+  workspaceRoot: string = root,
+  recordsEvidence = false,
+  providerClaimLimit: number = maximumSemanticProviders
 ): Readonly<{
   checker: ts.TypeChecker;
   evidenceFiles?: ReadonlyMap<string, `sha256:${string}`>;
@@ -2555,7 +2597,6 @@ function createProgram(
     scriptKindFor(id)
   );
   const canonicalRoot = ts.sys.realpath ? ts.sys.realpath(root) : resolve(root);
-  const maximumProviderFiles = 64;
   const providerFiles = new Set<string>();
   const providerRootByBoundary = new Map<string, string>();
   const providerEntryRoots = new Map<string, Set<string>>();
@@ -2601,7 +2642,7 @@ function createProgram(
       providerEntryRoots.set(existing, entries);
       return existing;
     }
-    if (providerFiles.size >= maximumProviderFiles) {
+    if (providerFiles.size >= providerClaimLimit) {
       providerBudgetExceeded ??= moduleName;
       return undefined;
     }
@@ -2868,6 +2909,36 @@ function createProgram(
     compilerOptions,
     host
   );
+  // Only evidence that becomes a check receipt is bound by its limit; a
+  // build transform without evidence keeps its full claim budget.
+  const reducedClaimLimit = recordsEvidence
+    ? reducedProviderClaimLimit(
+        semanticEvidenceProviderCount(
+          [...providerResolutions.keys()].map((providerRoot) => ({
+            root: providerRoot,
+          })),
+          generatedFacadeModules.size > 0 ||
+            transitiveGeneratedFacadeResolutions.size > 0
+            ? catalog.generatedFacadePath
+            : undefined
+        ),
+        providerFiles.size
+      )
+    : undefined;
+  if (reducedClaimLimit !== undefined) {
+    return createProgram(
+      source,
+      id,
+      root,
+      catalog,
+      generatedFacadeModules,
+      includeCatalogContract,
+      ownerCompilerOptions,
+      workspaceRoot,
+      recordsEvidence,
+      reducedClaimLimit
+    );
+  }
   return {
     checker: program.getTypeChecker(),
     generatedFacadeId,
@@ -3674,7 +3745,8 @@ function prepareSealedSemanticClosure(
   sharedFacade?: Readonly<{
     includeCatalogContract: boolean;
     namespaces: ReadonlySet<string> | undefined;
-  }>
+  }>,
+  providerClaimLimit: number = maximumSemanticProviders
 ): PreparedSemanticClosure {
   let preparationProfilePrior = performance.now();
   const markPreparationProfile = (phase: string): void => {
@@ -3781,7 +3853,6 @@ function prepareSealedSemanticClosure(
   const ambientProviderRoots = new Set<string>();
   const unresolvedProviderRoots = new Set<string>();
   const canonicalRoot = ts.sys.realpath ? ts.sys.realpath(root) : resolve(root);
-  const maximumProviderFiles = 64;
   let providerBudgetExceeded: string | undefined;
   const isAllowedProvider = (
     canonical: string,
@@ -3814,7 +3885,7 @@ function prepareSealedSemanticClosure(
       providerEntryRoots.set(existing, entries);
       return existing;
     }
-    if (providerFiles.size >= maximumProviderFiles) {
+    if (providerFiles.size >= providerClaimLimit) {
       providerBudgetExceeded ??= moduleName;
       return undefined;
     }
@@ -4380,6 +4451,31 @@ function prepareSealedSemanticClosure(
       ),
       root: providerRoot,
     }));
+  const reducedClaimLimit = reducedProviderClaimLimit(
+    semanticEvidenceProviderCount(
+      providerRoots,
+      generatedFacadeResolutions.size > 0
+        ? catalog.generatedFacadePath
+        : undefined
+    ),
+    providerFiles.size
+  );
+  if (reducedClaimLimit !== undefined) {
+    return prepareSealedSemanticClosure(
+      source,
+      id,
+      root,
+      catalog,
+      generatedImports,
+      ownerCompilerOptions,
+      workspaceRoot,
+      cache,
+      preparedSourceFile,
+      preparedFiniteModules,
+      sharedFacade,
+      reducedClaimLimit
+    );
+  }
   const normalizedForGroup = (path: string): string => {
     if (path === cleanId) {
       return "<source>";
@@ -5638,7 +5734,7 @@ function semanticEvidence(
     declarations,
     libs,
     providerBudgetExceeded: providerBudgetExceeded !== undefined,
-    providerRootLimit: 64 as const,
+    providerRootLimit: maximumSemanticProviders,
     providers,
     source: sourcePath,
     sourceHash,
@@ -5760,7 +5856,8 @@ function analyzeSource(
       generatedImports.facadeModules,
       generatedImports.requiresCatalogContract,
       ownerCompilerOptions,
-      workspaceRoot
+      workspaceRoot,
+      authorizationEvidence !== undefined
     );
   authorizationEvidence?.record(
     semanticEvidence(
@@ -6830,7 +6927,7 @@ function analyzeSource(
       if (providerBudgetExceeded) {
         return diagnostic(
           expression,
-          `Finite translation key analysis exceeded the 64-file provider budget while resolving ${providerBudgetExceeded}`
+          `Finite translation key analysis exceeded the ${maximumSemanticProviders}-file provider budget while resolving ${providerBudgetExceeded}`
         );
       }
       return diagnostic(
