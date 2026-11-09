@@ -3429,8 +3429,84 @@ describe("private named-key lowering", () => {
         expect(result?.error instanceof Error).toBe(exceeds);
         expect(
           result?.error instanceof Error ? result.error.message : ""
-        ).toMatch(exceeds ? /exceeded the 64-file provider budget/u : /^$/u);
+        ).toMatch(exceeds ? /exceeded the 64-provider evidence limit/u : /^$/u);
         expect(result?.result == null).toBe(exceeds);
+      } finally {
+        await rm(fixture.root, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
+  it.each([
+    { evidence: false, outcome: "keeps its full 64-claim budget" },
+    { evidence: true, outcome: "gives up claims for the evidence limit" },
+  ])(
+    "a single-source transform $outcome when its key needs the 64th claim",
+    async ({ evidence }) => {
+      const fixture = await createGeneratedCatalog();
+      const id = join(fixture.root, "src/late-key.ts");
+      // The key is declared in the 64th provider of the chain, so it needs
+      // every claim; the generated facade import puts the evidence over 64.
+      const providerCount = 64;
+      for (let index = 0; index < providerCount; index += 1) {
+        await writeFile(
+          join(fixture.root, `src/late-${index}.ts`),
+          index === providerCount - 1
+            ? 'export declare const key: "title";\n'
+            : `export { key } from "./late-${index + 1}";\n`,
+          "utf8"
+        );
+      }
+      const source = [
+        'import { useTranslations } from "x";',
+        'import type { TranslationKey } from "./i18n/generated";',
+        'import { key } from "./late-0";',
+        'const { t } = useTranslations("pages.home");',
+        "export const translated = t(key);",
+        'export const label: TranslationKey<"pages.home"> = "title";',
+        "",
+      ].join("\n");
+
+      try {
+        let recorded: MiraiIntlSemanticEvidence | undefined;
+        const options = {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        };
+        const outcome = await transformMiraiIntlSource(
+          source,
+          id,
+          evidence
+            ? {
+                ...options,
+                authorizationEvidence: {
+                  record(value) {
+                    recorded = value;
+                  },
+                  workspaceRoot: "/",
+                },
+              }
+            : options
+        ).then(
+          (result) => ({ error: undefined, result }),
+          (error: unknown) => ({ error, result: undefined })
+        );
+
+        if (evidence) {
+          // Evidence that becomes a check receipt stays within its limit, so
+          // the key's provider is given up and the key fails loudly.
+          expect(outcome.error instanceof Error).toBe(true);
+          expect(
+            outcome.error instanceof Error ? outcome.error.message : ""
+          ).toMatch(/exceeded the 64-provider evidence limit/u);
+          expect(recorded?.providers.length ?? 0).toBeLessThanOrEqual(64);
+        } else {
+          // The bundler transform records no evidence: it lowers the key with
+          // the full claim budget, as it did before the evidence limit.
+          expect(outcome.error).toBeUndefined();
+          expect(outcome.result?.code).toContain("__miraiIntlMessage0");
+        }
       } finally {
         await rm(fixture.root, { force: true, recursive: true });
       }

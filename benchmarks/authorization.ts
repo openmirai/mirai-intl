@@ -2028,7 +2028,7 @@ async function verifySemanticIntegrityMatrix(
     providerOverflowMessages.every(
       (message) =>
         typeof message === "string" &&
-        message.includes("exceeded the 64-file provider budget")
+        message.includes("exceeded the 64-provider evidence limit")
     );
   if (
     !invalidParity ||
