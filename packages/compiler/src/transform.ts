@@ -1580,7 +1580,104 @@ function finiteDependencyModules(
   const visitedNodes = new Set<ts.Node>();
   const visitedNames = new Set<string>();
 
-  const traceName = (name: string): void => {
+  // The type nodes that define one named member of a declared type, read from
+  // this file only. Undefined when the member cannot be pinned down here
+  // (imported, generic, inherited or computed): the caller then traces the
+  // whole type. A type already naming the key union stops the trace there
+  // instead of walking every sibling member's imports.
+  const memberTypeNodes = (
+    type: ts.TypeNode,
+    member: string,
+    seen: Set<ts.Node> = new Set()
+  ): ReadonlyArray<ts.TypeNode> | "absent" | undefined => {
+    if (seen.has(type)) {
+      return undefined;
+    }
+    seen.add(type);
+    const fromMembers = (
+      members: ts.NodeArray<ts.TypeElement>
+    ): ReadonlyArray<ts.TypeNode> | "absent" | undefined => {
+      for (const element of members) {
+        if (
+          !ts.isPropertySignature(element) ||
+          element.name === undefined ||
+          (!ts.isIdentifier(element.name) &&
+            !ts.isStringLiteral(element.name)) ||
+          element.name.text !== member
+        ) {
+          if (!ts.isPropertySignature(element)) {
+            // call/index/method signatures can also supply the member
+            return undefined;
+          }
+          continue;
+        }
+        return element.type ? [element.type] : undefined;
+      }
+      return "absent";
+    };
+    if (ts.isParenthesizedTypeNode(type)) {
+      return memberTypeNodes(type.type, member, seen);
+    }
+    if (ts.isTypeLiteralNode(type)) {
+      return fromMembers(type.members);
+    }
+    if (ts.isIntersectionTypeNode(type)) {
+      const found: Array<ts.TypeNode> = [];
+      for (const constituent of type.types) {
+        const resolved = memberTypeNodes(constituent, member, seen);
+        if (resolved === undefined) {
+          return undefined;
+        }
+        if (resolved !== "absent") {
+          found.push(...resolved);
+        }
+      }
+      return found.length > 0 ? found : undefined;
+    }
+    if (
+      ts.isTypeReferenceNode(type) &&
+      ts.isIdentifier(type.typeName) &&
+      type.typeArguments === undefined &&
+      !importedModules.has(type.typeName.text)
+    ) {
+      const entries = declarations.get(type.typeName.text) ?? [];
+      const only = entries.length === 1 ? entries[0] : undefined;
+      if (only && ts.isInterfaceDeclaration(only)) {
+        if (only.typeParameters || only.heritageClauses) {
+          return undefined;
+        }
+        return fromMembers(only.members);
+      }
+      if (only && ts.isTypeAliasDeclaration(only) && !only.typeParameters) {
+        return memberTypeNodes(only.type, member, seen);
+      }
+    }
+    return undefined;
+  };
+
+  const traceTypeOf = (
+    declaration: ts.ParameterDeclaration | ts.VariableDeclaration,
+    member: string | undefined
+  ): void => {
+    if (!declaration.type) {
+      return;
+    }
+    const narrowed =
+      member === undefined
+        ? undefined
+        : memberTypeNodes(declaration.type, member);
+    if (narrowed === undefined) {
+      traceNode(declaration.type);
+      return;
+    }
+    if (narrowed !== "absent") {
+      for (const memberType of narrowed) {
+        traceNode(memberType);
+      }
+    }
+  };
+
+  const traceName = (name: string, member?: string): void => {
     if (name === "React" && sourceModules.has("react")) {
       modules.add("react");
     }
@@ -1588,12 +1685,13 @@ function finiteDependencyModules(
     if (imported) {
       modules.add(imported);
     }
-    if (visitedNames.has(name)) {
+    const visitKey = member === undefined ? name : `${name}\u0000${member}`;
+    if (visitedNames.has(visitKey)) {
       return;
     }
-    visitedNames.add(name);
+    visitedNames.add(visitKey);
     for (const declaration of declarations.get(name) ?? []) {
-      traceDeclaration(declaration);
+      traceDeclaration(declaration, member);
     }
   };
 
@@ -1613,6 +1711,14 @@ function finiteDependencyModules(
         return;
       }
       traceName(node.text);
+      return;
+    }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ts.isIdentifier(node.name)
+    ) {
+      traceName(node.expression.text, node.name.text);
       return;
     }
     ts.forEachChild(node, traceNode);
@@ -1655,20 +1761,16 @@ function finiteDependencyModules(
     }
   };
 
-  function traceDeclaration(declaration: ts.Node): void {
+  function traceDeclaration(declaration: ts.Node, member?: string): void {
     if (ts.isVariableDeclaration(declaration)) {
-      if (declaration.type) {
-        traceNode(declaration.type);
-      }
+      traceTypeOf(declaration, member);
       if (declaration.initializer) {
         traceNode(declaration.initializer);
       }
       return;
     }
     if (ts.isParameter(declaration)) {
-      if (declaration.type) {
-        traceNode(declaration.type);
-      }
+      traceTypeOf(declaration, member);
       if (declaration.initializer) {
         traceNode(declaration.initializer);
       }
@@ -1683,7 +1785,14 @@ function finiteDependencyModules(
       traceCallbackReceiver(declaration);
       const container = declaration.parent.parent;
       if (ts.isVariableDeclaration(container) || ts.isParameter(container)) {
-        traceDeclaration(container);
+        const property = declaration.propertyName ?? declaration.name;
+        const destructured =
+          ts.isObjectBindingPattern(declaration.parent) &&
+          declaration.dotDotDotToken === undefined &&
+          (ts.isIdentifier(property) || ts.isStringLiteral(property))
+            ? property.text
+            : undefined;
+        traceDeclaration(container, destructured);
       }
       return;
     }
@@ -2485,6 +2594,11 @@ function semanticProviderBoundary(canonical: string): string {
  * same count (see semanticEvidenceProviderCount).
  */
 const maximumSemanticProviders = 64 as const;
+// Source files one key analysis may read from its provider closure. One
+// dynamic key reaching a UI kit's type graph used to crawl millions of files
+// inside a single synchronous transform; past this the analysis stops with a
+// diagnostic naming the module that pulled the closure in.
+const maximumSemanticProgramFiles = 5000 as const;
 
 /**
  * How many providers a closure's semantic evidence carries: every provider
@@ -2729,12 +2843,20 @@ function createProgram(
   let transitiveRequiresFullFacade = false;
   const providerQueue = [...providerRootNames];
   const traversedProviders = new Set<string>();
+  const assertProgramFileBudget = (fileCount: number, via: string): void => {
+    if (fileCount > maximumSemanticProgramFiles) {
+      throw new Error(
+        `Finite translation key analysis of ${id} read more than ${maximumSemanticProgramFiles} dependency files while resolving ${via}; type the translation key as a TranslationKey union at its parameter or prop, or keep heavy imports out of the key's type path`
+      );
+    }
+  };
   while (providerQueue.length > 0) {
     const containingFile = providerQueue.shift();
     if (!containingFile || traversedProviders.has(containingFile)) {
       continue;
     }
     traversedProviders.add(containingFile);
+    assertProgramFileBudget(traversedProviders.size, containingFile);
     const containingSource = ts.sys.readFile(containingFile);
     if (containingSource === undefined) {
       continue;
@@ -2825,12 +2947,20 @@ function createProgram(
     }
     return readHostFile(fileName);
   };
+  const defaultLibDirectory = dirname(
+    host.getDefaultLibFileName(compilerOptions)
+  );
+  const programFiles = new Set<string>();
   host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
     if (fileName === id) {
       return sourceFile;
     }
     if (fileName === generatedFacadeId) {
       return generatedFacadeFile;
+    }
+    if (!isPathWithin(defaultLibDirectory, fileName)) {
+      programFiles.add(fileName);
+      assertProgramFileBudget(programFiles.size, fileName);
     }
     return getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
   };

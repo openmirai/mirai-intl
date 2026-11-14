@@ -1784,6 +1784,135 @@ describe("private named-key lowering", () => {
     }
   }, 60_000);
 
+  describe("key-trace budget", () => {
+    // 5001 declaration files: one more than the analysis may read.
+    const heavyFiles = 5001;
+
+    async function heavyFixture(): Promise<
+      Readonly<{
+        id: string;
+        options: { generatedDirectory: string; root: string };
+        root: string;
+      }>
+    > {
+      const fixture = await createGeneratedCatalog();
+      await writeJson(join(fixture.root, "tsconfig.json"), {
+        compilerOptions: {
+          jsx: "preserve",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          paths: { "@/*": ["src/*"] },
+        },
+      });
+      const heavyRoot = join(fixture.root, "node_modules/heavy-ui");
+      await mkdir(heavyRoot, { recursive: true });
+      await writeJson(join(heavyRoot, "package.json"), {
+        name: "heavy-ui",
+        types: "index.d.ts",
+        version: "0.0.0-fixture",
+      });
+      const indexLines = [
+        'import type { TranslationKey } from "@/i18n/generated";',
+        'export type HeavyKey = TranslationKey<"components.toast">;',
+        "export type Heavy = { v: number };",
+      ];
+      await Promise.all(
+        Array.from({ length: heavyFiles }, (_, index) => {
+          indexLines.push(`export type { T${index} } from "./m${index}";`);
+          return writeFile(
+            join(heavyRoot, `m${index}.d.ts`),
+            `export interface T${index} { a: string; }\n`,
+            "utf8"
+          );
+        })
+      );
+      await writeFile(
+        join(heavyRoot, "index.d.ts"),
+        `${indexLines.join("\n")}\n`,
+        "utf8"
+      );
+      return {
+        id: join(fixture.root, "src/heavy-props.tsx"),
+        options: {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        },
+        root: fixture.root,
+      };
+    }
+
+    const siblingSource = (access: "destructured" | "member") =>
+      [
+        'import type { TranslationKey } from "@/i18n/generated";',
+        'import type { Heavy } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        'interface Props { error: TranslationKey<"components.toast">; heavy?: Heavy; }',
+        access === "destructured"
+          ? "export function Banner({ error }: Props) {"
+          : "export function Banner(props: Props) {",
+        '  const { t } = useTranslations("components.toast");',
+        access === "destructured"
+          ? "  return t(error);"
+          : "  return t(props.error);",
+        "}",
+        "",
+      ].join("\n");
+
+    it.each(["destructured", "member"] as const)(
+      "stops at a %s prop already typed as a key union, off heavy sibling imports",
+      async (access) => {
+        const heavy = await heavyFixture();
+        const readFileImplementation = ts.sys.readFile;
+        let heavyReads = 0;
+        const readFile = vi
+          .spyOn(ts.sys, "readFile")
+          .mockImplementation((path, encoding) => {
+            if (path.includes("heavy-ui")) {
+              heavyReads += 1;
+            }
+            return readFileImplementation(path, encoding);
+          });
+        try {
+          const result = requireTransform(
+            await transformMiraiIntlSource(
+              siblingSource(access),
+              heavy.id,
+              heavy.options
+            )
+          );
+          expect(result.code).toContain('["components.toast.activate.error"]');
+          expect(heavyReads).toBe(0);
+        } finally {
+          readFile.mockRestore();
+          await rm(heavy.root, { force: true, recursive: true });
+        }
+      },
+      120_000
+    );
+
+    it("refuses with a named diagnostic when the key's own type path reads past the file budget", async () => {
+      const heavy = await heavyFixture();
+      const source = [
+        'import type { HeavyKey } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        "export function Banner({ error }: { error: HeavyKey }) {",
+        '  const { t } = useTranslations("components.toast");',
+        "  return t(error);",
+        "}",
+        "",
+      ].join("\n");
+      try {
+        await expect(
+          transformMiraiIntlSource(source, heavy.id, heavy.options)
+        ).rejects.toThrowError(
+          /read more than 5000 dependency files while resolving .*TranslationKey union/u
+        );
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+  });
+
   it("matches full-facade reference lowering for aliased, type-only, and form helper slices", async () => {
     const fixture = await createGeneratedCatalog();
     const sources = [
