@@ -1911,6 +1911,140 @@ describe("private named-key lowering", () => {
         await rm(heavy.root, { force: true, recursive: true });
       }
     }, 120_000);
+
+    it("applies the same file budget to the sealed owner-batch crawl", async () => {
+      const heavy = await heavyFixture();
+      const source = [
+        'import type { HeavyKey } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        "export function Banner({ error }: { error: HeavyKey }) {",
+        '  const { t } = useTranslations("components.toast");',
+        "  return t(error);",
+        "}",
+        "",
+      ].join("\n");
+      try {
+        const [candidate] = await transformMiraiIntlOwnerBatch(
+          [
+            {
+              authorizationEvidence: { record() {}, workspaceRoot: "/" },
+              id: heavy.id,
+              source,
+            },
+          ],
+          heavy.options
+        );
+        expect(candidate?.result).toBeUndefined();
+        expect(
+          candidate?.error instanceof Error ? candidate.error.message : ""
+        ).toMatch(/read more than 5000 dependency files while resolving/u);
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+  });
+
+  describe("key-trace fallbacks", () => {
+    const K = 'TranslationKey<"components.toast">';
+    const head = [
+      'import type { TranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+    ];
+    const useT = '  const { t } = useTranslations("components.toast");';
+    const shapes: ReadonlyArray<
+      Readonly<{ name: string; lines: ReadonlyArray<string> }>
+    > = [
+      {
+        name: "extends",
+        lines: [
+          `interface Base { error: ${K}; }`,
+          "interface Props extends Base { other?: number; }",
+          "export function Banner(props: Props) {",
+          useT,
+          "  return t(props.error);",
+          "}",
+        ],
+      },
+      {
+        name: "imported Props",
+        lines: [
+          'import type { Props } from "@/props";',
+          "export function Banner({ error }: Props) {",
+          useT,
+          "  return t(error);",
+          "}",
+        ],
+      },
+      {
+        name: "generic Props",
+        lines: [
+          "interface Props<E> { error: E; }",
+          `export function Banner({ error }: Props<${K}>) {`,
+          useT,
+          "  return t(error);",
+          "}",
+        ],
+      },
+      {
+        name: "computed member name",
+        lines: [
+          `interface Props { ["error"]: ${K}; }`,
+          "export function Banner(props: Props) {",
+          useT,
+          "  return t(props.error);",
+          "}",
+        ],
+      },
+      {
+        name: "optional chaining",
+        lines: [
+          `interface Props { error: ${K}; }`,
+          "export function Banner(props?: Props) {",
+          useT,
+          "  return props ? t(props?.error) : undefined;",
+          "}",
+        ],
+      },
+      {
+        name: "intersection with an imported part",
+        lines: [
+          'import type { Props as Imported } from "@/props";',
+          "type Props = Imported & { other?: number };",
+          "export function Banner({ error }: Props) {",
+          useT,
+          "  return t(error);",
+          "}",
+        ],
+      },
+    ];
+
+    it.each(shapes)(
+      "still lowers a key typed through $name",
+      async ({ lines }) => {
+        const fixture = await createGeneratedCatalog();
+        await writeFile(
+          join(fixture.root, "src/props.ts"),
+          `import type { TranslationKey } from "@/i18n/generated";\nexport interface Props { error: ${K}; }\n`,
+          "utf8"
+        );
+        try {
+          const result = requireTransform(
+            await transformMiraiIntlSource(
+              [...head, ...lines, ""].join("\n"),
+              join(fixture.root, "src/shape.tsx"),
+              {
+                generatedDirectory: fixture.generatedDirectory,
+                root: fixture.root,
+              }
+            )
+          );
+          expect(result.code).toContain('["components.toast.activate.error"]');
+        } finally {
+          await rm(fixture.root, { force: true, recursive: true });
+        }
+      },
+      60_000
+    );
   });
 
   it("matches full-facade reference lowering for aliased, type-only, and form helper slices", async () => {

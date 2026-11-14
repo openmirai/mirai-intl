@@ -1600,15 +1600,13 @@ function finiteDependencyModules(
       for (const element of members) {
         if (
           !ts.isPropertySignature(element) ||
-          element.name === undefined ||
-          (!ts.isIdentifier(element.name) &&
-            !ts.isStringLiteral(element.name)) ||
-          element.name.text !== member
+          (!ts.isIdentifier(element.name) && !ts.isStringLiteral(element.name))
         ) {
-          if (!ts.isPropertySignature(element)) {
-            // call/index/method signatures can also supply the member
-            return undefined;
-          }
+          // call/index/method signatures and computed names can also supply
+          // the member
+          return undefined;
+        }
+        if (element.name.text !== member) {
           continue;
         }
         return element.type ? [element.type] : undefined;
@@ -2600,6 +2598,18 @@ const maximumSemanticProviders = 64 as const;
 // diagnostic naming the module that pulled the closure in.
 const maximumSemanticProgramFiles = 5000 as const;
 
+function assertSemanticProgramFileBudget(
+  fileCount: number,
+  id: string,
+  via: string
+): void {
+  if (fileCount > maximumSemanticProgramFiles) {
+    throw new Error(
+      `Finite translation key analysis of ${id} read more than ${maximumSemanticProgramFiles} dependency files while resolving ${via}; type the translation key as a TranslationKey union at its parameter or prop, or keep heavy imports out of the key's type path`
+    );
+  }
+}
+
 /**
  * How many providers a closure's semantic evidence carries: every provider
  * root the analysis recorded (claimed, unresolved, ambient and generated
@@ -2843,20 +2853,17 @@ function createProgram(
   let transitiveRequiresFullFacade = false;
   const providerQueue = [...providerRootNames];
   const traversedProviders = new Set<string>();
-  const assertProgramFileBudget = (fileCount: number, via: string): void => {
-    if (fileCount > maximumSemanticProgramFiles) {
-      throw new Error(
-        `Finite translation key analysis of ${id} read more than ${maximumSemanticProgramFiles} dependency files while resolving ${via}; type the translation key as a TranslationKey union at its parameter or prop, or keep heavy imports out of the key's type path`
-      );
-    }
-  };
   while (providerQueue.length > 0) {
     const containingFile = providerQueue.shift();
     if (!containingFile || traversedProviders.has(containingFile)) {
       continue;
     }
     traversedProviders.add(containingFile);
-    assertProgramFileBudget(traversedProviders.size, containingFile);
+    assertSemanticProgramFileBudget(
+      traversedProviders.size,
+      id,
+      containingFile
+    );
     const containingSource = ts.sys.readFile(containingFile);
     if (containingSource === undefined) {
       continue;
@@ -2960,7 +2967,7 @@ function createProgram(
     }
     if (!isPathWithin(defaultLibDirectory, fileName)) {
       programFiles.add(fileName);
-      assertProgramFileBudget(programFiles.size, fileName);
+      assertSemanticProgramFileBudget(programFiles.size, id, fileName);
     }
     return getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
   };
@@ -4356,6 +4363,7 @@ function prepareSealedSemanticClosure(
       break;
     }
     pending.delete(containingFile);
+    assertSemanticProgramFileBudget(files.size, cleanId, containingFile);
     const containingSource = files.get(containingFile);
     if (containingSource === undefined) {
       throw new Error(`Sealed semantic closure omitted ${containingFile}`);
