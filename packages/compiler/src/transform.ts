@@ -32,6 +32,12 @@ import {
   isSamePath,
   prospectiveRealpathSync,
 } from "./path-within";
+import {
+  defaultSemanticProgramFiles,
+  maximumConfigurableSemanticProgramFiles,
+  resolveSemanticProgramFileLimit,
+  semanticProgramFilesEnvironmentVariable,
+} from "./semantic-limits";
 import { mergeSemanticProviders } from "./semantic-providers";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import { privateMessageSliceSpecifier } from "./private-module";
@@ -49,6 +55,15 @@ export type MiraiIntlTransformOptions = Readonly<{
     workspaceRoot: string;
   }>;
   generatedDirectory?: string;
+  /**
+   * Most dependency files one finite translation key analysis may read before
+   * it stops with a diagnostic. A positive safe integer no greater than
+   * 100000; the default is 5000. It also bounds the sealed owner-batch crawl
+   * behind `mirai-intl check`. The `MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES`
+   * environment variable sets the same limit for the CLI, workspace workers
+   * and any caller that passes no option; an explicit option wins.
+   */
+  maximumSemanticProgramFiles?: number;
   requireProof?: boolean;
   root?: string;
   /** @internal Canonical provider-resolution boundary for workspace adapters. */
@@ -1580,7 +1595,123 @@ function finiteDependencyModules(
   const visitedNodes = new Set<ts.Node>();
   const visitedNames = new Set<string>();
 
-  const traceName = (name: string): void => {
+  // The type nodes that define one named member of a declared type, read from
+  // this file only. Undefined when the member cannot be pinned down here
+  // (imported, generic, inherited or computed): the caller then traces the
+  // whole type. A type already naming the key union stops the trace there
+  // instead of walking every sibling member's imports.
+  const memberTypeNodes = (
+    type: ts.TypeNode,
+    member: string,
+    seen: Set<ts.Node> = new Set()
+  ): ReadonlyArray<ts.TypeNode> | "absent" | undefined => {
+    if (seen.has(type)) {
+      return undefined;
+    }
+    seen.add(type);
+    // A name this file spells out: an identifier, a string literal, or a
+    // computed name over a string literal (`["error"]` names `error` exactly,
+    // so it narrows like the plain spelling and no member order matters).
+    const literalMemberName = (name: ts.PropertyName): string | undefined => {
+      if (ts.isIdentifier(name) || ts.isStringLiteral(name)) {
+        return name.text;
+      }
+      if (
+        ts.isComputedPropertyName(name) &&
+        (ts.isStringLiteral(name.expression) ||
+          ts.isNoSubstitutionTemplateLiteral(name.expression))
+      ) {
+        return name.expression.text;
+      }
+      return undefined;
+    };
+    const fromMembers = (
+      members: ts.NodeArray<ts.TypeElement>
+    ): ReadonlyArray<ts.TypeNode> | "absent" | undefined => {
+      for (const element of members) {
+        const name = ts.isPropertySignature(element)
+          ? literalMemberName(element.name)
+          : undefined;
+        if (name === undefined || !ts.isPropertySignature(element)) {
+          // call/index/method signatures and other computed names (a
+          // constant, a symbol) can also supply the member, so the caller
+          // traces the whole type. Only such a member listed BEFORE the
+          // target forces the fallback: once the target is found the scan
+          // stops, and a later member that also spelled it would be a
+          // duplicate-name error. That order dependence is intended (it
+          // only changes how many files are traced, never the key).
+          return undefined;
+        }
+        if (name !== member) {
+          continue;
+        }
+        return element.type ? [element.type] : undefined;
+      }
+      return "absent";
+    };
+    if (ts.isParenthesizedTypeNode(type)) {
+      return memberTypeNodes(type.type, member, seen);
+    }
+    if (ts.isTypeLiteralNode(type)) {
+      return fromMembers(type.members);
+    }
+    if (ts.isIntersectionTypeNode(type)) {
+      const found: Array<ts.TypeNode> = [];
+      for (const constituent of type.types) {
+        const resolved = memberTypeNodes(constituent, member, seen);
+        if (resolved === undefined) {
+          return undefined;
+        }
+        if (resolved !== "absent") {
+          found.push(...resolved);
+        }
+      }
+      return found.length > 0 ? found : undefined;
+    }
+    if (
+      ts.isTypeReferenceNode(type) &&
+      ts.isIdentifier(type.typeName) &&
+      type.typeArguments === undefined &&
+      !importedModules.has(type.typeName.text)
+    ) {
+      const entries = declarations.get(type.typeName.text) ?? [];
+      const only = entries.length === 1 ? entries[0] : undefined;
+      if (only && ts.isInterfaceDeclaration(only)) {
+        if (only.typeParameters || only.heritageClauses) {
+          return undefined;
+        }
+        return fromMembers(only.members);
+      }
+      if (only && ts.isTypeAliasDeclaration(only) && !only.typeParameters) {
+        return memberTypeNodes(only.type, member, seen);
+      }
+    }
+    return undefined;
+  };
+
+  const traceTypeOf = (
+    declaration: ts.ParameterDeclaration | ts.VariableDeclaration,
+    member: string | undefined
+  ): void => {
+    if (!declaration.type) {
+      return;
+    }
+    const narrowed =
+      member === undefined
+        ? undefined
+        : memberTypeNodes(declaration.type, member);
+    if (narrowed === undefined) {
+      traceNode(declaration.type);
+      return;
+    }
+    if (narrowed !== "absent") {
+      for (const memberType of narrowed) {
+        traceNode(memberType);
+      }
+    }
+  };
+
+  const traceName = (name: string, member?: string): void => {
     if (name === "React" && sourceModules.has("react")) {
       modules.add("react");
     }
@@ -1588,12 +1719,13 @@ function finiteDependencyModules(
     if (imported) {
       modules.add(imported);
     }
-    if (visitedNames.has(name)) {
+    const visitKey = member === undefined ? name : `${name}\u0000${member}`;
+    if (visitedNames.has(visitKey)) {
       return;
     }
-    visitedNames.add(name);
+    visitedNames.add(visitKey);
     for (const declaration of declarations.get(name) ?? []) {
-      traceDeclaration(declaration);
+      traceDeclaration(declaration, member);
     }
   };
 
@@ -1613,6 +1745,14 @@ function finiteDependencyModules(
         return;
       }
       traceName(node.text);
+      return;
+    }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ts.isIdentifier(node.name)
+    ) {
+      traceName(node.expression.text, node.name.text);
       return;
     }
     ts.forEachChild(node, traceNode);
@@ -1655,20 +1795,16 @@ function finiteDependencyModules(
     }
   };
 
-  function traceDeclaration(declaration: ts.Node): void {
+  function traceDeclaration(declaration: ts.Node, member?: string): void {
     if (ts.isVariableDeclaration(declaration)) {
-      if (declaration.type) {
-        traceNode(declaration.type);
-      }
+      traceTypeOf(declaration, member);
       if (declaration.initializer) {
         traceNode(declaration.initializer);
       }
       return;
     }
     if (ts.isParameter(declaration)) {
-      if (declaration.type) {
-        traceNode(declaration.type);
-      }
+      traceTypeOf(declaration, member);
       if (declaration.initializer) {
         traceNode(declaration.initializer);
       }
@@ -1683,7 +1819,14 @@ function finiteDependencyModules(
       traceCallbackReceiver(declaration);
       const container = declaration.parent.parent;
       if (ts.isVariableDeclaration(container) || ts.isParameter(container)) {
-        traceDeclaration(container);
+        const property = declaration.propertyName ?? declaration.name;
+        const destructured =
+          ts.isObjectBindingPattern(declaration.parent) &&
+          declaration.dotDotDotToken === undefined &&
+          (ts.isIdentifier(property) || ts.isStringLiteral(property))
+            ? property.text
+            : undefined;
+        traceDeclaration(container, destructured);
       }
       return;
     }
@@ -2485,6 +2628,21 @@ function semanticProviderBoundary(canonical: string): string {
  * same count (see semanticEvidenceProviderCount).
  */
 const maximumSemanticProviders = 64 as const;
+// Source files one key analysis may read from its provider closure; see
+// semantic-limits.ts. Past the limit the analysis stops with a diagnostic
+// naming the module that pulled the closure in.
+function assertSemanticProgramFileBudget(
+  fileCount: number,
+  id: string,
+  via: string,
+  limit: number
+): void {
+  if (fileCount > limit) {
+    throw new Error(
+      `Finite translation key analysis of ${id} read more than ${limit} dependency files while resolving ${via}; type the translation key as a TranslationKey union at its parameter or prop, keep heavy imports out of the key's type path, or raise the limit with the maximumSemanticProgramFiles option (or ${semanticProgramFilesEnvironmentVariable}; at most ${maximumConfigurableSemanticProgramFiles})`
+    );
+  }
+}
 
 /**
  * How many providers a closure's semantic evidence carries: every provider
@@ -2528,7 +2686,8 @@ function createProgram(
   ownerCompilerOptions?: ts.CompilerOptions,
   workspaceRoot: string = root,
   recordsEvidence = false,
-  providerClaimLimit: number = maximumSemanticProviders
+  providerClaimLimit: number = maximumSemanticProviders,
+  maximumProgramFiles: number = defaultSemanticProgramFiles
 ): Readonly<{
   checker: ts.TypeChecker;
   evidenceFiles?: ReadonlyMap<string, `sha256:${string}`>;
@@ -2735,6 +2894,12 @@ function createProgram(
       continue;
     }
     traversedProviders.add(containingFile);
+    assertSemanticProgramFileBudget(
+      traversedProviders.size,
+      id,
+      containingFile,
+      maximumProgramFiles
+    );
     const containingSource = ts.sys.readFile(containingFile);
     if (containingSource === undefined) {
       continue;
@@ -2825,12 +2990,25 @@ function createProgram(
     }
     return readHostFile(fileName);
   };
+  const defaultLibDirectory = dirname(
+    host.getDefaultLibFileName(compilerOptions)
+  );
+  const programFiles = new Set<string>();
   host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
     if (fileName === id) {
       return sourceFile;
     }
     if (fileName === generatedFacadeId) {
       return generatedFacadeFile;
+    }
+    if (!isPathWithin(defaultLibDirectory, fileName)) {
+      programFiles.add(fileName);
+      assertSemanticProgramFileBudget(
+        programFiles.size,
+        id,
+        fileName,
+        maximumProgramFiles
+      );
     }
     return getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
   };
@@ -2936,7 +3114,8 @@ function createProgram(
       ownerCompilerOptions,
       workspaceRoot,
       recordsEvidence,
-      reducedClaimLimit
+      reducedClaimLimit,
+      maximumProgramFiles
     );
   }
   return {
@@ -3746,7 +3925,8 @@ function prepareSealedSemanticClosure(
     includeCatalogContract: boolean;
     namespaces: ReadonlySet<string> | undefined;
   }>,
-  providerClaimLimit: number = maximumSemanticProviders
+  providerClaimLimit: number = maximumSemanticProviders,
+  maximumProgramFiles: number = defaultSemanticProgramFiles
 ): PreparedSemanticClosure {
   let preparationProfilePrior = performance.now();
   const markPreparationProfile = (phase: string): void => {
@@ -4226,6 +4406,12 @@ function prepareSealedSemanticClosure(
       break;
     }
     pending.delete(containingFile);
+    assertSemanticProgramFileBudget(
+      files.size,
+      cleanId,
+      containingFile,
+      maximumProgramFiles
+    );
     const containingSource = files.get(containingFile);
     if (containingSource === undefined) {
       throw new Error(`Sealed semantic closure omitted ${containingFile}`);
@@ -4473,7 +4659,8 @@ function prepareSealedSemanticClosure(
       preparedSourceFile,
       preparedFiniteModules,
       sharedFacade,
-      reducedClaimLimit
+      reducedClaimLimit,
+      maximumProgramFiles
     );
   }
   const normalizedForGroup = (path: string): string => {
@@ -5812,7 +5999,8 @@ function analyzeSource(
   workspaceRoot: string,
   authorizationEvidence?: MiraiIntlTransformOptions["authorizationEvidence"],
   semanticProgram?: SemanticProgramContext,
-  ownerCompilerOptions?: ts.CompilerOptions
+  ownerCompilerOptions?: ts.CompilerOptions,
+  maximumProgramFiles?: number
 ): Readonly<{
   imports: ReadonlyArray<
     Readonly<{ descriptor: string; local: string; module: string }>
@@ -5857,7 +6045,9 @@ function analyzeSource(
       generatedImports.requiresCatalogContract,
       ownerCompilerOptions,
       workspaceRoot,
-      authorizationEvidence !== undefined
+      authorizationEvidence !== undefined,
+      undefined,
+      maximumProgramFiles
     );
   authorizationEvidence?.record(
     semanticEvidence(
@@ -8003,7 +8193,8 @@ async function transformMiraiIntlSourceWithCatalog(
     workspaceRoot,
     options.authorizationEvidence,
     semanticProgram,
-    ownerCompilerOptions
+    ownerCompilerOptions,
+    resolveSemanticProgramFileLimit(options.maximumSemanticProgramFiles)
   );
   if (analysis.replacements.size === 0 && analysis.removedNodes.size === 0) {
     return null;
@@ -8038,6 +8229,8 @@ export async function transformMiraiIntlSource(
   id: string,
   options: MiraiIntlTransformOptions = {}
 ): Promise<MiraiIntlTransformResult | null> {
+  // Refuse an invalid limit for every module, not only those that analyse.
+  resolveSemanticProgramFileLimit(options.maximumSemanticProgramFiles);
   return transformMiraiIntlSourceWithCatalog(
     source,
     id,
@@ -8087,6 +8280,9 @@ export async function transformMiraiIntlOwnerBatch(
     });
     return [];
   }
+  const maximumProgramFiles = resolveSemanticProgramFileLimit(
+    options.maximumSemanticProgramFiles
+  );
   const catalog = await loadCurrentCatalog(options);
   const candidateSources = sources;
   const normalizedPaths = new Map<string, string>();
@@ -8194,7 +8390,10 @@ export async function transformMiraiIntlOwnerBatch(
         firstInert.entry.authorizationEvidence.workspaceRoot,
         preparationCache,
         firstInert.sourceFile,
-        firstInert.finiteModules
+        firstInert.finiteModules,
+        undefined,
+        undefined,
+        maximumProgramFiles
       );
       for (const plan of programInertPlans) {
         preparedInert.push(
@@ -8343,7 +8542,9 @@ export async function transformMiraiIntlOwnerBatch(
         preparationCache,
         firstFacadeOnly.plan.sourceFile,
         firstFacadeOnly.plan.finiteModules,
-        sharedFacade
+        sharedFacade,
+        undefined,
+        maximumProgramFiles
       );
       preparedActive.push(template);
       for (const { generatedImports, plan } of facadeOnlySelections.slice(1)) {
@@ -8391,7 +8592,9 @@ export async function transformMiraiIntlOwnerBatch(
             preparationCache,
             sourceFile,
             finiteModules,
-            sharedFacade
+            sharedFacade,
+            undefined,
+            maximumProgramFiles
           )
         );
       } catch (error) {

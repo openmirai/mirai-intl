@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import { ensureMiraiIntlCatalog } from "./lifecycle";
+import { resolveSemanticProgramFileLimit } from "./semantic-limits";
 import type { MiraiIntlTransformOptions } from "./transform";
 
 type JsonValue =
@@ -57,6 +58,9 @@ function loaderOptions(
 ): Readonly<Record<string, JsonValue>> {
   return {
     generatedDirectory: options.generatedDirectory ?? "src/i18n/generated",
+    ...(options.maximumSemanticProgramFiles === undefined
+      ? {}
+      : { maximumSemanticProgramFiles: options.maximumSemanticProgramFiles }),
     root: options.root ?? process.cwd(),
   };
 }
@@ -82,6 +86,7 @@ export function withMiraiIntl<Config extends object>(
   config: Config,
   options: MiraiIntlTransformOptions = {}
 ): Config & MiraiIntlNextConfig {
+  resolveSemanticProgramFileLimit(options.maximumSemanticProgramFiles);
   const nextConfig = config as unknown as NextConfig;
   const loader = fileURLToPath(new URL("./next-loader.js", import.meta.url));
   const configuredOptions = loaderOptions(options);

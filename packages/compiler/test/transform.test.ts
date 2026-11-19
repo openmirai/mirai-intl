@@ -33,7 +33,10 @@ import type {
   MiraiIntlSemanticEvidence,
   MiraiIntlTransformResult,
 } from "../src/transform";
+import { withMiraiIntl } from "../src/next";
+import { resolveSemanticProgramFileLimit } from "../src/semantic-limits";
 import { mergeSemanticProviders } from "../src/semantic-providers";
+import { miraiIntlVite } from "../src/vite";
 import { writeArtifactSet } from "./non-authoritative-writer";
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -1783,6 +1786,524 @@ describe("private named-key lowering", () => {
       await rm(fixture.root, { force: true, recursive: true });
     }
   }, 60_000);
+
+  describe("key-trace budget", () => {
+    // 5001 declaration files: one more than the analysis may read.
+    const heavyFiles = 5001;
+
+    async function heavyFixture(): Promise<
+      Readonly<{
+        id: string;
+        options: { generatedDirectory: string; root: string };
+        root: string;
+      }>
+    > {
+      const fixture = await createGeneratedCatalog();
+      await writeJson(join(fixture.root, "tsconfig.json"), {
+        compilerOptions: {
+          jsx: "preserve",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          paths: { "@/*": ["src/*"] },
+        },
+      });
+      const heavyRoot = join(fixture.root, "node_modules/heavy-ui");
+      await mkdir(heavyRoot, { recursive: true });
+      await writeJson(join(heavyRoot, "package.json"), {
+        name: "heavy-ui",
+        types: "index.d.ts",
+        version: "0.0.0-fixture",
+      });
+      const indexLines = [
+        'import type { TranslationKey } from "@/i18n/generated";',
+        'export type HeavyKey = TranslationKey<"components.toast">;',
+        "export type Heavy = { v: number };",
+      ];
+      await Promise.all(
+        Array.from({ length: heavyFiles }, (_, index) => {
+          indexLines.push(`export type { T${index} } from "./m${index}";`);
+          return writeFile(
+            join(heavyRoot, `m${index}.d.ts`),
+            `export interface T${index} { a: string; }\n`,
+            "utf8"
+          );
+        })
+      );
+      await writeFile(
+        join(heavyRoot, "index.d.ts"),
+        `${indexLines.join("\n")}\n`,
+        "utf8"
+      );
+      return {
+        id: join(fixture.root, "src/heavy-props.tsx"),
+        options: {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        },
+        root: fixture.root,
+      };
+    }
+
+    const siblingSource = (access: "destructured" | "member") =>
+      [
+        'import type { TranslationKey } from "@/i18n/generated";',
+        'import type { Heavy } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        'interface Props { error: TranslationKey<"components.toast">; heavy?: Heavy; }',
+        access === "destructured"
+          ? "export function Banner({ error }: Props) {"
+          : "export function Banner(props: Props) {",
+        '  const { t } = useTranslations("components.toast");',
+        access === "destructured"
+          ? "  return t(error);"
+          : "  return t(props.error);",
+        "}",
+        "",
+      ].join("\n");
+
+    it.each(["destructured", "member"] as const)(
+      "stops at a %s prop already typed as a key union, off heavy sibling imports",
+      async (access) => {
+        const heavy = await heavyFixture();
+        const readFileImplementation = ts.sys.readFile;
+        let heavyReads = 0;
+        const readFile = vi
+          .spyOn(ts.sys, "readFile")
+          .mockImplementation((path, encoding) => {
+            if (path.includes("heavy-ui")) {
+              heavyReads += 1;
+            }
+            return readFileImplementation(path, encoding);
+          });
+        try {
+          const result = requireTransform(
+            await transformMiraiIntlSource(
+              siblingSource(access),
+              heavy.id,
+              heavy.options
+            )
+          );
+          expect(result.code).toContain('["components.toast.activate.error"]');
+          expect(heavyReads).toBe(0);
+        } finally {
+          readFile.mockRestore();
+          await rm(heavy.root, { force: true, recursive: true });
+        }
+      },
+      120_000
+    );
+
+    it("refuses with a named diagnostic when the key's own type path reads past the file budget", async () => {
+      const heavy = await heavyFixture();
+      const source = [
+        'import type { HeavyKey } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        "export function Banner({ error }: { error: HeavyKey }) {",
+        '  const { t } = useTranslations("components.toast");',
+        "  return t(error);",
+        "}",
+        "",
+      ].join("\n");
+      try {
+        await expect(
+          transformMiraiIntlSource(source, heavy.id, heavy.options)
+        ).rejects.toThrowError(
+          /read more than 5000 dependency files while resolving .*TranslationKey union/u
+        );
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+
+    it("applies the same file budget to the sealed owner-batch crawl", async () => {
+      const heavy = await heavyFixture();
+      const source = [
+        'import type { HeavyKey } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        "export function Banner({ error }: { error: HeavyKey }) {",
+        '  const { t } = useTranslations("components.toast");',
+        "  return t(error);",
+        "}",
+        "",
+      ].join("\n");
+      try {
+        const [candidate] = await transformMiraiIntlOwnerBatch(
+          [
+            {
+              authorizationEvidence: { record() {}, workspaceRoot: "/" },
+              id: heavy.id,
+              source,
+            },
+          ],
+          heavy.options
+        );
+        expect(candidate?.result).toBeUndefined();
+        expect(
+          candidate?.error instanceof Error ? candidate.error.message : ""
+        ).toMatch(/read more than 5000 dependency files while resolving/u);
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+
+    const orderedSource = (members: string) =>
+      [
+        'import type { TranslationKey } from "@/i18n/generated";',
+        'import type { Heavy } from "heavy-ui";',
+        'import { useTranslations } from "x";',
+        'const SIBLING = "heavy" as const;',
+        `interface Props { ${members} }`,
+        "export function Banner(props: Props) {",
+        '  const { t } = useTranslations("components.toast");',
+        "  return t(props.error);",
+        "}",
+        "",
+      ].join("\n");
+
+    it.each([
+      [
+        "a string-literal computed sibling before the key",
+        '["heavy"]?: Heavy; error: TranslationKey<"components.toast">;',
+        true,
+      ],
+      [
+        "a constant-computed sibling after the key",
+        'error: TranslationKey<"components.toast">; [SIBLING]?: Heavy;',
+        true,
+      ],
+      [
+        "a constant-computed sibling before the key",
+        '[SIBLING]?: Heavy; error: TranslationKey<"components.toast">;',
+        false,
+      ],
+    ])(
+      "traces %s: stays off the heavy import only when it narrows",
+      async (_name, members, narrows) => {
+        const heavy = await heavyFixture();
+        try {
+          const transform = transformMiraiIntlSource(
+            orderedSource(members),
+            heavy.id,
+            heavy.options
+          );
+          if (narrows) {
+            expect(requireTransform(await transform).code).toContain(
+              '["components.toast.activate.error"]'
+            );
+          } else {
+            // The constant name might spell the key, so the whole type is
+            // traced, reaches heavy-ui and meets the file budget.
+            await expect(transform).rejects.toThrowError(
+              /read more than 5000 dependency files/u
+            );
+          }
+        } finally {
+          await rm(heavy.root, { force: true, recursive: true });
+        }
+      },
+      120_000
+    );
+
+    const heavyKeySource = [
+      'import type { HeavyKey } from "heavy-ui";',
+      'import { useTranslations } from "x";',
+      "export function Banner({ error }: { error: HeavyKey }) {",
+      '  const { t } = useTranslations("components.toast");',
+      "  return t(error);",
+      "}",
+      "",
+    ].join("\n");
+
+    it("lets maximumSemanticProgramFiles raise the limit past the 5001-file fixture", async () => {
+      const heavy = await heavyFixture();
+      try {
+        const result = requireTransform(
+          await transformMiraiIntlSource(heavyKeySource, heavy.id, {
+            ...heavy.options,
+            maximumSemanticProgramFiles: 6000,
+          })
+        );
+        expect(result.code).toContain('["components.toast.activate.error"]');
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+
+    it("lets maximumSemanticProgramFiles raise the sealed owner-batch limit", async () => {
+      const heavy = await heavyFixture();
+      try {
+        const [candidate] = await transformMiraiIntlOwnerBatch(
+          [
+            {
+              authorizationEvidence: { record() {}, workspaceRoot: "/" },
+              id: heavy.id,
+              source: heavyKeySource,
+            },
+          ],
+          { ...heavy.options, maximumSemanticProgramFiles: 6000 },
+          undefined,
+          false,
+          {
+            compilerOptions: {
+              module: ts.ModuleKind.ESNext,
+              moduleResolution: ts.ModuleResolutionKind.Bundler,
+              paths: { "@/*": ["src/*"] },
+              pathsBasePath: heavy.root,
+            },
+          }
+        );
+        expect(candidate?.error).toBeUndefined();
+        expect(candidate?.id).toBe(heavy.id);
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+
+    it("fails earlier when maximumSemanticProgramFiles is lowered, and names the option", async () => {
+      const heavy = await heavyFixture();
+      try {
+        await expect(
+          transformMiraiIntlSource(heavyKeySource, heavy.id, {
+            ...heavy.options,
+            maximumSemanticProgramFiles: 100,
+          })
+        ).rejects.toThrowError(
+          /read more than 100 dependency files while resolving .*maximumSemanticProgramFiles option/u
+        );
+        const [candidate] = await transformMiraiIntlOwnerBatch(
+          [
+            {
+              authorizationEvidence: { record() {}, workspaceRoot: "/" },
+              id: heavy.id,
+              source: heavyKeySource,
+            },
+          ],
+          { ...heavy.options, maximumSemanticProgramFiles: 100 }
+        );
+        expect(
+          candidate?.error instanceof Error ? candidate.error.message : ""
+        ).toMatch(/read more than 100 dependency files while resolving/u);
+      } finally {
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+
+    it("takes the limit from MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES, and an explicit option wins", async () => {
+      const heavy = await heavyFixture();
+      vi.stubEnv("MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES", "6000");
+      try {
+        const result = requireTransform(
+          await transformMiraiIntlSource(
+            heavyKeySource,
+            heavy.id,
+            heavy.options
+          )
+        );
+        expect(result.code).toContain('["components.toast.activate.error"]');
+        await expect(
+          transformMiraiIntlSource(heavyKeySource, heavy.id, {
+            ...heavy.options,
+            maximumSemanticProgramFiles: 100,
+          })
+        ).rejects.toThrowError(/read more than 100 dependency files/u);
+      } finally {
+        vi.unstubAllEnvs();
+        await rm(heavy.root, { force: true, recursive: true });
+      }
+    }, 120_000);
+
+    it.each([
+      ["0", 0],
+      ["a negative number", -1],
+      ["a fraction", 1.5],
+      ["not a number", Number.NaN],
+      ["infinity", Number.POSITIVE_INFINITY],
+      ["above the bound", 100_001],
+      ["a string", "5000" as unknown as number],
+    ])(
+      "refuses maximumSemanticProgramFiles that is %s",
+      async (_name, value) => {
+        const fixture = await createGeneratedCatalog();
+        try {
+          await expect(
+            transformMiraiIntlSource(
+              "export const x = 1;\n",
+              join(fixture.root, "src/plain.ts"),
+              {
+                generatedDirectory: fixture.generatedDirectory,
+                maximumSemanticProgramFiles: value,
+                root: fixture.root,
+              }
+            )
+          ).rejects.toThrowError(
+            "maximumSemanticProgramFiles must be an integer from 1 through 100000"
+          );
+          expect(() =>
+            withMiraiIntl({}, { maximumSemanticProgramFiles: value })
+          ).toThrowError(
+            "maximumSemanticProgramFiles must be an integer from 1 through 100000"
+          );
+          expect(() =>
+            miraiIntlVite({ maximumSemanticProgramFiles: value })
+          ).toThrowError(
+            "maximumSemanticProgramFiles must be an integer from 1 through 100000"
+          );
+        } finally {
+          await rm(fixture.root, { force: true, recursive: true });
+        }
+      }
+    );
+
+    it("accepts the bounds 1 and 100000 and defaults to 5000", () => {
+      expect(resolveSemanticProgramFileLimit()).toBe(5000);
+      expect(resolveSemanticProgramFileLimit(1)).toBe(1);
+      expect(resolveSemanticProgramFileLimit(100_000)).toBe(100_000);
+      expect(() =>
+        miraiIntlVite({ maximumSemanticProgramFiles: 1 })
+      ).not.toThrow();
+      expect(() =>
+        withMiraiIntl({}, { maximumSemanticProgramFiles: 100_000 })
+      ).not.toThrow();
+    });
+
+    it.each(["0", "-5", "1.5", "5e3", "abc", "", "100001", " 5000"])(
+      "refuses MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES=%j",
+      (value) => {
+        vi.stubEnv("MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES", value);
+        try {
+          expect(() => resolveSemanticProgramFileLimit()).toThrowError(
+            "MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES must be an integer from 1 through 100000"
+          );
+        } finally {
+          vi.unstubAllEnvs();
+        }
+      }
+    );
+  });
+
+  describe("key-trace fallbacks", () => {
+    const K = 'TranslationKey<"components.toast">';
+    const head = [
+      'import type { TranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+    ];
+    const useT = '  const { t } = useTranslations("components.toast");';
+    const shapes: ReadonlyArray<
+      Readonly<{ name: string; lines: ReadonlyArray<string> }>
+    > = [
+      {
+        name: "extends",
+        lines: [
+          `interface Base { error: ${K}; }`,
+          "interface Props extends Base { other?: number; }",
+          "export function Banner(props: Props) {",
+          useT,
+          "  return t(props.error);",
+          "}",
+        ],
+      },
+      {
+        name: "imported Props",
+        lines: [
+          'import type { Props } from "@/props";',
+          "export function Banner({ error }: Props) {",
+          useT,
+          "  return t(error);",
+          "}",
+        ],
+      },
+      {
+        name: "generic Props",
+        lines: [
+          "interface Props<E> { error: E; }",
+          `export function Banner({ error }: Props<${K}>) {`,
+          useT,
+          "  return t(error);",
+          "}",
+        ],
+      },
+      {
+        name: "computed member name",
+        lines: [
+          `interface Props { ["error"]: ${K}; }`,
+          "export function Banner(props: Props) {",
+          useT,
+          "  return t(props.error);",
+          "}",
+        ],
+      },
+      {
+        name: "computed member name over a constant",
+        lines: [
+          'const ERROR = "error" as const;',
+          `interface Props { [ERROR]: ${K}; }`,
+          "export function Banner(props: Props) {",
+          useT,
+          "  return t(props.error);",
+          "}",
+        ],
+      },
+      {
+        name: "a union of object types",
+        lines: [
+          `type Props = { error: ${K} } | { error: ${K}; x: 1 };`,
+          "export function Banner(props: Props) {",
+          useT,
+          "  return t(props.error);",
+          "}",
+        ],
+      },
+      {
+        name: "optional chaining",
+        lines: [
+          `interface Props { error: ${K}; }`,
+          "export function Banner(props?: Props) {",
+          useT,
+          "  return props ? t(props?.error) : undefined;",
+          "}",
+        ],
+      },
+      {
+        name: "intersection with an imported part",
+        lines: [
+          'import type { Props as Imported } from "@/props";',
+          "type Props = Imported & { other?: number };",
+          "export function Banner({ error }: Props) {",
+          useT,
+          "  return t(error);",
+          "}",
+        ],
+      },
+    ];
+
+    it.each(shapes)(
+      "still lowers a key typed through $name",
+      async ({ lines }) => {
+        const fixture = await createGeneratedCatalog();
+        await writeFile(
+          join(fixture.root, "src/props.ts"),
+          `import type { TranslationKey } from "@/i18n/generated";\nexport interface Props { error: ${K}; }\n`,
+          "utf8"
+        );
+        try {
+          const result = requireTransform(
+            await transformMiraiIntlSource(
+              [...head, ...lines, ""].join("\n"),
+              join(fixture.root, "src/shape.tsx"),
+              {
+                generatedDirectory: fixture.generatedDirectory,
+                root: fixture.root,
+              }
+            )
+          );
+          expect(result.code).toContain('["components.toast.activate.error"]');
+        } finally {
+          await rm(fixture.root, { force: true, recursive: true });
+        }
+      },
+      60_000
+    );
+  });
 
   it("matches full-facade reference lowering for aliased, type-only, and form helper slices", async () => {
     const fixture = await createGeneratedCatalog();

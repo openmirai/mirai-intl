@@ -11,6 +11,7 @@ import {
   authorizePrivateMessageSliceRequest,
   loadPrivateMessageSlice,
 } from "./private-module";
+import { resolveSemanticProgramFileLimit } from "./semantic-limits";
 import {
   invalidateMiraiIntlCatalogCache,
   transformMiraiIntlSource,
@@ -139,6 +140,7 @@ async function hasPublishedCatalog(
 export function miraiIntlVite(
   options: MiraiIntlViteOptions = {}
 ): MiraiIntlVitePlugin {
+  resolveSemanticProgramFileLimit(options.maximumSemanticProgramFiles);
   let resolvedRoot = options.root;
   let localeRoots: ReadonlyArray<string> = [];
   let identityFiles: ReadonlyArray<string> = [];
