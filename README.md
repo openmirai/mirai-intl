@@ -363,6 +363,28 @@ selected catalog underneath active module readers.
 
 For Vite, render `AppProviders` around the application root in `main.tsx`.
 
+### Dependency-file limit
+
+Finding the finite set of a dynamic translation key reads the dependency files
+of the key's type path. One analysis stops with an error naming the module that
+pulled the closure in once it has read more than **5000** files, so a key typed
+through a heavy UI kit cannot stall a build or `mirai-intl check`. The
+preferred fix is to type the key as a `TranslationKey` union at its parameter or
+prop, or to keep heavy imports out of its type path. When the closure is
+legitimately large, raise (or lower) the limit with `maximumSemanticProgramFiles`:
+
+```ts
+miraiIntlVite({ maximumSemanticProgramFiles: 20_000 });
+withMiraiIntl(nextConfig, { maximumSemanticProgramFiles: 20_000 });
+```
+
+The value must be an integer from 1 through 100000; anything else is refused
+when the adapter is created. `mirai-intl check` and `mirai-intl prove` take no
+options, so set the same limit for them (and for workspace workers) with the
+`MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES` environment variable, for example
+`MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES=20000 pnpm exec mirai-intl check`. The
+variable follows the same rule, and an explicit option wins over it.
+
 ## CLI and catalog checks
 
 The `mirai-intl` binary is included in `@openmirai/intl`:

@@ -32,6 +32,12 @@ import {
   isSamePath,
   prospectiveRealpathSync,
 } from "./path-within";
+import {
+  defaultSemanticProgramFiles,
+  maximumConfigurableSemanticProgramFiles,
+  resolveSemanticProgramFileLimit,
+  semanticProgramFilesEnvironmentVariable,
+} from "./semantic-limits";
 import { mergeSemanticProviders } from "./semantic-providers";
 import type { SemanticProviderResolution } from "./semantic-providers";
 import { privateMessageSliceSpecifier } from "./private-module";
@@ -49,6 +55,15 @@ export type MiraiIntlTransformOptions = Readonly<{
     workspaceRoot: string;
   }>;
   generatedDirectory?: string;
+  /**
+   * Most dependency files one finite translation key analysis may read before
+   * it stops with a diagnostic. A positive safe integer no greater than
+   * 100000; the default is 5000. It also bounds the sealed owner-batch crawl
+   * behind `mirai-intl check`. The `MIRAI_INTL_MAX_SEMANTIC_PROGRAM_FILES`
+   * environment variable sets the same limit for the CLI, workspace workers
+   * and any caller that passes no option; an explicit option wins.
+   */
+  maximumSemanticProgramFiles?: number;
   requireProof?: boolean;
   root?: string;
   /** @internal Canonical provider-resolution boundary for workspace adapters. */
@@ -1594,19 +1609,40 @@ function finiteDependencyModules(
       return undefined;
     }
     seen.add(type);
+    // A name this file spells out: an identifier, a string literal, or a
+    // computed name over a string literal (`["error"]` names `error` exactly,
+    // so it narrows like the plain spelling and no member order matters).
+    const literalMemberName = (name: ts.PropertyName): string | undefined => {
+      if (ts.isIdentifier(name) || ts.isStringLiteral(name)) {
+        return name.text;
+      }
+      if (
+        ts.isComputedPropertyName(name) &&
+        (ts.isStringLiteral(name.expression) ||
+          ts.isNoSubstitutionTemplateLiteral(name.expression))
+      ) {
+        return name.expression.text;
+      }
+      return undefined;
+    };
     const fromMembers = (
       members: ts.NodeArray<ts.TypeElement>
     ): ReadonlyArray<ts.TypeNode> | "absent" | undefined => {
       for (const element of members) {
-        if (
-          !ts.isPropertySignature(element) ||
-          (!ts.isIdentifier(element.name) && !ts.isStringLiteral(element.name))
-        ) {
-          // call/index/method signatures and computed names can also supply
-          // the member
+        const name = ts.isPropertySignature(element)
+          ? literalMemberName(element.name)
+          : undefined;
+        if (name === undefined || !ts.isPropertySignature(element)) {
+          // call/index/method signatures and other computed names (a
+          // constant, a symbol) can also supply the member, so the caller
+          // traces the whole type. Only such a member listed BEFORE the
+          // target forces the fallback: once the target is found the scan
+          // stops, and a later member that also spelled it would be a
+          // duplicate-name error. That order dependence is intended (it
+          // only changes how many files are traced, never the key).
           return undefined;
         }
-        if (element.name.text !== member) {
+        if (name !== member) {
           continue;
         }
         return element.type ? [element.type] : undefined;
@@ -2592,20 +2628,18 @@ function semanticProviderBoundary(canonical: string): string {
  * same count (see semanticEvidenceProviderCount).
  */
 const maximumSemanticProviders = 64 as const;
-// Source files one key analysis may read from its provider closure. One
-// dynamic key reaching a UI kit's type graph used to crawl millions of files
-// inside a single synchronous transform; past this the analysis stops with a
-// diagnostic naming the module that pulled the closure in.
-const maximumSemanticProgramFiles = 5000 as const;
-
+// Source files one key analysis may read from its provider closure; see
+// semantic-limits.ts. Past the limit the analysis stops with a diagnostic
+// naming the module that pulled the closure in.
 function assertSemanticProgramFileBudget(
   fileCount: number,
   id: string,
-  via: string
+  via: string,
+  limit: number
 ): void {
-  if (fileCount > maximumSemanticProgramFiles) {
+  if (fileCount > limit) {
     throw new Error(
-      `Finite translation key analysis of ${id} read more than ${maximumSemanticProgramFiles} dependency files while resolving ${via}; type the translation key as a TranslationKey union at its parameter or prop, or keep heavy imports out of the key's type path`
+      `Finite translation key analysis of ${id} read more than ${limit} dependency files while resolving ${via}; type the translation key as a TranslationKey union at its parameter or prop, keep heavy imports out of the key's type path, or raise the limit with the maximumSemanticProgramFiles option (or ${semanticProgramFilesEnvironmentVariable}; at most ${maximumConfigurableSemanticProgramFiles})`
     );
   }
 }
@@ -2652,7 +2686,8 @@ function createProgram(
   ownerCompilerOptions?: ts.CompilerOptions,
   workspaceRoot: string = root,
   recordsEvidence = false,
-  providerClaimLimit: number = maximumSemanticProviders
+  providerClaimLimit: number = maximumSemanticProviders,
+  maximumProgramFiles: number = defaultSemanticProgramFiles
 ): Readonly<{
   checker: ts.TypeChecker;
   evidenceFiles?: ReadonlyMap<string, `sha256:${string}`>;
@@ -2862,7 +2897,8 @@ function createProgram(
     assertSemanticProgramFileBudget(
       traversedProviders.size,
       id,
-      containingFile
+      containingFile,
+      maximumProgramFiles
     );
     const containingSource = ts.sys.readFile(containingFile);
     if (containingSource === undefined) {
@@ -2967,7 +3003,12 @@ function createProgram(
     }
     if (!isPathWithin(defaultLibDirectory, fileName)) {
       programFiles.add(fileName);
-      assertSemanticProgramFileBudget(programFiles.size, id, fileName);
+      assertSemanticProgramFileBudget(
+        programFiles.size,
+        id,
+        fileName,
+        maximumProgramFiles
+      );
     }
     return getHostSourceFile(fileName, languageVersion, onError, shouldCreate);
   };
@@ -3073,7 +3114,8 @@ function createProgram(
       ownerCompilerOptions,
       workspaceRoot,
       recordsEvidence,
-      reducedClaimLimit
+      reducedClaimLimit,
+      maximumProgramFiles
     );
   }
   return {
@@ -3883,7 +3925,8 @@ function prepareSealedSemanticClosure(
     includeCatalogContract: boolean;
     namespaces: ReadonlySet<string> | undefined;
   }>,
-  providerClaimLimit: number = maximumSemanticProviders
+  providerClaimLimit: number = maximumSemanticProviders,
+  maximumProgramFiles: number = defaultSemanticProgramFiles
 ): PreparedSemanticClosure {
   let preparationProfilePrior = performance.now();
   const markPreparationProfile = (phase: string): void => {
@@ -4363,7 +4406,12 @@ function prepareSealedSemanticClosure(
       break;
     }
     pending.delete(containingFile);
-    assertSemanticProgramFileBudget(files.size, cleanId, containingFile);
+    assertSemanticProgramFileBudget(
+      files.size,
+      cleanId,
+      containingFile,
+      maximumProgramFiles
+    );
     const containingSource = files.get(containingFile);
     if (containingSource === undefined) {
       throw new Error(`Sealed semantic closure omitted ${containingFile}`);
@@ -4611,7 +4659,8 @@ function prepareSealedSemanticClosure(
       preparedSourceFile,
       preparedFiniteModules,
       sharedFacade,
-      reducedClaimLimit
+      reducedClaimLimit,
+      maximumProgramFiles
     );
   }
   const normalizedForGroup = (path: string): string => {
@@ -5950,7 +5999,8 @@ function analyzeSource(
   workspaceRoot: string,
   authorizationEvidence?: MiraiIntlTransformOptions["authorizationEvidence"],
   semanticProgram?: SemanticProgramContext,
-  ownerCompilerOptions?: ts.CompilerOptions
+  ownerCompilerOptions?: ts.CompilerOptions,
+  maximumProgramFiles?: number
 ): Readonly<{
   imports: ReadonlyArray<
     Readonly<{ descriptor: string; local: string; module: string }>
@@ -5995,7 +6045,9 @@ function analyzeSource(
       generatedImports.requiresCatalogContract,
       ownerCompilerOptions,
       workspaceRoot,
-      authorizationEvidence !== undefined
+      authorizationEvidence !== undefined,
+      undefined,
+      maximumProgramFiles
     );
   authorizationEvidence?.record(
     semanticEvidence(
@@ -8141,7 +8193,8 @@ async function transformMiraiIntlSourceWithCatalog(
     workspaceRoot,
     options.authorizationEvidence,
     semanticProgram,
-    ownerCompilerOptions
+    ownerCompilerOptions,
+    resolveSemanticProgramFileLimit(options.maximumSemanticProgramFiles)
   );
   if (analysis.replacements.size === 0 && analysis.removedNodes.size === 0) {
     return null;
@@ -8176,6 +8229,8 @@ export async function transformMiraiIntlSource(
   id: string,
   options: MiraiIntlTransformOptions = {}
 ): Promise<MiraiIntlTransformResult | null> {
+  // Refuse an invalid limit for every module, not only those that analyse.
+  resolveSemanticProgramFileLimit(options.maximumSemanticProgramFiles);
   return transformMiraiIntlSourceWithCatalog(
     source,
     id,
@@ -8225,6 +8280,9 @@ export async function transformMiraiIntlOwnerBatch(
     });
     return [];
   }
+  const maximumProgramFiles = resolveSemanticProgramFileLimit(
+    options.maximumSemanticProgramFiles
+  );
   const catalog = await loadCurrentCatalog(options);
   const candidateSources = sources;
   const normalizedPaths = new Map<string, string>();
@@ -8332,7 +8390,10 @@ export async function transformMiraiIntlOwnerBatch(
         firstInert.entry.authorizationEvidence.workspaceRoot,
         preparationCache,
         firstInert.sourceFile,
-        firstInert.finiteModules
+        firstInert.finiteModules,
+        undefined,
+        undefined,
+        maximumProgramFiles
       );
       for (const plan of programInertPlans) {
         preparedInert.push(
@@ -8481,7 +8542,9 @@ export async function transformMiraiIntlOwnerBatch(
         preparationCache,
         firstFacadeOnly.plan.sourceFile,
         firstFacadeOnly.plan.finiteModules,
-        sharedFacade
+        sharedFacade,
+        undefined,
+        maximumProgramFiles
       );
       preparedActive.push(template);
       for (const { generatedImports, plan } of facadeOnlySelections.slice(1)) {
@@ -8529,7 +8592,9 @@ export async function transformMiraiIntlOwnerBatch(
             preparationCache,
             sourceFile,
             finiteModules,
-            sharedFacade
+            sharedFacade,
+            undefined,
+            maximumProgramFiles
           )
         );
       } catch (error) {
