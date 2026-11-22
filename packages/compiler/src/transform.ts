@@ -409,6 +409,7 @@ type Replacement =
       namespace: string;
       registry: string;
       translator: ts.Expression;
+      valueKeys: ReadonlyArray<string>;
     }>
   | Readonly<{
       build: ts.Expression;
@@ -7457,6 +7458,12 @@ function analyzeSource(
           namespace,
           registry: registry.local,
           translator,
+          valueKeys: formMessages
+            .filter((message) => message.hasArguments)
+            .map((message) =>
+              message.path.slice(`${namespace}.error.form.`.length)
+            )
+            .toSorted(compareCanonicalStrings),
         });
         ts.forEachChild(node, visitCalls);
         return;
@@ -7939,6 +7946,15 @@ function transformSource(
                     ) as ts.Expression,
                     factory.createStringLiteral(replacement.namespace),
                     factory.createIdentifier(replacement.registry),
+                    ...(replacement.valueKeys.length > 0
+                      ? [
+                          factory.createArrayLiteralExpression(
+                            replacement.valueKeys.map((key) =>
+                              factory.createStringLiteral(key)
+                            )
+                          ),
+                        ]
+                      : []),
                   ]
                 );
               }

@@ -633,6 +633,39 @@ describe("private named-key lowering", () => {
     }
   });
 
+  it("passes the valued form-error keys to the lowered form-error translator", async () => {
+    const fixture = await createGeneratedCatalog();
+    const options = {
+      generatedDirectory: fixture.generatedDirectory,
+      root: fixture.root,
+    };
+    const lower = async (namespace: string, file: string) =>
+      requireTransform(
+        await transformMiraiIntlSource(
+          [
+            'import { createFormErrorTranslator } from "@/i18n/generated";',
+            'import { useTranslations } from "x";',
+            `const { t } = useTranslations("${namespace}");`,
+            `export const translateError = createFormErrorTranslator("${namespace}", t);`,
+            "",
+          ].join("\n"),
+          join(fixture.root, file),
+          options
+        )
+      ).code;
+
+    try {
+      expect(await lower("pages.signup", "src/form-error-values.ts")).toMatch(
+        /__miraiIntlCreateFormErrorTranslator\w*\(t, "pages\.signup", \w+, \["tooShort"\]\)/u
+      );
+      expect(await lower("pages.home", "src/form-error-plain.ts")).toMatch(
+        /__miraiIntlCreateFormErrorTranslator\w*\(t, "pages\.home", \w+\)/u
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("fails closed for form-schema errors with missing, extra, or misplaced values", async () => {
     const fixture = await createGeneratedCatalog();
     const options = {

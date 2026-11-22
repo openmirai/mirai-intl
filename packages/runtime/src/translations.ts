@@ -485,7 +485,9 @@ export type FormErrorNamespaces<Catalog extends object> =
  * argument-free `error.form.` message; `error(key, values)` names a message
  * with ICU arguments and takes its values, typed like `t(key, values)`. The
  * values must be strings, finite numbers or booleans: they travel inside the
- * schema's message string to the form error translator.
+ * schema's message string to the form error translator. The compiler checks
+ * only that values are present or absent; their names are held by this type
+ * under the application's typecheck and by the translator at run time.
  */
 export interface FormSchemaError<
   Catalog extends object,
@@ -660,22 +662,39 @@ function parseFormErrorInput(input: string): FormErrorInput | undefined {
     : undefined;
 }
 
-/** @internal Compiler lowering target. Application code must not call this. */
+/**
+ * @internal Compiler lowering target. Application code must not call this.
+ * `valueKeys` names the relative `error.form.` keys whose message takes
+ * values; a message string is answered only when it carries a values tail
+ * exactly for those keys.
+ */
 export function createCompilerFormErrorTranslator(
   translator: unknown,
   namespace: unknown,
-  registry: unknown
+  registry: unknown,
+  valueKeys: unknown = []
 ): FormErrorTranslator {
   if (typeof namespace !== "string" || namespace.length === 0) {
     throw new TypeError("Form error namespace must be a non-empty string");
   }
+  if (
+    !Array.isArray(valueKeys) ||
+    !valueKeys.every((key) => typeof key === "string")
+  ) {
+    throw new TypeError("Form error value keys must be an array of strings");
+  }
+  const valued = new Set<string>(valueKeys);
   const formPrefix = `${namespace}.error.form.`;
   const formKey = (input: string): FormErrorInput | undefined => {
     const parsed = parseFormErrorInput(input);
     const key = parsed
       ? parseCompilerTranslationKey(parsed.key, namespace, registry)
       : undefined;
-    return parsed && key?.startsWith(formPrefix) ? parsed : undefined;
+    return parsed &&
+      key?.startsWith(formPrefix) &&
+      valued.has(key.slice(formPrefix.length)) === parsed.values.length > 0
+      ? parsed
+      : undefined;
   };
   const has = (input: string): boolean => formKey(input) !== undefined;
   const translate = (input: string): string | undefined => {
