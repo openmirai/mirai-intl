@@ -311,6 +311,57 @@ describe("conventional translation bindings", () => {
     expect(translator("server validation failed")).toBeUndefined();
   });
 
+  it("carries form-error values from the schema to the translator", () => {
+    const registry = createCompilerDynamicTextRegistry({
+      ["pages.home.error.form.currencyInvalid"]: staticTextDescriptor(),
+      ["pages.home.error.form.required"]: staticTextDescriptor(),
+    });
+    const schema = createCompilerFormSchema(
+      "pages.home",
+      registry,
+      ({
+        error,
+      }: {
+        error: (key: string, values?: Record<string, unknown>) => string;
+      }) => ({
+        currency: error("currencyInvalid", { currency: "USD", digits: 3 }),
+        required: error("required"),
+      })
+    ) as Record<string, string>;
+    const seen: Array<unknown> = [];
+    const translator = createCompilerFormErrorTranslator(
+      (_descriptor: unknown, ...values: Array<unknown>) => {
+        seen.push(values);
+        return "translated";
+      },
+      "pages.home",
+      registry
+    );
+
+    expect(schema.required).toBe("error.form.required");
+    expect(schema.currency?.startsWith("error.form.currencyInvalid")).toBe(
+      true
+    );
+    expect(translator.has(schema.currency ?? "")).toBe(true);
+    expect(translator(schema.currency ?? "")).toBe("translated");
+    expect(translator(schema.required ?? "")).toBe("translated");
+    expect(seen).toEqual([[{ currency: "USD", digits: 3 }], []]);
+    expect(translator.has("error.form.currencyInvalid\u0000{broken")).toBe(
+      false
+    );
+    expect(translator.has('error.form.currencyInvalid\u0000{"a":{}}')).toBe(
+      false
+    );
+    expect(() =>
+      createCompilerFormSchema(
+        "pages.home",
+        registry,
+        ({ error }: { error: (key: string, values: unknown) => string }) =>
+          error("currencyInvalid", { when: new Date(0) })
+      )
+    ).toThrow("plain object of strings, finite numbers or booleans");
+  });
+
   it("builds schemas with closed relative form-error keys", () => {
     const registry = createCompilerDynamicTextRegistry({
       ["pages.home.error.form.required"]: staticTextDescriptor(),

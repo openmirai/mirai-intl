@@ -52,6 +52,7 @@ interface FormSchemaFixtureCatalog {
   form: {
     error: {
       form: {
+        currencyInvalid: TextDescriptor<{ currency: string }>;
         required: TextDescriptor;
       };
     };
@@ -60,6 +61,15 @@ interface FormSchemaFixtureCatalog {
 
 const createFormSchema = bindFormSchema<FormSchemaFixtureCatalog>();
 declare const formErrorPrefix: `error.form.${string}`;
+
+createFormSchema("form", ({ error }) => [
+  // @ts-expect-error A form error with arguments requires its values.
+  error("currencyInvalid"),
+  // @ts-expect-error Form error values reject unknown argument names.
+  error("currencyInvalid", { code: "USD" }),
+  // @ts-expect-error An argument-free form error takes no values.
+  error("required", { currency: "USD" }),
+]);
 
 // @ts-expect-error Form-schema helpers cannot accept raw strings.
 createFormSchema.helper((message: string) => ({ message }));

@@ -51,6 +51,7 @@ interface FormSchemaFixtureCatalog {
   form: {
     error: {
       form: {
+        currencyInvalid: TextDescriptor<{ currency: string }>;
         invalid: TextDescriptor;
         required: TextDescriptor;
       };
@@ -70,10 +71,12 @@ requiredField satisfies FormSchemaPart<{
   message: FormErrorMessage<"error.form.required">;
 }>;
 const formSchema = createFormSchema("form", ({ error }) => ({
+  currency: error("currencyInvalid", { currency: "USD" }),
   invalid: error("invalid"),
   required: requiredField,
 }));
 formSchema satisfies FormSchemaPart<{
+  currency: FormErrorMessage<"error.form.currencyInvalid">;
   invalid: FormErrorMessage<"error.form.invalid">;
   required: typeof requiredField;
 }>;
