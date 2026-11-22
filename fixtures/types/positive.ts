@@ -81,6 +81,26 @@ formSchema satisfies FormSchemaPart<{
   required: typeof requiredField;
 }>;
 
+interface ArgumentFreeFormSchemaFixtureCatalog {
+  form: { error: { form: { required: TextDescriptor } } };
+}
+
+interface ValuedFormSchemaFixtureCatalog {
+  form: { error: { form: { tooShort: TextDescriptor<{ count: number }> } } };
+}
+
+bindFormSchema<ArgumentFreeFormSchemaFixtureCatalog>()("form", ({ error }) => ({
+  required: error("required"),
+})) satisfies FormSchemaPart<{
+  required: FormErrorMessage<"error.form.required">;
+}>;
+
+bindFormSchema<ValuedFormSchemaFixtureCatalog>()("form", ({ error }) => ({
+  tooShort: error("tooShort", { count: 8 }),
+})) satisfies FormSchemaPart<{
+  tooShort: FormErrorMessage<"error.form.tooShort">;
+}>;
+
 const staticTextResult = intl.t(staticText);
 staticTextResult satisfies string;
 

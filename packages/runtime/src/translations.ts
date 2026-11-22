@@ -449,13 +449,18 @@ export type FormErrorKeysFor<
   `error.form.${string}`
 >;
 
+/**
+ * The key after `error.form.` of each key in `Keys`. Distributes over the
+ * union, so an empty union stays `never`: a non-distributive check against
+ * `never` would infer nothing and widen `Key` to `string`.
+ */
+type RelativeFormErrorKey<Keys extends string> =
+  Keys extends `error.form.${infer Key}` ? Key : never;
+
 export type RelativeFormErrorKeysFor<
   Catalog extends object,
   Namespace extends NamespacePaths<Catalog>,
-> =
-  FormErrorKeysFor<Catalog, Namespace> extends `error.form.${infer Key}`
-    ? Key
-    : never;
+> = RelativeFormErrorKey<FormErrorKeysFor<Catalog, Namespace>>;
 
 /** `error.form.` text keys whose message takes ICU arguments. */
 export type FormErrorValueKeysFor<
@@ -472,10 +477,7 @@ export type FormErrorValueKeysFor<
 export type RelativeFormErrorValueKeysFor<
   Catalog extends object,
   Namespace extends NamespacePaths<Catalog>,
-> =
-  FormErrorValueKeysFor<Catalog, Namespace> extends `error.form.${infer Key}`
-    ? Key
-    : never;
+> = RelativeFormErrorKey<FormErrorValueKeysFor<Catalog, Namespace>>;
 
 export type FormErrorNamespaces<Catalog extends object> =
   NamespacePaths<Catalog>;
