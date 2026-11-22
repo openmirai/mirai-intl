@@ -1341,8 +1341,9 @@ function factoryKind(name: string): FactoryKind | undefined {
   return undefined;
 }
 
-function generatedFacadeTypeModule(
-  catalog: CurrentCatalog,
+/** @internal Test observation only: the type module the semantic Program sees for the generated facade. */
+export function generatedFacadeTypeModule(
+  catalog: Pick<CurrentCatalog, "messages" | "selectedDirectory">,
   root: string,
   selectedNamespaces?: ReadonlySet<string>,
   includeCatalogContract = false
