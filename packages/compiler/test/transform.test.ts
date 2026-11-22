@@ -633,6 +633,59 @@ describe("private named-key lowering", () => {
     }
   });
 
+  it("keeps the parser registry of a namespace apart from its valued form-error registry", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/form-schema-registry-split.ts");
+    const source = [
+      'import { createFormSchema, parseTranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      "declare const input: unknown;",
+      'const { t } = useTranslations("pages.signup");',
+      'const key = parseTranslationKey("pages.signup", input);',
+      "export const translated = key ? t(key) : undefined;",
+      'export const schema = createFormSchema("pages.signup", ({ error }) => ({ required: error("required"), tooShort: error("tooShort", { count: 3 }) }));',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+      const registries = new Map(
+        [
+          ...result.code.matchAll(
+            /const (\w+) = \/\*\s*@__PURE__\s*\*\/\s*\w+\(\{([^}]*)\}\)/gu
+          ),
+        ].map((match) => [match[1], match[2] ?? ""])
+      );
+      const parserRegistry = result.code.match(
+        /__miraiIntlParseTranslationKey\w*\(input, "pages\.signup", (\w+)\)/u
+      )?.[1];
+      const schemaRegistry = result.code.match(
+        /__miraiIntlCreateCompilerFormSchema\w*\("pages\.signup", (\w+),/u
+      )?.[1];
+
+      expect(registries.size).toBe(2);
+      expect(parserRegistry).toBeDefined();
+      expect(schemaRegistry).toBeDefined();
+      expect(parserRegistry).not.toBe(schemaRegistry);
+      expect(registries.get(parserRegistry ?? "")).toContain(
+        '"pages.signup.error.form.required"'
+      );
+      expect(registries.get(parserRegistry ?? "")).not.toContain(
+        '"pages.signup.error.form.tooShort"'
+      );
+      expect(registries.get(schemaRegistry ?? "")).toContain(
+        '"pages.signup.error.form.tooShort"'
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
   it("passes the valued form-error keys to the lowered form-error translator", async () => {
     const fixture = await createGeneratedCatalog();
     const options = {
