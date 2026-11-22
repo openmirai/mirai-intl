@@ -622,7 +622,9 @@ describe("private named-key lowering", () => {
         })
       );
 
-      expect(result.code).toContain('__miraiIntlCreateCompilerFormSchema("pages.signup"');
+      expect(result.code).toContain(
+        '__miraiIntlCreateCompilerFormSchema("pages.signup"'
+      );
       expect(result.code).toContain('"pages.signup.error.form.required"');
       expect(result.code).toContain('"pages.signup.error.form.tooShort"');
       expect(result.code).toContain('error("tooShort", { count: 3 })');
@@ -659,7 +661,8 @@ describe("private named-key lowering", () => {
         use: 'createFormSchema("pages.signup", ({ error }) => error("tooShort", { count: 1 }, "extra"))',
       },
       {
-        error: /Translation namespace pages\.about has no error\.form messages/u,
+        error:
+          /Translation namespace pages\.about has no error\.form messages/u,
         use: 'createFormSchema("pages.about", ({ error }) => error("title"))',
       },
     ];
