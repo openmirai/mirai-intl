@@ -339,7 +339,8 @@ export function translateCompilerDynamicText(
   translator: unknown,
   input: unknown,
   namespace: unknown,
-  registry: unknown
+  registry: unknown,
+  ...values: Array<unknown>
 ): string {
   if (typeof input !== "string") {
     throw new TypeError("Dynamic translation key must be a string");
@@ -370,7 +371,10 @@ export function translateCompilerDynamicText(
   if (typeof translator !== "function") {
     throw new TypeError("Dynamic translation target must be a function");
   }
-  return Reflect.apply(translator, undefined, [entry.value]) as string;
+  return Reflect.apply(translator, undefined, [
+    entry.value,
+    ...values,
+  ]) as string;
 }
 
 export type ParseTranslationKey<Catalog extends object> = <
@@ -445,24 +449,75 @@ export type FormErrorKeysFor<
   `error.form.${string}`
 >;
 
+/**
+ * The key after `error.form.` of each key in `Keys`. Distributes over the
+ * union, so an empty union stays `never`: a non-distributive check against
+ * `never` would infer nothing and widen `Key` to `string`.
+ */
+type RelativeFormErrorKey<Keys extends string> =
+  Keys extends `error.form.${infer Key}` ? Key : never;
+
 export type RelativeFormErrorKeysFor<
   Catalog extends object,
   Namespace extends NamespacePaths<Catalog>,
-> =
-  FormErrorKeysFor<Catalog, Namespace> extends `error.form.${infer Key}`
-    ? Key
-    : never;
+> = RelativeFormErrorKey<FormErrorKeysFor<Catalog, Namespace>>;
+
+/** `error.form.` text keys whose message takes ICU arguments. */
+export type FormErrorValueKeysFor<
+  Catalog extends object,
+  Namespace extends NamespacePaths<Catalog>,
+> = Extract<
+  Exclude<
+    MessagePaths<NamespaceNode<Catalog, Namespace>, "text">,
+    ArgumentFreeTextKeysFor<Catalog, Namespace>
+  >,
+  `error.form.${string}`
+>;
+
+export type RelativeFormErrorValueKeysFor<
+  Catalog extends object,
+  Namespace extends NamespacePaths<Catalog>,
+> = RelativeFormErrorKey<FormErrorValueKeysFor<Catalog, Namespace>>;
 
 export type FormErrorNamespaces<Catalog extends object> =
   NamespacePaths<Catalog>;
+
+/**
+ * The `error` helper of a form schema builder. `error(key)` names an
+ * argument-free `error.form.` message; `error(key, values)` names a message
+ * with ICU arguments and takes its values, typed like `t(key, values)`. The
+ * values must be strings, finite numbers or booleans: they travel inside the
+ * schema's message string to the form error translator. The compiler checks
+ * only that values are present or absent; their names are held by this type
+ * under the application's typecheck and by the translator at run time.
+ */
+export interface FormSchemaError<
+  Catalog extends object,
+  Namespace extends NamespacePaths<Catalog>,
+> {
+  <const Key extends RelativeFormErrorKeysFor<Catalog, Namespace>>(
+    key: Key
+  ): FormErrorMessage<`error.form.${Key}`>;
+
+  <
+    const Key extends RelativeFormErrorValueKeysFor<Catalog, Namespace>,
+    const Actual extends ValuesOf<
+      TextAt<NamespaceNode<Catalog, Namespace>, `error.form.${Key}`>
+    >,
+  >(
+    key: Key,
+    ...values: StrictArgs<
+      ValuesOf<TextAt<NamespaceNode<Catalog, Namespace>, `error.form.${Key}`>>,
+      Actual
+    >
+  ): FormErrorMessage<`error.form.${Key}`>;
+}
 
 export type FormSchemaContext<
   Catalog extends object,
   Namespace extends NamespacePaths<Catalog>,
 > = Readonly<{
-  error: <const Key extends RelativeFormErrorKeysFor<Catalog, Namespace>>(
-    key: Key
-  ) => FormErrorMessage<`error.form.${Key}`>;
+  error: FormSchemaError<Catalog, Namespace>;
 }>;
 
 export interface CreateFormSchema<Catalog extends object> {
@@ -560,25 +615,102 @@ export function parseCompilerTranslationKey(
   return normalized;
 }
 
-/** @internal Compiler lowering target. Application code must not call this. */
+/**
+ * A form error message with values is its `error.form.` key, this separator
+ * and the values as JSON. The separator cannot occur in a catalog key or in
+ * JSON text, so the key part always parses back exactly.
+ */
+const formErrorValuesSeparator = "\u0000";
+
+type FormErrorInput = Readonly<{ key: string; values: ReadonlyArray<unknown> }>;
+
+function isFormErrorValues(input: unknown): input is Record<string, unknown> {
+  return (
+    !!input &&
+    typeof input === "object" &&
+    !Array.isArray(input) &&
+    [null, Object.prototype].includes(Object.getPrototypeOf(input)) &&
+    Object.values(input).every(
+      (value) =>
+        typeof value === "string" ||
+        typeof value === "boolean" ||
+        (typeof value === "number" && Number.isFinite(value))
+    )
+  );
+}
+
+function formErrorInputWithValues(message: string, values: unknown): string {
+  if (!isFormErrorValues(values)) {
+    throw new TypeError(
+      "Form schema error values must be a plain object of strings, finite numbers or booleans"
+    );
+  }
+  return `${message}${formErrorValuesSeparator}${JSON.stringify(values)}`;
+}
+
+function parseFormErrorInput(input: string): FormErrorInput | undefined {
+  const index = input.indexOf(formErrorValuesSeparator);
+  if (index === -1) {
+    return { key: input, values: [] };
+  }
+  let values: unknown;
+  try {
+    values = JSON.parse(input.slice(index + formErrorValuesSeparator.length));
+  } catch {
+    return undefined;
+  }
+  return isFormErrorValues(values)
+    ? { key: input.slice(0, index), values: [values] }
+    : undefined;
+}
+
+/**
+ * @internal Compiler lowering target. Application code must not call this.
+ * `valueKeys` names the relative `error.form.` keys whose message takes
+ * values; a message string is answered only when it carries a values tail
+ * exactly for those keys.
+ */
 export function createCompilerFormErrorTranslator(
   translator: unknown,
   namespace: unknown,
-  registry: unknown
+  registry: unknown,
+  valueKeys: unknown = []
 ): FormErrorTranslator {
   if (typeof namespace !== "string" || namespace.length === 0) {
     throw new TypeError("Form error namespace must be a non-empty string");
   }
+  if (
+    !Array.isArray(valueKeys) ||
+    !valueKeys.every((key) => typeof key === "string")
+  ) {
+    throw new TypeError("Form error value keys must be an array of strings");
+  }
+  const valued = new Set<string>(valueKeys);
   const formPrefix = `${namespace}.error.form.`;
-  const has = (input: string): boolean => {
-    const key = parseCompilerTranslationKey(input, namespace, registry);
-    return key?.startsWith(formPrefix) ?? false;
+  const formKey = (input: string): FormErrorInput | undefined => {
+    const parsed = parseFormErrorInput(input);
+    const key = parsed
+      ? parseCompilerTranslationKey(parsed.key, namespace, registry)
+      : undefined;
+    return parsed &&
+      key?.startsWith(formPrefix) &&
+      valued.has(key.slice(formPrefix.length)) === parsed.values.length > 0
+      ? parsed
+      : undefined;
   };
+  const has = (input: string): boolean => formKey(input) !== undefined;
   const translate = (input: string): string | undefined => {
-    if (!has(input)) {
+    const parsed = formKey(input);
+    if (!parsed) {
       return undefined;
     }
-    return translateCompilerDynamicText(translator, input, namespace, registry);
+    return translateCompilerDynamicText(
+      translator,
+      parsed.key,
+      namespace,
+      registry,
+      ...parsed.values
+    );
   };
   Object.defineProperty(translate, "has", {
     enumerable: true,
@@ -608,9 +740,14 @@ export function createCompilerFormSchema(
   if (typeof build !== "function") {
     throw new TypeError("Form schema builder must be a function");
   }
-  const error = (input: unknown): string => {
+  const error = (input: unknown, ...values: Array<unknown>): string => {
     if (typeof input !== "string") {
       throw new TypeError("Form schema error key must be a string");
+    }
+    if (values.length > 1) {
+      throw new TypeError(
+        "Form schema error takes one key and at most one values object"
+      );
     }
     const key = parseCompilerTranslationKey(
       `error.form.${input}`,
@@ -622,7 +759,10 @@ export function createCompilerFormSchema(
         "Form schema error key is not registered for this namespace"
       );
     }
-    return `error.form.${input}`;
+    const message = `error.form.${input}`;
+    return values.length === 0
+      ? message
+      : formErrorInputWithValues(message, values[0]);
   };
   return Reflect.apply(build, undefined, [Object.freeze({ error })]);
 }

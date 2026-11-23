@@ -51,6 +51,7 @@ interface FormSchemaFixtureCatalog {
   form: {
     error: {
       form: {
+        currencyInvalid: TextDescriptor<{ currency: string }>;
         invalid: TextDescriptor;
         required: TextDescriptor;
       };
@@ -70,12 +71,34 @@ requiredField satisfies FormSchemaPart<{
   message: FormErrorMessage<"error.form.required">;
 }>;
 const formSchema = createFormSchema("form", ({ error }) => ({
+  currency: error("currencyInvalid", { currency: "USD" }),
   invalid: error("invalid"),
   required: requiredField,
 }));
 formSchema satisfies FormSchemaPart<{
+  currency: FormErrorMessage<"error.form.currencyInvalid">;
   invalid: FormErrorMessage<"error.form.invalid">;
   required: typeof requiredField;
+}>;
+
+interface ArgumentFreeFormSchemaFixtureCatalog {
+  form: { error: { form: { required: TextDescriptor } } };
+}
+
+interface ValuedFormSchemaFixtureCatalog {
+  form: { error: { form: { tooShort: TextDescriptor<{ count: number }> } } };
+}
+
+bindFormSchema<ArgumentFreeFormSchemaFixtureCatalog>()("form", ({ error }) => ({
+  required: error("required"),
+})) satisfies FormSchemaPart<{
+  required: FormErrorMessage<"error.form.required">;
+}>;
+
+bindFormSchema<ValuedFormSchemaFixtureCatalog>()("form", ({ error }) => ({
+  tooShort: error("tooShort", { count: 8 }),
+})) satisfies FormSchemaPart<{
+  tooShort: FormErrorMessage<"error.form.tooShort">;
 }>;
 
 const staticTextResult = intl.t(staticText);

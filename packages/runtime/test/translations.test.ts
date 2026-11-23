@@ -311,6 +311,94 @@ describe("conventional translation bindings", () => {
     expect(translator("server validation failed")).toBeUndefined();
   });
 
+  it("carries form-error values from the schema to the translator", () => {
+    const registry = createCompilerDynamicTextRegistry({
+      ["pages.home.error.form.currencyInvalid"]: staticTextDescriptor(),
+      ["pages.home.error.form.required"]: staticTextDescriptor(),
+    });
+    const schema = createCompilerFormSchema(
+      "pages.home",
+      registry,
+      ({
+        error,
+      }: {
+        error: (key: string, values?: Record<string, unknown>) => string;
+      }) => ({
+        currency: error("currencyInvalid", { currency: "USD", digits: 3 }),
+        required: error("required"),
+      })
+    ) as Record<string, string>;
+    const seen: Array<unknown> = [];
+    const translator = createCompilerFormErrorTranslator(
+      (_descriptor: unknown, ...values: Array<unknown>) => {
+        seen.push(values);
+        return "translated";
+      },
+      "pages.home",
+      registry,
+      ["currencyInvalid"]
+    );
+
+    expect(schema.required).toBe("error.form.required");
+    expect(schema.currency?.startsWith("error.form.currencyInvalid")).toBe(
+      true
+    );
+    expect(translator.has(schema.currency ?? "")).toBe(true);
+    expect(translator(schema.currency ?? "")).toBe("translated");
+    expect(translator(schema.required ?? "")).toBe("translated");
+    expect(seen).toEqual([[{ currency: "USD", digits: 3 }], []]);
+    expect(translator.has("error.form.currencyInvalid\u0000{broken")).toBe(
+      false
+    );
+    expect(translator.has('error.form.currencyInvalid\u0000{"a":{}}')).toBe(
+      false
+    );
+    expect(() =>
+      createCompilerFormSchema(
+        "pages.home",
+        registry,
+        ({ error }: { error: (key: string, values: unknown) => string }) =>
+          error("currencyInvalid", { when: new Date(0) })
+      )
+    ).toThrow("plain object of strings, finite numbers or booleans");
+  });
+
+  it("answers a form-error message only when its values tail matches the message", () => {
+    const registry = createCompilerDynamicTextRegistry({
+      ["pages.home.error.form.currencyInvalid"]: staticTextDescriptor(),
+      ["pages.home.error.form.required"]: staticTextDescriptor(),
+    });
+    const seen: Array<unknown> = [];
+    const translator = createCompilerFormErrorTranslator(
+      (_descriptor: unknown, ...values: Array<unknown>) => {
+        seen.push(values);
+        return "translated";
+      },
+      "pages.home",
+      registry,
+      ["currencyInvalid"]
+    );
+    const valued = 'error.form.currencyInvalid\u0000{"currency":"USD"}';
+    const tailOnArgumentFree = 'error.form.required\u0000{"currency":"USD"}';
+
+    expect(translator.has(valued)).toBe(true);
+    expect(translator.has("error.form.required")).toBe(true);
+    expect(translator.has("error.form.currencyInvalid")).toBe(false);
+    expect(translator.has("pages.home.error.form.currencyInvalid")).toBe(false);
+    expect(translator("error.form.currencyInvalid")).toBeUndefined();
+    expect(translator.has(tailOnArgumentFree)).toBe(false);
+    expect(translator(tailOnArgumentFree)).toBeUndefined();
+    expect(seen).toEqual([]);
+    expect(
+      createCompilerFormErrorTranslator(() => "", "pages.home", registry).has(
+        tailOnArgumentFree
+      )
+    ).toBe(false);
+    expect(() =>
+      createCompilerFormErrorTranslator(() => "", "pages.home", registry, [1])
+    ).toThrow("Form error value keys must be an array of strings");
+  });
+
   it("builds schemas with closed relative form-error keys", () => {
     const registry = createCompilerDynamicTextRegistry({
       ["pages.home.error.form.required"]: staticTextDescriptor(),

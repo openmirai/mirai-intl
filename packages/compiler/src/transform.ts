@@ -409,6 +409,7 @@ type Replacement =
       namespace: string;
       registry: string;
       translator: ts.Expression;
+      valueKeys: ReadonlyArray<string>;
     }>
   | Readonly<{
       build: ts.Expression;
@@ -1341,13 +1342,15 @@ function factoryKind(name: string): FactoryKind | undefined {
   return undefined;
 }
 
-function generatedFacadeTypeModule(
-  catalog: CurrentCatalog,
+/** @internal Test observation only: the type module the semantic Program sees for the generated facade. */
+export function generatedFacadeTypeModule(
+  catalog: Pick<CurrentCatalog, "messages" | "selectedDirectory">,
   root: string,
   selectedNamespaces?: ReadonlySet<string>,
   includeCatalogContract = false
 ): string {
   const namespaces = new Map<string, Set<string>>();
+  const formValueKeys = new Map<string, Set<string>>();
   for (const message of catalog.messages.values()) {
     const parts = message.path.split(".");
     for (let index = 1; index < parts.length; index += 1) {
@@ -1356,8 +1359,18 @@ function generatedFacadeTypeModule(
         continue;
       }
       const entries = namespaces.get(namespace) ?? new Set<string>();
+      const key = parts.slice(index).join(".");
       if (message.kind === "text" && !message.hasArguments) {
-        entries.add(parts.slice(index).join("."));
+        entries.add(key);
+      }
+      if (
+        message.kind === "text" &&
+        message.hasArguments &&
+        key.startsWith("error.form.")
+      ) {
+        const valueKeys = formValueKeys.get(namespace) ?? new Set<string>();
+        valueKeys.add(key.slice("error.form.".length));
+        formValueKeys.set(namespace, valueKeys);
       }
       namespaces.set(namespace, entries);
     }
@@ -1393,6 +1406,15 @@ function generatedFacadeTypeModule(
     })
     .filter((entry): entry is string => entry !== undefined)
     .join("\n");
+  const formValueErrorEntries = [...formValueKeys.entries()]
+    .toSorted(([left], [right]) => compareCanonicalStrings(left, right))
+    .map(
+      ([namespace, keys]) =>
+        `  readonly ${JSON.stringify(namespace)}: ${[...keys]
+          .toSorted()
+          .map((key) => JSON.stringify(key))
+          .join(" | ")};`
+    );
   const generatedSpecifier = (name: string): string => {
     const path = relative(root, resolve(catalog.selectedDirectory, name))
       .split(sep)
@@ -1416,12 +1438,21 @@ function generatedFacadeTypeModule(
     "type __MiraiIntlFormErrorKeys = {",
     formErrorEntries,
     "};",
-    "type __MiraiIntlFormNamespace = keyof __MiraiIntlFormErrorKeys;",
+    ...(formValueErrorEntries.length > 0
+      ? [
+          "type __MiraiIntlFormValueErrorKeys = {",
+          ...formValueErrorEntries,
+          "};",
+          "type __MiraiIntlFormNamespace = keyof __MiraiIntlFormErrorKeys | keyof __MiraiIntlFormValueErrorKeys;",
+        ]
+      : ["type __MiraiIntlFormNamespace = keyof __MiraiIntlFormErrorKeys;"]),
     "export declare const createTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace) => <const Key extends TranslationKey<Namespace>>(key: Key) => `${Namespace}.${Key}`;",
     "export declare const parseTranslationKey: <const Namespace extends TranslationNamespace>(namespace: Namespace, input: unknown) => `${Namespace}.${TranslationKey<Namespace>}` | undefined;",
     "export declare const createFormErrorTranslator: <const Namespace extends TranslationNamespace>(namespace: Namespace, translator: unknown) => { (input: string): string | undefined; has(input: string): boolean; };",
     "type __MiraiIntlCreateFormSchema = {",
-    "  <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: <const Key extends __MiraiIntlFormErrorKeys[Namespace]>(key: Key) => `error.form.${Key}` }>) => Schema): Schema;",
+    formValueErrorEntries.length > 0
+      ? "  <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: { <const Key extends (Namespace extends keyof __MiraiIntlFormErrorKeys ? __MiraiIntlFormErrorKeys[Namespace] : never)>(key: Key): `error.form.${Key}`; <const Key extends (Namespace extends keyof __MiraiIntlFormValueErrorKeys ? __MiraiIntlFormValueErrorKeys[Namespace] : never)>(key: Key, values: Readonly<Record<string, string | number | boolean>>): `error.form.${Key}` } }>) => Schema): Schema;"
+      : "  <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: <const Key extends __MiraiIntlFormErrorKeys[Namespace]>(key: Key) => `error.form.${Key}` }>) => Schema): Schema;",
     "  helper<Args extends ReadonlyArray<unknown>, Schema>(factory: (...args: Args) => Schema): (...args: Args) => Schema;",
     "};",
     "export declare const createFormSchema: __MiraiIntlCreateFormSchema;",
@@ -6188,7 +6219,8 @@ function analyzeSource(
   const validateInlineFormSchemaErrorKeys = (
     build: ts.Expression,
     namespace: string,
-    allowedKeys: ReadonlySet<string>
+    allowedKeys: ReadonlySet<string>,
+    valueKeys: ReadonlySet<string>
   ): void => {
     const builder = unwrapExpression(build);
     if (!ts.isArrowFunction(builder) && !ts.isFunctionExpression(builder)) {
@@ -6226,8 +6258,11 @@ function analyzeSource(
     }
 
     const validateErrorKey = (node: ts.CallExpression): void => {
-      if (node.arguments.length !== 1) {
-        diagnostic(node, "Form schema error requires exactly one literal key");
+      if (node.arguments.length !== 1 && node.arguments.length !== 2) {
+        diagnostic(
+          node,
+          "Form schema error requires one literal key and, for a message with arguments, its values"
+        );
       }
       const argument = node.arguments[0];
       const key = argument ? literalString(argument) : undefined;
@@ -6238,7 +6273,16 @@ function analyzeSource(
         );
         return;
       }
-      if (!allowedKeys.has(key)) {
+      const withValues = node.arguments.length === 2;
+      if (withValues ? allowedKeys.has(key) : valueKeys.has(key)) {
+        diagnostic(
+          argument ?? node,
+          withValues
+            ? `Form error ${namespace}.error.form.${key} takes no values`
+            : `Form error ${namespace}.error.form.${key} requires its values`
+        );
+      }
+      if (!allowedKeys.has(key) && !valueKeys.has(key)) {
         diagnostic(
           argument ?? node,
           `Unknown form error key ${namespace}.error.form.${key}`
@@ -7013,22 +7057,32 @@ function analyzeSource(
     return translationKeyParserHelper;
   };
 
+  // Form messages with arguments get their own registry, so a parsed or
+  // deferred key of the namespace can never name a message that needs values.
+  const formRegistryKey = (
+    namespace: string,
+    messages: ReadonlyArray<CatalogMessage>
+  ): string =>
+    messages.some((message) => message.hasArguments)
+      ? `${namespace}\u0000error.form`
+      : namespace;
   const dynamicRegistry = (
     namespace: string,
-    selectedMessages?: ReadonlyArray<CatalogMessage>
+    selectedMessages?: ReadonlyArray<CatalogMessage>,
+    registryKey = namespace
   ): Readonly<{
     entries: Map<string, Readonly<{ key: string; local: string }>>;
     local: string;
   }> => {
     ensureDynamicHelpers();
-    let registry = dynamicRegistries.get(namespace);
+    let registry = dynamicRegistries.get(registryKey);
     if (!registry) {
       registry = {
         complete: false,
         entries: new Map(),
         local: uniqueName("__miraiIntlDynamicTextRegistry"),
       };
-      dynamicRegistries.set(namespace, registry);
+      dynamicRegistries.set(registryKey, registry);
     }
     const messages =
       selectedMessages ??
@@ -7382,8 +7436,7 @@ function analyzeSource(
         const formMessages = [...catalog.messages.values()].filter(
           (message) =>
             message.path.startsWith(`${namespace}.error.form.`) &&
-            message.kind === "text" &&
-            !message.hasArguments
+            message.kind === "text"
         );
         const translator =
           node.arguments[1] ??
@@ -7392,7 +7445,11 @@ function analyzeSource(
         if (ts.isIdentifier(translatorIdentifier)) {
           allowedTranslatorReferences.add(nodeKey(translatorIdentifier));
         }
-        const registry = dynamicRegistry(namespace, formMessages);
+        const registry = dynamicRegistry(
+          namespace,
+          formMessages,
+          formRegistryKey(namespace, formMessages)
+        );
         formErrorTranslatorHelper ??= uniqueName(
           "__miraiIntlCreateFormErrorTranslator"
         );
@@ -7401,6 +7458,12 @@ function analyzeSource(
           namespace,
           registry: registry.local,
           translator,
+          valueKeys: formMessages
+            .filter((message) => message.hasArguments)
+            .map((message) =>
+              message.path.slice(`${namespace}.error.form.`.length)
+            )
+            .toSorted(compareCanonicalStrings),
         });
         ts.forEachChild(node, visitCalls);
         return;
@@ -7423,27 +7486,35 @@ function analyzeSource(
         const formMessages = [...catalog.messages.values()].filter(
           (message) =>
             message.path.startsWith(`${namespace}.error.form.`) &&
-            message.kind === "text" &&
-            !message.hasArguments
+            message.kind === "text"
         );
         if (formMessages.length === 0) {
           diagnostic(
             namespaceArgument ?? node,
-            `Translation namespace ${namespace} has no argument-free error.form messages`
+            `Translation namespace ${namespace} has no error.form messages`
           );
         }
         const build =
           node.arguments[1] ??
           diagnostic(node, "createFormSchema requires a schema builder");
         const formPrefix = `${namespace}.error.form.`;
+        const relativeFormKeys = (withArguments: boolean): Set<string> =>
+          new Set(
+            formMessages
+              .filter((message) => message.hasArguments === withArguments)
+              .map((message) => message.path.slice(formPrefix.length))
+          );
         validateInlineFormSchemaErrorKeys(
           build,
           namespace,
-          new Set(
-            formMessages.map((message) => message.path.slice(formPrefix.length))
-          )
+          relativeFormKeys(false),
+          relativeFormKeys(true)
         );
-        const registry = dynamicRegistry(namespace, formMessages);
+        const registry = dynamicRegistry(
+          namespace,
+          formMessages,
+          formRegistryKey(namespace, formMessages)
+        );
         formSchemaHelper ??= uniqueName("__miraiIntlCreateCompilerFormSchema");
         replacements.set(nodeKey(node), {
           build,
@@ -7875,6 +7946,15 @@ function transformSource(
                     ) as ts.Expression,
                     factory.createStringLiteral(replacement.namespace),
                     factory.createIdentifier(replacement.registry),
+                    ...(replacement.valueKeys.length > 0
+                      ? [
+                          factory.createArrayLiteralExpression(
+                            replacement.valueKeys.map((key) =>
+                              factory.createStringLiteral(key)
+                            )
+                          ),
+                        ]
+                      : []),
                   ]
                 );
               }

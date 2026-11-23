@@ -22,6 +22,7 @@ import {
 } from "../src/internal";
 import type { CatalogSource, MessageSource } from "../src/internal";
 import {
+  generatedFacadeTypeModule,
   invalidateMiraiIntlCatalogCache,
   isMiraiIntlTransformCandidate,
   resolveSealedSemanticRealpath,
@@ -57,6 +58,8 @@ const fixtureMessages = [
   ["pages.home.title", "text"],
   ["pages.home.error.form.required", "text"],
   ["pages.home.error.form.invalid", "text"],
+  ["pages.signup.error.form.required", "text"],
+  ["pages.signup.error.form.tooShort", "text-with-count"],
   ["pages.home.description", "rich"],
   ["pages.home.settings", "value"],
   ["pages.about.title", "text"],
@@ -600,6 +603,223 @@ describe("private named-key lowering", () => {
     } finally {
       await rm(fixture.root, { force: true, recursive: true });
     }
+  });
+
+  it("lowers form-schema errors that take values through the namespace error.form registry", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/form-schema-values.ts");
+    const source = [
+      'import { createFormSchema } from "@/i18n/generated";',
+      'export const schema = createFormSchema("pages.signup", ({ error }) => ({ required: error("required"), tooShort: error("tooShort", { count: 3 }) }));',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+
+      expect(result.code).toContain(
+        '__miraiIntlCreateCompilerFormSchema("pages.signup"'
+      );
+      expect(result.code).toContain('"pages.signup.error.form.required"');
+      expect(result.code).toContain('"pages.signup.error.form.tooShort"');
+      expect(result.code).toContain('error("tooShort", { count: 3 })');
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the parser registry of a namespace apart from its valued form-error registry", async () => {
+    const fixture = await createGeneratedCatalog();
+    const id = join(fixture.root, "src/form-schema-registry-split.ts");
+    const source = [
+      'import { createFormSchema, parseTranslationKey } from "@/i18n/generated";',
+      'import { useTranslations } from "x";',
+      "declare const input: unknown;",
+      'const { t } = useTranslations("pages.signup");',
+      'const key = parseTranslationKey("pages.signup", input);',
+      "export const translated = key ? t(key) : undefined;",
+      'export const schema = createFormSchema("pages.signup", ({ error }) => ({ required: error("required"), tooShort: error("tooShort", { count: 3 }) }));',
+      "",
+    ].join("\n");
+
+    try {
+      const result = requireTransform(
+        await transformMiraiIntlSource(source, id, {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        })
+      );
+      const registries = new Map(
+        [
+          ...result.code.matchAll(
+            /const (\w+) = \/\*\s*@__PURE__\s*\*\/\s*\w+\(\{([^}]*)\}\)/gu
+          ),
+        ].map((match) => [match[1], match[2] ?? ""])
+      );
+      const parserRegistry = result.code.match(
+        /__miraiIntlParseTranslationKey\w*\(input, "pages\.signup", (\w+)\)/u
+      )?.[1];
+      const schemaRegistry = result.code.match(
+        /__miraiIntlCreateCompilerFormSchema\w*\("pages\.signup", (\w+),/u
+      )?.[1];
+
+      expect(registries.size).toBe(2);
+      expect(parserRegistry).toBeDefined();
+      expect(schemaRegistry).toBeDefined();
+      expect(parserRegistry).not.toBe(schemaRegistry);
+      expect(registries.get(parserRegistry ?? "")).toContain(
+        '"pages.signup.error.form.required"'
+      );
+      expect(registries.get(parserRegistry ?? "")).not.toContain(
+        '"pages.signup.error.form.tooShort"'
+      );
+      expect(registries.get(schemaRegistry ?? "")).toContain(
+        '"pages.signup.error.form.tooShort"'
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("passes the valued form-error keys to the lowered form-error translator", async () => {
+    const fixture = await createGeneratedCatalog();
+    const options = {
+      generatedDirectory: fixture.generatedDirectory,
+      root: fixture.root,
+    };
+    const lower = async (namespace: string, file: string) =>
+      requireTransform(
+        await transformMiraiIntlSource(
+          [
+            'import { createFormErrorTranslator } from "@/i18n/generated";',
+            'import { useTranslations } from "x";',
+            `const { t } = useTranslations("${namespace}");`,
+            `export const translateError = createFormErrorTranslator("${namespace}", t);`,
+            "",
+          ].join("\n"),
+          join(fixture.root, file),
+          options
+        )
+      ).code;
+
+    try {
+      expect(await lower("pages.signup", "src/form-error-values.ts")).toMatch(
+        /__miraiIntlCreateFormErrorTranslator\w*\(t, "pages\.signup", \w+, \["tooShort"\]\)/u
+      );
+      expect(await lower("pages.home", "src/form-error-plain.ts")).toMatch(
+        /__miraiIntlCreateFormErrorTranslator\w*\(t, "pages\.home", \w+\)/u
+      );
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("fails closed for form-schema errors with missing, extra, or misplaced values", async () => {
+    const fixture = await createGeneratedCatalog();
+    const options = {
+      generatedDirectory: fixture.generatedDirectory,
+      root: fixture.root,
+    };
+    const cases = [
+      {
+        error:
+          /Form error pages\.signup\.error\.form\.tooShort requires its values/u,
+        use: 'createFormSchema("pages.signup", ({ error }) => error("tooShort"))',
+      },
+      {
+        error:
+          /Form error pages\.signup\.error\.form\.required takes no values/u,
+        use: 'createFormSchema("pages.signup", ({ error }) => error("required", { count: 1 }))',
+      },
+      {
+        error:
+          /Form schema error requires one literal key and, for a message with arguments, its values/u,
+        use: 'createFormSchema("pages.signup", ({ error }) => error())',
+      },
+      {
+        error:
+          /Form schema error requires one literal key and, for a message with arguments, its values/u,
+        use: 'createFormSchema("pages.signup", ({ error }) => error("tooShort", { count: 1 }, "extra"))',
+      },
+      {
+        error:
+          /Translation namespace pages\.about has no error\.form messages/u,
+        use: 'createFormSchema("pages.about", ({ error }) => error("title"))',
+      },
+    ];
+
+    try {
+      for (const [index, testCase] of cases.entries()) {
+        await expect(
+          transformMiraiIntlSource(
+            [
+              'import { createFormSchema } from "@/i18n/generated";',
+              `${testCase.use};`,
+            ].join("\n"),
+            join(fixture.root, `src/form-schema-values-failure-${index}.ts`),
+            options
+          )
+        ).rejects.toThrowError(testCase.error);
+      }
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  }, 60_000);
+
+  it("generates the form-schema error overload only for namespaces with valued form errors", () => {
+    const message = (path: string, hasArguments: boolean) =>
+      [
+        path,
+        {
+          descriptor: path,
+          descriptorModule: "catalog.messages.gen.mjs",
+          hasArguments,
+          kind: "text" as const,
+          path,
+        },
+      ] as const;
+    const facade = (messages: ReadonlyArray<ReturnType<typeof message>>) =>
+      generatedFacadeTypeModule(
+        {
+          messages: new Map(messages),
+          selectedDirectory: "/workspace/src/i18n/generated/selected",
+        },
+        "/workspace"
+      );
+    const singleOverload =
+      "  <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: <const Key extends __MiraiIntlFormErrorKeys[Namespace]>(key: Key) => `error.form.${Key}` }>) => Schema): Schema;";
+
+    const withValues = facade([
+      message("pages.signup.error.form.required", false),
+      message("pages.signup.error.form.tooShort", true),
+      message("pages.signup.error.form.tooLong", true),
+    ]);
+    expect(withValues).toContain(
+      [
+        "type __MiraiIntlFormValueErrorKeys = {",
+        '  readonly "pages.signup": "tooLong" | "tooShort";',
+        "};",
+        "type __MiraiIntlFormNamespace = keyof __MiraiIntlFormErrorKeys | keyof __MiraiIntlFormValueErrorKeys;",
+      ].join("\n")
+    );
+    expect(withValues).toContain(
+      "  <const Namespace extends __MiraiIntlFormNamespace, Schema>(namespace: Namespace, build: (helpers: Readonly<{ error: { <const Key extends (Namespace extends keyof __MiraiIntlFormErrorKeys ? __MiraiIntlFormErrorKeys[Namespace] : never)>(key: Key): `error.form.${Key}`; <const Key extends (Namespace extends keyof __MiraiIntlFormValueErrorKeys ? __MiraiIntlFormValueErrorKeys[Namespace] : never)>(key: Key, values: Readonly<Record<string, string | number | boolean>>): `error.form.${Key}` } }>) => Schema): Schema;"
+    );
+    expect(withValues).not.toContain(singleOverload);
+
+    const withoutValues = facade([
+      message("pages.home.error.form.required", false),
+    ]);
+    expect(withoutValues).not.toContain("__MiraiIntlFormValueErrorKeys");
+    expect(withoutValues).toContain(
+      "type __MiraiIntlFormNamespace = keyof __MiraiIntlFormErrorKeys;"
+    );
+    expect(withoutValues).toContain(singleOverload);
   });
 
   it("preserves generated form-schema helpers and their facade import", async () => {
