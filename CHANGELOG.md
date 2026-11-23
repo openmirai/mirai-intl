@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.12](https://github.com/openmirai/mirai-intl/compare/v0.4.12-rc.0...v0.4.12) (2026-11-23)
+
+
+### Bug Fixes
+
+* **compiler:** make the dependency file limit configurable and measure it ([d723a78](https://github.com/openmirai/mirai-intl/commit/d723a78848d23ec677d32bcc137b317b25cef0dc))
+* **runtime:** answer a form error only when its values tail matches ([cf19fba](https://github.com/openmirai/mirai-intl/commit/cf19fbadd5a70f0bf0e329f8f6696fd1af2d1f05))
+* **runtime:** keep form error keys closed for a namespace without one kind ([91a7fa1](https://github.com/openmirai/mirai-intl/commit/91a7fa17c635798111664944be8f86502813ea04))
+
+
+### Features
+
+* **runtime:** let the form schema error helper take ICU values ([4818334](https://github.com/openmirai/mirai-intl/commit/4818334fbc0ff5f938e9ccf46004095ae768f87b))
+
 ## [0.4.11](https://github.com/openmirai/mirai-intl/compare/v0.4.10...v0.4.11) (2026-11-09)
 
 
