@@ -168,6 +168,35 @@ const PERF_BUDGET_NS = {
   value: isCi ? 2_000 : 200,
 } as const;
 
+/* One measurement for every budget below. A median of 11 cold samples swung
+   from 3.5 to 26.6 microseconds on the same runtime code (v0.4.7 and v0.4.8
+   both, 28 Oct 2026, load average ~90): the first rounds pay for JIT
+   compilation and inline caches, and a busy machine skews a short series.
+   So: WARMUP_ROUNDS discarded rounds first, then SAMPLE_ROUNDS rounds of
+   CALLS_PER_ROUND calls, and the median per-call time. The budgets do not
+   change. */
+const WARMUP_ROUNDS = 5;
+const SAMPLE_ROUNDS = 21;
+const CALLS_PER_ROUND = 10_000;
+
+const medianNsPerCall = (call: () => unknown): number => {
+  for (let round = 0; round < WARMUP_ROUNDS; round += 1) {
+    for (let i = 0; i < CALLS_PER_ROUND; i += 1) {
+      call();
+    }
+  }
+  const samples: Array<number> = [];
+  for (let round = 0; round < SAMPLE_ROUNDS; round += 1) {
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < CALLS_PER_ROUND; i += 1) {
+      call();
+    }
+    samples.push(Number(process.hrtime.bigint() - start) / CALLS_PER_ROUND);
+  }
+  samples.sort((a, b) => a - b);
+  return samples[Math.floor(samples.length / 2)];
+};
+
 describe("runtime performance catalog", () => {
   it("renders literal text in both locales", () => {
     const en = makeRuntime("en");
@@ -299,16 +328,7 @@ describe("runtime performance catalog", () => {
     const runtime = makeRuntime();
     const d = find("text", "label") as TextDescriptor;
 
-    const samples: Array<number> = [];
-    for (let s = 0; s < 11; s += 1) {
-      const start = process.hrtime.bigint();
-      for (let i = 0; i < 10_000; i += 1) {
-        runtime.t(d);
-      }
-      samples.push(Number(process.hrtime.bigint() - start) / 10_000);
-    }
-    samples.sort((a, b) => a - b);
-    const median = samples[Math.floor(samples.length / 2)];
+    const median = medianNsPerCall(() => runtime.t(d));
 
     expect(median).toBeLessThan(PERF_BUDGET_NS.literal);
   });
@@ -319,16 +339,9 @@ describe("runtime performance catalog", () => {
       Record<string, unknown>
     >;
 
-    const samples: Array<number> = [];
-    for (let s = 0; s < 11; s += 1) {
-      const start = process.hrtime.bigint();
-      for (let i = 0; i < 10_000; i += 1) {
-        runtime.t(d, { name: "Ada" } as never);
-      }
-      samples.push(Number(process.hrtime.bigint() - start) / 10_000);
-    }
-    samples.sort((a, b) => a - b);
-    const median = samples[Math.floor(samples.length / 2)];
+    const median = medianNsPerCall(() =>
+      runtime.t(d, { name: "Ada" } as never)
+    );
 
     expect(median).toBeLessThan(PERF_BUDGET_NS.parameterized);
   });
@@ -337,16 +350,7 @@ describe("runtime performance catalog", () => {
     const runtime = makeRuntime();
     const d = find("value", "scalar") as ValueDescriptor;
 
-    const samples: Array<number> = [];
-    for (let s = 0; s < 11; s += 1) {
-      const start = process.hrtime.bigint();
-      for (let i = 0; i < 10_000; i += 1) {
-        runtime.value(d);
-      }
-      samples.push(Number(process.hrtime.bigint() - start) / 10_000);
-    }
-    samples.sort((a, b) => a - b);
-    const median = samples[Math.floor(samples.length / 2)];
+    const median = medianNsPerCall(() => runtime.value(d));
 
     expect(median).toBeLessThan(PERF_BUDGET_NS.value);
   });
