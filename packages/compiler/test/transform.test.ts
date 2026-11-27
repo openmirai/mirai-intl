@@ -4346,6 +4346,100 @@ describe("private named-key lowering", () => {
     60_000
   );
 
+  it.each(["owner batch", "single source"] as const)(
+    "gives a provider claimed through sibling subpaths the declarations of every entry (%s)",
+    async (analysis) => {
+      const fixture = await createGeneratedCatalog();
+      // One package reached through two subpaths whose entries sit in sibling
+      // folders, as @tiptap/pm/model and @tiptap/pm/state do.
+      const providerRoot = join(fixture.root, "node_modules/sibling-entries");
+      await writeJson(join(providerRoot, "package.json"), {
+        exports: {
+          "./model": { types: "./dist/model/index.d.ts" },
+          "./state": { types: "./dist/state/index.d.ts" },
+        },
+        name: "sibling-entries",
+        type: "module",
+        version: "0.0.0-fixture",
+      });
+      for (const entry of ["model", "state"]) {
+        await mkdir(join(providerRoot, "dist", entry), { recursive: true });
+        await writeFile(
+          join(providerRoot, "dist", entry, "index.d.ts"),
+          `export declare const ${entry}Key: "title";\n`,
+          "utf8"
+        );
+      }
+      const id = join(fixture.root, "src/sibling-entries.ts");
+      const source = [
+        'import { useTranslations } from "x";',
+        'import { modelKey } from "sibling-entries/model";',
+        'import { stateKey } from "sibling-entries/state";',
+        'const { t } = useTranslations("pages.home");',
+        "export const translated = [t(modelKey), t(stateKey)];",
+        "",
+      ].join("\n");
+
+      try {
+        let evidence: MiraiIntlSemanticEvidence | undefined;
+        const authorizationEvidence = {
+          record(value: MiraiIntlSemanticEvidence) {
+            evidence = value;
+          },
+          workspaceRoot: "/",
+        };
+        const options = {
+          generatedDirectory: fixture.generatedDirectory,
+          root: fixture.root,
+        };
+        const error =
+          analysis === "owner batch"
+            ? (
+                await transformMiraiIntlOwnerBatch(
+                  [{ authorizationEvidence, id, source }],
+                  options
+                )
+              )[0]?.error
+            : await transformMiraiIntlSource(source, id, {
+                ...options,
+                authorizationEvidence,
+              }).then(
+                () => undefined,
+                (caught: unknown) => caught
+              );
+
+        expect(error).toBeUndefined();
+        const siblingProviders = evidence?.providers.filter((provider) =>
+          provider.root.includes("/node_modules/sibling-entries/")
+        );
+        expect(siblingProviders).toHaveLength(1);
+        expect(
+          siblingProviders?.[0]?.declarations.map((declaration) =>
+            declaration.path.slice(declaration.path.indexOf("/dist/") + 1)
+          )
+        ).toEqual(["dist/model/index.d.ts", "dist/state/index.d.ts"]);
+        // The check receipt binds a closure's declarations as the exact union
+        // of its providers' declarations.
+        expect(
+          [
+            ...new Set(
+              evidence?.providers.flatMap((provider) =>
+                provider.declarations.map((declaration) => declaration.path)
+              )
+            ),
+          ].toSorted()
+        ).toEqual(
+          evidence?.declarations
+            .map((declaration) => declaration.path)
+            .toSorted()
+        );
+      } finally {
+        await rm(fixture.root, { force: true, recursive: true });
+      }
+    },
+    60_000
+  );
+
   it("lowers namespace-bound server dynamic calls through the same private runtime lookup", async () => {
     const fixture = await createGeneratedCatalog();
     const id = join(fixture.root, "src/server-dynamic.ts");
