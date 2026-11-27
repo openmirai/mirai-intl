@@ -5786,6 +5786,7 @@ function semanticEvidence(
   providerBudgetExceeded: string | undefined,
   providerRoots: ReadonlyArray<
     Readonly<{
+      entryRoots?: ReadonlyArray<string>;
       includeDeclarations: boolean;
       kind?: "ambient";
       resolutions: ReadonlyArray<SemanticProviderResolution>;
@@ -5908,18 +5909,29 @@ function semanticEvidence(
     evidenceProviderRoots.map((provider) => {
       const providerRoot = canonicalGeneratedFacadeRoot(provider.root);
       const providerPath = evidencePath(workspaceRoot, resolve(providerRoot));
-      const providerDirectory = dirname(providerPath).split(sep).join("/");
+      // A provider claimed through several entries (one package reached by
+      // sibling subpaths) owns the declarations under each entry's folder.
+      const entryPaths = [
+        providerPath,
+        ...("entryRoots" in provider ? (provider.entryRoots ?? []) : []).map(
+          (entryRoot) =>
+            evidencePath(
+              workspaceRoot,
+              resolve(canonicalGeneratedFacadeRoot(entryRoot))
+            )
+        ),
+      ];
+      const entryDirectories = entryPaths
+        .map((entryPath) => dirname(entryPath).split(sep).join("/"))
+        // A provider at the workspace root keeps only its own file.
+        .filter((directory) => directory !== ".");
       const providerDeclarations = provider.includeDeclarations
         ? declarations.filter(
             (declaration) =>
-              declaration.path === providerPath ||
-              // A provider at the workspace root keeps only its own file.
-              (providerDirectory !== "." &&
-                isPathStrictlyWithin(
-                  providerDirectory,
-                  declaration.path,
-                  posix
-                ))
+              entryPaths.includes(declaration.path) ||
+              entryDirectories.some((directory) =>
+                isPathStrictlyWithin(directory, declaration.path, posix)
+              )
           )
         : [];
       let kind: "ambient" | "external" | "generated" | "workspace" =

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.13](https://github.com/openmirai/mirai-intl/compare/v0.4.12...v0.4.13) (2026-11-27)
+
+
+### Bug Fixes
+
+* **compiler:** give a provider the declarations of every entry it was claimed through ([8c31474](https://github.com/openmirai/mirai-intl/commit/8c31474a1ab21f1916bd043ccd50a20fee94332c))
+
 ## [0.4.12](https://github.com/openmirai/mirai-intl/compare/v0.4.12-rc.0...v0.4.12) (2026-11-23)
 
 
